@@ -55,7 +55,9 @@ The AI HAT+ stacks on top of the Pi 5 (over the Active Cooler) and runs the v0 v
 
 > ⚠️ **Reliable first boot = a monitor, not headless.** First-boot with a **monitor via micro-HDMI (the port nearest the USB-C) + a USB keyboard/mouse** — *not* headless. Headless SSH can fail silently (mDNS `.local` not resolving, Connect showing no device, SSH refused/timed out) and cost hours. A **micro-HDMI adapter/cable is required** for the Pi 5 — only full-size HDMI may be on hand. If the Pi doesn't auto-join wifi from the Imager config, connect it **manually via the desktop network icon** (top-right). Note: the **AI HAT+ boots fine and is not the problem** (it's the v0 vision compute — see [memory.md](memory.md)).
 
-## 4. Connect Camera Module 3  [TODO — blocked on cable]
+## 4. Connect Camera Module 3  [DONE — 13 Jun: camera connected + detected; first image pending lens-film peel]
+
+> **13 Jun:** camera 0 (imx708) detected via `rpicam-hello --list-cameras`; capture with `rpicam-still -n -o test.jpg`. **If the image is BLACK, peel the clear protective film off the lens and ensure there's light** — that's the #1 cause.
 
 ⚠️ Needs a **Pi-5 camera adapter cable (22-pin → 15-pin)**. The Camera Module 3 ships only the wider 15-pin cable, which does **not** fit the Pi 5's narrower connector. Verify it's on hand / order if not.
 

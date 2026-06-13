@@ -43,6 +43,12 @@ Lessons, written down so I never lose this evening again:
 - **The OS/flash were always fine.** The one real gremlin was the wifi auto-join from the Imager config not taking — fixed by connecting manually on the desktop.
 - **A micro-HDMI connection is required** to get a screen on the Pi 5 (only full-size HDMI was on hand earlier — this was the missing piece).
 
+### Late night — the Pi can see 👁️
+
+Connected the Camera Module 3 to the Pi 5 via the Pi-5 adapter cable (narrow 22-pin end into the Pi, wide 15-pin end into the camera). `rpicam-hello --list-cameras` picked up **camera 0: imx708** — the Camera Module 3 sensor — straight away. Then ran the full remote loop end-to-end and it all worked: SSH from the Mac into the Pi, `rpicam-still` to grab a still on the Pi, `scp` to pull it back to the Mac. The pipeline's there.
+
+One snag: the images came out **black**. The camera itself is fine — it detects and captures cleanly — but the lens is still covered. The Camera Module 3 ships with a clear protective film on the lens and it's almost certainly still on (the capture showed analog gain pinned at 16, i.e. starved for light), plus it was the small hours and dark. Next session's fix is a ten-second job: peel the film off the lens, point it at a lit scene, re-shoot. After that it's ready for object detection — the `~/vision` venv is already set up.
+
 ---
 
 ## Day 0 — Fri 13 Jun 2026
