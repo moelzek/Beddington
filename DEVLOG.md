@@ -30,6 +30,19 @@ We're in-person at Workshop #1 — 3D printers humming, a full tool bench, mento
 
 **Blocked / to-verify:** Pi-5 camera adapter cable (22→15 pin) likely still needed (verify on opening the camera box); SSH password to confirm at first boot; confirm the cooler part is the fan cooler, not a passive case.
 
+### Evening — first boot achieved 🎉
+
+We have first boot — the Pi 5 is online. Getting there was a slog. I tried for ages to reach it **headless** over wifi and got nowhere: `labwitness.local` never resolved (mDNS just wouldn't answer), Raspberry Pi Connect showed no device, and SSH to every IP on the LAN came back refused or timed out. Hours gone, convinced something was badly broken.
+
+The breakthrough was plugging in a **monitor via micro-HDMI** (the port nearest the USB-C), following the hackathon's official "London Calling / Edge AI on a Raspberry Pi" quickstart — which quietly assumes a monitor + keyboard + mouse for first boot. The moment a screen came up it was obvious: the Pi had booted fine all along. It simply hadn't **joined the wifi** — network icon showing a red slash, clock wrong because it never synced. I connected wifi **manually** via the desktop network icon and it was straight online.
+
+Lessons, written down so I never lose this evening again:
+
+- **The kit/guide assumes a monitor for first boot.** Headless-only (SSH over wifi) was the hard path and failed silently. Reliable first boot = monitor (micro-HDMI, port nearest USB-C) + keyboard/mouse.
+- **The AI HAT+ was not the problem** — the Pi booted cleanly with it mounted. (The HAT is now the v0 vision compute — see [memory.md](memory.md).)
+- **The OS/flash were always fine.** The one real gremlin was the wifi auto-join from the Imager config not taking — fixed by connecting manually on the desktop.
+- **A micro-HDMI connection is required** to get a screen on the Pi 5 (only full-size HDMI was on hand earlier — this was the missing piece).
+
 ---
 
 ## Day 0 — Fri 13 Jun 2026

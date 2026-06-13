@@ -26,7 +26,7 @@ Each step is tagged **[DONE] / [NEXT] / [TODO]**. Keep it current as the build p
 
 **Why headless:** the only HDMI cable on hand is full-size, but the Pi 5 uses **micro-HDMI** — so the Pi runs with no monitor and is controlled from the laptop over Wi-Fi via SSH.
 
-## 2. Fit the Active Cooler  [NEXT]
+## 2. Fit the Active Cooler  [DONE]
 
 ⚠️ First confirm the part is the **Active Cooler** (a flat metal heatsink with a small fan and a thin 4-pin lead), not a passive case — the box sticker was ambiguous (labelled "Case", CM5A221).
 
@@ -46,12 +46,14 @@ The AI HAT+ stacks on top of the Pi 5 (over the Active Cooler) and runs the v0 v
 4. Connect the supplied **PCIe ribbon (FFC)** between the Pi 5's PCIe port and the HAT — contacts the right way round, latch closed. (The Hailo-8 module is pre-fitted to the HAT.)
 5. Drivers/firmware come later (section 6): on the booted Pi, `sudo apt install hailo-all`, reboot, then check with `hailortcli fw-control identify`.
 
-## 3. Insert SD + first boot  [TODO]
+## 3. Insert SD + first boot  [DONE — 13 Jun 2026]
 
 1. Insert the flashed microSD into the Pi.
 2. Connect the **27W USB-C PSU**; the Pi powers on (no power button needed).
 3. Wait ~1–2 min for first boot.
 4. From the laptop terminal: `ssh labwitness@labwitness.local` (or use the Pi's IP). Enter the password. You're in.
+
+> ⚠️ **Reliable first boot = a monitor, not headless.** First-boot with a **monitor via micro-HDMI (the port nearest the USB-C) + a USB keyboard/mouse** — *not* headless. Headless SSH can fail silently (mDNS `.local` not resolving, Connect showing no device, SSH refused/timed out) and cost hours. A **micro-HDMI adapter/cable is required** for the Pi 5 — only full-size HDMI may be on hand. If the Pi doesn't auto-join wifi from the Imager config, connect it **manually via the desktop network icon** (top-right). Note: the **AI HAT+ boots fine and is not the problem** (it's the v0 vision compute — see [memory.md](memory.md)).
 
 ## 4. Connect Camera Module 3  [TODO — blocked on cable]
 
@@ -73,6 +75,7 @@ The AI HAT+ stacks on top of the Pi 5 (over the Active Cooler) and runs the v0 v
 - Software setup on the booted Pi: `sudo apt update && sudo apt full-upgrade`, then `sudo apt install hailo-all`, reboot, verify with `hailortcli fw-control identify`.
 - Detector (Hailo) → state machine → timing check → Notion write + on-screen deviation banner.
 - See [lab-witness-v0-build-doc.md](lab-witness-v0-build-doc.md) for the design.
+- Canonical AI reference: the hackathon's official "London Calling / Edge AI on a Raspberry Pi" quickstart — especially **Part 7** (camera + YOLO object detection on the Pi) and **Part 8** (AI HAT+ for real-time vision), both directly relevant to Lab Witness's perception stage.
 
 ---
 
