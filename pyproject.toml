@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lab-witness"
+dynamic = ["version"]
+description = "A Pi over the bench that watches a scientist, writes the lab notebook, and flags timing drift from the protocol."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    # The decision spine is reused from Hatch (ADR-0009: hatch-brain is a reusable,
+    # archetype-agnostic kernel). Until hatch-brain is on PyPI, install it from the
+    # repo. NOTE: merge hatch PR #1 first — it has the per-action persistence fix that
+    # BrainPerceiver relies on (distinct step ids must not share an escalation streak).
+    "hatch-brain @ git+https://github.com/moelzek/hatch.git#subdirectory=brain",
+]
+
+[project.optional-dependencies]
+# The Pi rig (the CV dev owns this): classical CV on high-contrast labware.
+# picamera2 comes from apt, not pip (see BUILD.md).
+pi = ["opencv-python-headless", "numpy"]
+
+[tool.setuptools]
+packages = ["lab_witness"]
+
+[tool.setuptools.dynamic]
+version = { attr = "lab_witness.__version__" }
