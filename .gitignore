@@ -1,0 +1,64 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.installed.cfg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# --- Secrets / config ---
+.env
+.env.*
+*.local
+secrets.*
+*.key
+*.pem
+credentials.json
+config.local.*
+
+# --- Models / large assets ---
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.gguf
+*.bin
+weights/
+
+# --- Captures / media (Lab Witness camera output) ---
+captures/
+recordings/
+*.mp4
+*.avi
+*.h264
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+!docs/**/*.jpg
+
+# --- Logs / data ---
+*.log
+logs/
+data/raw/
+*.sqlite
+*.db
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/

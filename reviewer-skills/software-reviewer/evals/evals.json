@@ -1,0 +1,17 @@
+{
+  "skill_name": "software-reviewer",
+  "evals": [
+    {
+      "id": 0,
+      "name": "control-loop-resource-realitycheck",
+      "prompt": "Software review for Lab Witness. Flomotion gave me this plan for the perception + state machine on the Pi 5, can you check it before I build it?\n\n---\nLab Witness v0 capture loop (Python, runs on the Pi 5):\n\n```python\nimport cv2, time\nfrom ultralytics import YOLO\nfrom notion_client import Client\n\nmodel = YOLO('yolov8x.pt')   # most accurate model, runs at 30fps on the Pi 5 CPU\nnotion = Client(auth=NOTION_TOKEN)\nstep = 0\n\ncap = cv2.VideoCapture(0)\nwhile True:\n    ret, frame = cap.read()\n    results = model(frame)\n    if detected_pipette(results):\n        step += 1\n        notion.pages.create(parent={'database_id': DB}, properties=log_for(step))\n    time.sleep(0.0)\n```\n\nThe state machine is just `step += 1` each time a pipette is detected. Deviation = if a step takes longer than expected. We write every step straight to Notion inside the loop. Is this sound? What do I change?",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "llm-agent-privacy-realitycheck",
+      "prompt": "Can you do a software review of this LLM approach for Lab Witness? Flomotion suggested it for the 'decide' stage.\n\n---\nInstead of a hand-coded state machine, run an agent: every camera frame is sent to the GPT-4 Vision API with the prompt 'Look at this lab bench photo and tell me which step of the serial-dilution protocol the scientist is on, and whether they have deviated.' The agent keeps calling the API in a loop, updates the current step from the model's answer, and writes the notebook entry to Notion. We pass the raw frame plus the scientist's previous answers straight into the prompt so the model has context. This is simpler than writing the state machine ourselves and more flexible. Sound design for v0?",
+      "files": []
+    }
+  ]
+}

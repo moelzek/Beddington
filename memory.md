@@ -1,0 +1,87 @@
+# memory.md — Lab Witness (durable FACTS & STATE)
+
+> Single source-of-truth snapshot of the project's live state. Update this as things change. Pairs with [context.md](context.md), [agents.md](agents.md), [skills.md](skills.md). Cross-links to persistent memory: `lab-witness-working-agreement` and `lab-witness-project` (see MEMORY.md index).
+
+## Key entities & conventions
+
+- **Project name:** Lab Witness. **Working folder: `~/Code/Labie`** (folder named `Labie`). The redundant nested `Labie/Labie` was flattened on 13 Jun 2026 — there is no longer an inner `Labie/` subfolder.
+- **Build doc (source of truth):** `lab-witness-v0-build-doc.md` in this folder.
+- **Owner:** Mo — physician-scientist; owns science + story; new to hardware; ADHD; newborn.
+- **Hardware oracle:** Flomotion (flomotion.app) — external app, copy-paste interface.
+- **On-site mentors:** robotics-company founders — escalation path for risky hardware calls.
+- **Lab-notebook target:** Notion (write modelled on Mo's Granola→Notion pipeline).
+- **Deployment spine:** mock bench at **Blue Garage** (controlled lighting + fixed angle). A friend's real bench is **upside B-roll only**, never a dependency.
+- **Demo Night venue:** LocalGlobe. Prize pool £2k+.
+
+## Locked decisions (do not reopen)
+
+| Decision | Call |
+|---|---|
+| Deployment | Mock bench at Blue Garage = spine; real bench = B-roll only |
+| Protocol | Serial dilution / pipetting series (one mix/incubation step) |
+| Deviation scope (v0) | **Timing only** (over/under-run). Reagent-order & skipped-step → v2 |
+| Compute | Pi 5 (4GB, on hand) + Camera Module 3, **CPU-first vision (OpenCV / MediaPipe)**. **No AI HAT+ for v0** — deferred; add 13 TOPS / Hailo-8L post-v0 only if CPU proves too slow. Cloud LLM optional, for prose only |
+
+## Kit list (order Day 0 — shipping is the silent killer)
+
+Pi 5 4GB (**have**) · Active cooler + 27W USB-C PSU (**have**) · Camera Module 3 ×2 (**have**) · 64GB A2 microSD (32GB **acquired**) · **Pi-5-compatible** camera cable (~£3) · top-down mount/clamp (~£15–30, single biggest reliability lever) · LED/ring light (~£15) · optional GPIO LED/buzzer (~£5). **Deferred (post-v0, only if CPU vision too slow): AI HAT+ 13 TOPS (~£70) or fallback Pi AI Camera IMX500 (~£70)** — don't buy upfront.
+
+## Scoring model — the three judging axes
+
+**Novelty · Deployment · Impact** (confirmed 13 Jun 2026). Supersedes the earlier four-axis framing (Innovation/Impact/Progress/Deployment) — "Progress" is no longer a scored axis and "Innovation" is now "Novelty". Every scoping call should defend at least one axis without breaking the 20 Jun freeze. Deployment is the highest-risk axis given the open hardware gaps.
+
+## Sprint roster — dated state (as of 13 Jun 2026, Day 0)
+
+| Item | Status |
+|---|---|
+| Both gates locked | ✅ Done |
+| Kit ordered | ⬜ Open — Mo to order today |
+| CV/embedded dev recruited | ⬜ Open — Mo to confirm today |
+| Ordered step-list for dilution series written | ⬜ Open — Mo to write today (his bench intuition = ground truth) |
+| Rig booted / camera live | ⬜ Day 1 |
+| Physical rig + footage | ⬜ Day 2 |
+| Perception working | ⬜ Day 3 |
+| State machine firing | ⬜ Day 4 |
+| Notion write + timing flag | ⬜ Day 5 |
+| Live integration | ⬜ Day 6 |
+| **v0 FROZEN** | ⬜ Day 7 = 20 Jun |
+| Demo deck + rehearsal | ⬜ 21 Jun–7 Jul |
+
+## Open items Mo owns (manual, off-Claude)
+
+1. **Order the kit** — today.
+2. **Write the ordered step-list** for the dilution series — today; nobody else can write it.
+3. **Recruit/confirm the CV/embedded dev** who owns the rig from Day 7.
+
+## Key dates
+
+13 Jun kickoff (Day 0) · **20 Jun v0 freeze** · 25 Jun Frontier Biotech (attention collapses) · 28 Jun submission · 7 Jul Demo Night.
+
+## Cross-links to persistent memory
+
+- `lab-witness-working-agreement` (type: feedback) — the Flomotion loop, beginner explanations, ADHD low-friction style, flag risk to mentors. **Authoritative on how Claude works here.**
+- `lab-witness-project` (type: project) — canonical project facts + pointer to these files. **Working folder: `~/Code/Labie` — always operate here.**
+- `lab-witness-hardware-on-hand` (type: reference) — kit Mo physically has + blockers (microSD, Pi-5 camera cable, micro-HDMI). Mirrored in folder file `lab-witness-hardware-inventory.md`.
+
+## Project-specific skills (built, live)
+
+- `flomotion-cto` — orchestrates a full multi-domain review; reconciles to one gate.
+- `hardware-reviewer` — hardware-only PASS/FAIL + Safe-to-build gate (owns hardware-safety escalation).
+- `software-reviewer` — code / control-logic / LLM-design PASS/FAIL + Approve/Revise/Reject gate.
+
+  See [skills.md](skills.md) for when to reach for each.
+
+## Changelog
+
+- **2026-06-13** — Operating-system files created (context / agents / skills / memory). Day-0 snapshot recorded. Baker 2016 figures and AI HAT+ specs web-verified.
+- **2026-06-13** — Judging rubric corrected to three axes: **Novelty · Deployment · Impact** (was four: Innovation/Impact/Progress/Deployment). "Progress" dropped, "Innovation"→"Novelty".
+- **2026-06-13** — Aligned context.md to the three-axis rubric (it had drifted, still showed four). Added a Living-document protocol to agents.md: memory.md is the single source of truth, write-through on every canonical change, drift check at session start.
+- **2026-06-13** — Added CLAUDE.md as an auto-loading router/index pointing to the four operating files (thin, no duplicated facts).
+- **2026-06-13** — Added DEVLOG.md (daily build journal, distinct from this changelog) and routed CLAUDE.md to it. Decided against a static project-tree file (drift-bait; generate on demand instead).
+- **2026-06-13** — Navigation pass: skills.md now routes the three built reviewer skills (flomotion-cto / hardware-reviewer / software-reviewer); CLAUDE.md anchors the working folder (`~/Code/Labie/Labie`) and indexes supporting files (hardware inventory, reviewer-build prompts, codex-review-request). Flagged `flomotion-cto-reviewer-PROMPT.md` as likely superseded by PROMPT-1.
+- **2026-06-13** — Renamed all 21 hardware photos in `~/Code/Labie/Stuff/` from camera defaults (IMG_7802–7822) to descriptive snake_case names (e.g. `raspberry_pi_5_4gb_box`, `oled_display_1–3`, `pwm_servo_driver_front/back`, `jumper_wires_1/2`). Updated every photo reference in `lab-witness-hardware-inventory.md` and appended a full old→new mapping table; mirrored the note into persistent `lab-witness-hardware-on-hand`. **NB:** photos live in the sibling `Stuff/` folder, not the working `Labie/` folder. Pre-existing tension noted (not resolved): photos confirm a Pi 5 **4GB** + **no AI HAT+**, whereas Locked decisions / Kit list still cite 8GB + AI HAT+ — Mo to reconcile.
+- **2026-06-13** — **Compute decision reconciled (Mo's call): no AI HAT+ for v0.** Standardised to Pi 5 (4GB, on hand) + Camera Module 3, CPU-first vision (OpenCV / MediaPipe); AI HAT+ (13 TOPS / Hailo-8L) and Pi AI Camera (IMX500) deferred to post-v0, add only if CPU too slow. Propagated to Locked decisions + Kit list above and to context.md, DEVLOG.md, agents.md, lab-witness-v0-build-doc.md, and persistent `lab-witness-project`. Reviewer-skill checklists already assumed 4GB/CPU-first.
+- **2026-06-13** — **Flattened the folder structure:** moved all project files + skill folders up from `~/Code/Labie/Labie` into `~/Code/Labie` (alongside `Stuff/`); the inner `Labie/` is now **empty** but couldn't be removed from the sandbox (it's the session's mount point) — **Mo to delete `~/Code/Labie/Labie` in Finder.** Updated every path reference across CLAUDE.md, memory.md, the reviewer prompts, the hardware inventory, and persistent memory. New working folder is `~/Code/Labie`. `Stuff/` (hardware photos) is now a subfolder of the working folder; photo paths were absolute so they stay valid.
+- **2026-06-13** — Repackaged `flomotion-cto.skill`: its bundled `SKILL.md` still had the old `~/Code/Labie/Labie/` handoff path (the earlier `.md` sweep couldn't reach inside the zip). Extracted, fixed the path, re-zipped to the identical 2-file structure, verified clean + zip integrity OK. The other two `.skill` archives (hardware-reviewer, software-reviewer) were already clean.
+- **2026-06-13** — **Tidied the directory.** Created `Archive/` (the 4 spent build-prompts now the skills exist, plus `skills-flomotion-cto-OLD/` — a divergent older flomotion-cto copy parked pending Mo's call on which is canonical) and `reviewer-skills/` (the 3 skill source dirs + 3 `.skill` packages, out of root). Renamed `Stuff/` → `hardware-photos/` and updated every reference (inventory + persistent `lab-witness-hardware-on-hand`). Moved a stray `ROADMAP.md` out of the deprecated inner `Labie/` up to root and added it to the CLAUDE.md router. Sandbox couldn't delete the now-empty `Labie/`, the empty `skills/`, or a stray `.DS_Store` — **Mo to remove those three in Finder.**
+- **2026-06-13** — Wired `ROADMAP.md` into `DEVLOG.md`'s header (the CLAUDE.md router already listed it at read-order #7), so every session auto-picks-up the forward plan and each day's logged outcome is checked against the current roadmap tier (A → B → C).
