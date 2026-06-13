@@ -20,7 +20,7 @@ A Raspberry Pi over the bench that watches a scientist work, silently writes the
 
 ## Domain concepts & definitions
 
-- **v0** — the ugly-but-working end-to-end demo. The only thing that matters by 20 Jun.
+- **v0** — the ugly-but-working end-to-end demo. The only thing that matters by the v0 freeze (PROPOSED ~24 Jun; see [memory.md](memory.md)).
 - **The chosen protocol** — a **serial dilution / pipetting series** with one mix/incubation step. Picked for visual distinctness, repeatability and a built-in timing hook.
 - **Deviation (v0 scope)** — **timing only**: an incubation/mix step over- or under-running its protocol window. Reagent-order and skipped-step detection are **v2 roadmap only**.
 - **Perception → State machine → Decision → Act** — the four-stage pipeline (full diagram in the build doc §3). Labware detection feeds an ordered state machine; a clock checks step duration; actions are a Notion write + a live on-screen flag.
@@ -37,20 +37,24 @@ A Raspberry Pi over the bench that watches a scientist work, silently writes the
 
 ## Milestones / sprint clock
 
+> Revised 13 Jun 2026 — supersedes the old 20 Jun freeze / 7 Jul Demo Night. Canonical dates live in [memory.md](memory.md).
+
 | Date | Milestone |
 |---|---|
-| **Fri 13 Jun** | Kickoff — Day 0. Lock gates, order kit, recruit dev, write the ordered step-list. |
-| **Fri 20 Jun** | **v0 FROZEN** — hard deadline. Clean demo run recorded. Features stop here. |
-| **Wed 25 Jun** | Frontier Biotech — attention collapses. No new features. |
-| **Sat 28 Jun** | Submission. |
-| **Tue 7 Jul** | Demo Night at LocalGlobe (£2k+ prize pool). |
+| **Sat 13 Jun** | Workshop #1 (in-person build/assembly) — Day 0. Gates locked, kit in hand, assemble the rig, write the ordered step-list. |
+| **14–20 Jun** | Home / remote tinkering. |
+| **Sun 21 Jun** | Workshop #2 (in-person integration). |
+| **Wed 24 Jun** | **v0 FREEZE — PROPOSED**, pending Mo's confirmation. Clean demo run recorded; features stop here. |
+| **Wed 25 Jun** | Frontier Biotech — attention collapses. No new features. *(review — may be superseded under the revised timeline; confirm with Mo)* |
+| **Sat 28 Jun** | Submission. *(review — may be superseded under the revised timeline; confirm with Mo)* |
+| **≈ Sun 28 Jun** | Demo at LocalGlobe (£2k+ prize pool). **Approximate** — ~a week after the 21st; exact date/time to be confirmed. |
 
-**Organising principle:** *Week two does not exist for you.* Ship an ugly, working v0 by 20 Jun. Weeks after = deployment footage + polish + narrative only.
+**Organising principle:** *Week two does not exist for you.* Ship an ugly, working v0 by the freeze (PROPOSED ~24 Jun). Time after = deployment footage + polish + narrative only.
 
 ## Current status snapshot — 13 Jun 2026 (Day 0)
 
 - Both gates **locked** (deployment = mock bench at Blue Garage as spine; protocol = serial dilution; deviation = timing only; compute = Pi 5 4GB + Camera Module 3, **CPU-first (OpenCV/MediaPipe), no AI HAT+ for v0** — HAT deferred, add post-v0 only if CPU too slow).
-- **Open Day-0 actions:** order all kit (shipping is the silent killer); recruit/confirm the CV/embedded dev; write the exact ordered step-list for the dilution series.
+- **Kit all in hand** (ordering done) — Day-0 mode is now hands-on assembly at Workshop #1 (in-person, with 3D printers, full tool bench, mentors on site). **Still open:** recruit/confirm the CV/embedded dev (rig is present but no confirmed dev); write the exact ordered step-list for the dilution series.
 - No code, rig, or footage exists yet. Build doc is written and is the source of truth: `lab-witness-v0-build-doc.md`.
 
 Live, changing detail (kit order status, dev recruitment, daily progress) lives in [memory.md](memory.md), not here.

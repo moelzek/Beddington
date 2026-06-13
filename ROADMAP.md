@@ -2,17 +2,19 @@
 
 > Forward plan only. Live status, locked decisions and the roster live in [memory.md](memory.md) — this file *sequences* the work and says **who/what builds each piece**. Pairs with `lab-witness-v0-build-doc.md` (the v0 bible).
 
+> **Timeline revised 13 Jun 2026** — now a two-workshop structure (Workshop #1 Sat 13 Jun · Workshop #2 Sun 21 Jun · demo ≈28 Jun · v0 freeze PROPOSED ~24 Jun). Canonical dates live in [memory.md](memory.md). **TODO (Mo's call):** the day-by-day Tier-A sequence below still reads as a single 13–20 Jun run and needs re-anchoring to the two-workshop structure — not rewritten here.
+
 ## Prime directive
 
-**v0 still freezes Fri 20 Jun.** Having two weeks does **not** relax that — it just gives the *polish* and *narrative* somewhere to live. Nothing in week two touches the core pipeline. If a day slips, cut scope; never extend the freeze.
+**v0 freezes ~24 Jun (PROPOSED — pending Mo's confirmation; was 20 Jun).** Having two weeks does **not** relax that — it just gives the *polish* and *narrative* somewhere to live. Nothing in week two touches the core pipeline. If a day slips, cut scope; never extend the freeze.
 
 Three tiers, in strict order of protection:
 
-- **Tier A — v0 core.** Must ship by 20 Jun. The thing being judged.
+- **Tier A — v0 core.** Must ship by the freeze (PROPOSED ~24 Jun). The thing being judged.
 - **Tier B — polish.** Week two (21–28 Jun), **only once the core is frozen and working.** Safe because it sits *on top* of the pipeline, never inside it.
 - **Tier C — narrative.** Slide only. Not built in these two weeks. The "where this goes next" story.
 
-## Tier A — v0 core (by Fri 20 Jun)
+## Tier A — v0 core (by the freeze, PROPOSED ~24 Jun)
 
 | Piece | Owner | Tool / skill | Components (you own) |
 |---|---|---|---|
@@ -53,14 +55,16 @@ The ideas we pressure-tested and parked. They make a strong "what's next" arc �
 
 ## Sprint calendar
 
+> Re-anchored to the two-workshop timeline (revised 13 Jun 2026); canonical dates in [memory.md](memory.md). The per-day Tier-A breakdown still needs re-sequencing — Mo's call (see top-of-file TODO).
+
 | Window | Focus |
 |---|---|
-| **Sat 13 Jun (Day 0)** | Order kit · recruit dev · write step-list |
-| 14–20 Jun (Days 1–7) | Build Tier A, one outcome/day → **v0 FROZEN 20 Jun** |
-| 21–24 Jun | Tier B polish · B-roll · start the deck |
-| **Wed 25 Jun** | Frontier Biotech — attention collapses · dev carries · no new features |
-| 26–28 Jun | Finish deck · rehearse · **submit 28 Jun** |
-| 29 Jun–7 Jul | Rehearse · narrative polish · **Demo Night 7 Jul (LocalGlobe)** |
+| **Sat 13 Jun** | Workshop #1 (in-person build) — kit in hand · assemble rig · write step-list |
+| 14–20 Jun | Home / remote tinkering · build Tier A |
+| **Sun 21 Jun** | Workshop #2 (in-person integration) |
+| ~24 Jun | **v0 FREEZE — PROPOSED** (pending Mo's confirmation) |
+| **Wed 25 Jun** | Frontier Biotech — attention collapses · dev carries · no new features *(review — may be superseded; confirm with Mo)* |
+| 26–28 Jun | Tier B polish · B-roll · deck · rehearse · **demo ≈28 Jun (approx; LocalGlobe)** |
 
 ## Guardrails
 

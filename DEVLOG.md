@@ -4,6 +4,27 @@ Reverse-chronological. One block per day: **what got done · what's blocked · t
 
 ---
 
+## Sat 13 Jun 2026 — Workshop #1 — assembly
+
+> Same day as the Day-0 block below; logged separately as the day's mode shifted from ordering to building.
+
+We're in-person at Workshop #1 — 3D printers humming, a full tool bench, mentors on hand. The plan flips from *ordering* to *assembly*: all kit is in hand and the Pi 5 rig is on the table in front of me, so today is hands-on.
+
+**Timeline revised** (Mo's confirmation): Workshop #1 today (13 Jun) · home/remote tinkering 14–20 Jun · Workshop #2 (integration) Sun 21 Jun · demo ≈28 Jun (was 7 Jul) · v0 freeze PROPOSED ~24 Jun (was 20 Jun, pending Mo's sign-off). Canonical dates live in [memory.md](memory.md).
+
+**First assembly tasks (today)**
+- Clip the active cooler onto the Pi 5.
+- Flash Pi OS to the microSD card.
+- Connect Camera Module 3 (Pi-5-compatible cable).
+- 3D-print a top-down camera mount.
+- First boot + grab a test photo.
+
+**Still open**
+- CV/embedded dev not yet confirmed — rig's here, but no one to own it from week two yet.
+- Ordered step-list for the dilution series still to write (Mo's bench intuition = ground truth).
+
+---
+
 ## Day 0 — Fri 13 Jun 2026
 
 **Done**

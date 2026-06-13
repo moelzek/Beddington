@@ -22,40 +22,48 @@
 | Deviation scope (v0) | **Timing only** (over/under-run). Reagent-order & skipped-step → v2 |
 | Compute | Pi 5 (4GB, on hand) + Camera Module 3, **CPU-first vision (OpenCV / MediaPipe)**. **No AI HAT+ for v0** — deferred; add 13 TOPS / Hailo-8L post-v0 only if CPU proves too slow. Cloud LLM optional, for prose only |
 
-## Kit list (order Day 0 — shipping is the silent killer)
+## Kit list (all ordered / in hand as of 13 Jun 2026)
 
-Pi 5 4GB (**have**) · Active cooler + 27W USB-C PSU (**have**) · Camera Module 3 ×2 (**have**) · 64GB A2 microSD (32GB **acquired**) · **Pi-5-compatible** camera cable (~£3) · top-down mount/clamp (~£15–30, single biggest reliability lever) · LED/ring light (~£15) · optional GPIO LED/buzzer (~£5). **Deferred (post-v0, only if CPU vision too slow): AI HAT+ 13 TOPS (~£70) or fallback Pi AI Camera IMX500 (~£70)** — don't buy upfront.
+**All kit ordered and physically in hand** — the Pi 5 rig is present at Workshop #1. Pi 5 4GB (**have**) · Active cooler + 27W USB-C PSU (**have**) · Camera Module 3 ×2 (**have**) · 64GB A2 microSD (32GB **acquired**) · **Pi-5-compatible** camera cable (~£3) · top-down mount/clamp (~£15–30, single biggest reliability lever) · LED/ring light (~£15) · optional GPIO LED/buzzer (~£5). **Deferred (post-v0, only if CPU vision too slow): AI HAT+ 13 TOPS (~£70) or fallback Pi AI Camera IMX500 (~£70)** — don't buy upfront.
 
 ## Scoring model — the three judging axes
 
-**Novelty · Deployment · Impact** (confirmed 13 Jun 2026). Supersedes the earlier four-axis framing (Innovation/Impact/Progress/Deployment) — "Progress" is no longer a scored axis and "Innovation" is now "Novelty". Every scoping call should defend at least one axis without breaking the 20 Jun freeze. Deployment is the highest-risk axis given the open hardware gaps.
+**Novelty · Deployment · Impact** (confirmed 13 Jun 2026). Supersedes the earlier four-axis framing (Innovation/Impact/Progress/Deployment) — "Progress" is no longer a scored axis and "Innovation" is now "Novelty". Every scoping call should defend at least one axis without breaking the v0 freeze (PROPOSED ~24 Jun — see Key dates). Deployment is the highest-risk axis given the open hardware gaps.
 
 ## Sprint roster — dated state (as of 13 Jun 2026, Day 0)
 
 | Item | Status |
 |---|---|
 | Both gates locked | ✅ Done |
-| Kit ordered | ⬜ Open — Mo to order today |
-| CV/embedded dev recruited | ⬜ Open — Mo to confirm today |
-| Ordered step-list for dilution series written | ⬜ Open — Mo to write today (his bench intuition = ground truth) |
-| Rig booted / camera live | ⬜ Day 1 |
-| Physical rig + footage | ⬜ Day 2 |
-| Perception working | ⬜ Day 3 |
-| State machine firing | ⬜ Day 4 |
-| Notion write + timing flag | ⬜ Day 5 |
-| Live integration | ⬜ Day 6 |
-| **v0 FROZEN** | ⬜ Day 7 = 20 Jun |
-| Demo deck + rehearsal | ⬜ 21 Jun–7 Jul |
+| Kit ordered | ✅ Done — all kit in hand; Pi 5 rig present at Workshop #1 (13 Jun) |
+| CV/embedded dev recruited | ⬜ Open — Mo has the rig but has not confirmed a developer |
+| Ordered step-list for dilution series written | ⬜ Open — Mo to write (his bench intuition = ground truth) |
+| Rig booted / camera live | ⬜ Open |
+| Physical rig + footage | ⬜ Open |
+| Perception working | ⬜ Open |
+| State machine firing | ⬜ Open |
+| Notion write + timing flag | ⬜ Open |
+| Live integration | ⬜ Workshop #2 (21 Jun) |
+| **v0 FROZEN** | ⬜ PROPOSED ~24 Jun (pending Mo's confirmation) |
+| Demo deck + rehearsal | ⬜ towards demo ~28 Jun |
 
 ## Open items Mo owns (manual, off-Claude)
 
-1. **Order the kit** — today.
-2. **Write the ordered step-list** for the dilution series — today; nobody else can write it.
-3. **Recruit/confirm the CV/embedded dev** who owns the rig from Day 7.
+1. ~~**Order the kit.**~~ ✅ Done — all kit ordered and in hand; Pi 5 rig present at Workshop #1.
+2. **Write the ordered step-list** for the dilution series — still to do; nobody else can write it.
+3. **Recruit/confirm the CV/embedded dev** who owns the rig — still open (Mo has the rig but no confirmed dev).
 
 ## Key dates
 
-13 Jun kickoff (Day 0) · **20 Jun v0 freeze** · 25 Jun Frontier Biotech (attention collapses) · 28 Jun submission · 7 Jul Demo Night.
+Revised timeline confirmed 13 Jun 2026 (supersedes the old 20 Jun freeze / 7 Jul Demo Night):
+
+- **Sat 13 Jun** — Workshop #1 (in-person build/assembly). Today.
+- **14–20 Jun** — Home / remote tinkering.
+- **Sun 21 Jun** — Workshop #2 (in-person integration).
+- **Wed 24 Jun** — **v0 FREEZE — PROPOSED, pending Mo's confirmation** (replaces the old 20 Jun freeze).
+- **≈ Sun 28 Jun** — **DEMO (approximate** — ~a week after the 21st; exact date/time to be confirmed**)**. Was 7 Jul.
+- **25 Jun Frontier Biotech** (attention collapses) *(review — may be superseded under the revised timeline; confirm with Mo)*.
+- **28 Jun submission** *(review — may be superseded under the revised timeline; confirm with Mo)*.
 
 ## Cross-links to persistent memory
 
@@ -86,3 +94,4 @@ Pi 5 4GB (**have**) · Active cooler + 27W USB-C PSU (**have**) · Camera Module
 - **2026-06-13** — **Tidied the directory.** Created `Archive/` (the 4 spent build-prompts now the skills exist, plus `skills-flomotion-cto-OLD/` — a divergent older flomotion-cto copy parked pending Mo's call on which is canonical) and `reviewer-skills/` (the 3 skill source dirs + 3 `.skill` packages, out of root). Renamed `Stuff/` → `hardware-photos/` and updated every reference (inventory + persistent `lab-witness-hardware-on-hand`). Moved a stray `ROADMAP.md` out of the deprecated inner `Labie/` up to root and added it to the CLAUDE.md router. Sandbox couldn't delete the now-empty `Labie/`, the empty `skills/`, or a stray `.DS_Store` — **Mo to remove those three in Finder.**
 - **2026-06-13** — Wired `ROADMAP.md` into `DEVLOG.md`'s header (the CLAUDE.md router already listed it at read-order #7), so every session auto-picks-up the forward plan and each day's logged outcome is checked against the current roadmap tier (A → B → C).
 - **2026-06-13** — **Git repo established at the project root `~/Code/Labie`** (Mo's call — an earlier repo had been initialised one level too deep in the deprecated inner `Labie/`). Restored the `.gitignore`, `git init` at root, initial commit `2617eb4` — 31 files tracked. The 21 `.JPG` hardware photos are correctly **git-ignored** (so they live on disk but aren't versioned); the 3 `.skill` packages **are** tracked. Empty `Labie/` + `skills/` dirs and a `.DS_Store` remain (sandbox can't delete) — **Mo to remove in Finder.** If a future git command reports a stale `.git/index.lock`, delete `~/Code/Labie/.git/index.lock`.
+- **2026-06-13** — **Timeline revised (Mo's confirmation).** Now a two-workshop structure: Workshop #1 (in-person build) Sat 13 Jun, home/remote tinkering 14–20 Jun, Workshop #2 (in-person integration) Sun 21 Jun, demo ≈ Sun 28 Jun (approx; was 7 Jul), v0 freeze PROPOSED Wed 24 Jun pending Mo's confirmation (was 20 Jun). Old milestones "Frontier Biotech 25 Jun" + "submission 28 Jun" annotated as review-may-be-superseded (not deleted). **All hardware now ordered and in hand** — the "Order the kit" item is closed and the Pi 5 rig is present at Workshop #1; Day-0 mode shifted from ordering to hands-on assembly at an in-person workshop with 3D printers, full tool bench, and mentors on site. **CV/embedded dev still unconfirmed** (Mo has the rig, no confirmed developer). Updated context.md + ROADMAP.md date/milestone refs to match; appended a Workshop #1 entry to DEVLOG.md.
