@@ -29,11 +29,11 @@ Work through the dimensions relevant to the suggestion under review. You don't h
 - Timing-only deviations are the v0 detection signal — is the clock source monotonic and is the timing measured where it's actually meaningful, not where it's convenient?
 
 ## 4. Resource limits on target hardware
-Target for v0: **Raspberry Pi 5, 4 GB RAM, CPU-first** (OpenCV / MediaPipe). **No AI HAT+ / Hailo on hand** — do not assume hardware acceleration is available unless Mo confirms he has it.
+Target for v0: **Raspberry Pi 5, 4 GB RAM + AI HAT+ 26 TOPS (Hailo-8), on hand & fitted.** Vision runs Hailo-accelerated detection; the state machine + timing logic run on the CPU. Hardware acceleration **is** available for v0 (the Hailo-8 NPU).
 - Will the model / pipeline fit in 4 GB alongside the OS? If you can't bound the memory, say so and make it a mentor question — don't assert a number you can't back.
-- Is the per-frame latency budget realistic on CPU? A model that needs a GPU/NPU to hit frame rate is a FAIL for v0 unless downgraded.
+- Is the per-frame latency budget realistic? The detector runs on the Hailo-8 (NPU); the CPU carries the state machine + timing. A detector that *only* hits frame rate on a bigger accelerator than the Hailo-8 is a FAIL for v0 unless downgraded.
 - Disk (32 GB microSD), thermal throttling under sustained load (Active Cooler is present), USB bandwidth if multiple cameras.
-- Flag anything that *only* works with the AI HAT as "needs hardware Mo doesn't currently have" → mentor question + post-v0 note.
+- The AI HAT+ (Hailo-8) **is** on hand — code may rely on it for v0. Flag anything needing *more* than the Hailo-8 (a discrete GPU, a second accelerator, >4 GB RAM) as "needs hardware Mo doesn't have" → mentor question.
 
 ## 5. Reality check — does the claimed thing exist?
 - Library/API: is the function, method, or argument real in the version being used? `picamera2`, `opencv-python`, `mediapipe`, the Notion SDK — signatures drift between versions. If unsure, flag it; do not reconstruct an API from memory (Rule #1).

@@ -52,7 +52,7 @@ To dispatch a reviewer, invoke its skill on the relevant slice and capture its *
 You issue **one** decision per run. Combine the reviewers' blocks with these rules:
 
 - **Hardware safety binds.** A `hardware-reviewer` Do-not-build on physical-safety grounds makes the whole run **Reject / Do-not-build**, regardless of the software verdict. Safety is never outvoted (Rule #2).
-- **Cross-domain conflicts resolve toward physical reality.** If a software choice the `software-reviewer` would Approve cannot be physically supported by the hardware (e.g. needs the AI HAT Mo doesn't have, or exceeds the power budget), that's a hardware-led **Do-not-build** — the binding constraint wins.
+- **Cross-domain conflicts resolve toward physical reality.** If a software choice the `software-reviewer` would Approve cannot be physically supported by the hardware (e.g. exceeds the Pi 5 + Hailo-8 compute/power budget, or needs a part not on hand), that's a hardware-led **Do-not-build** — the binding constraint wins.
 - **Worst verdict dominates** otherwise: any Reject → Reject; any Revise with no Reject → Revise; all Approve/Safe-to-build → Approve.
 - **Confidence carries through.** If a binding verdict rests on a low-confidence reviewer finding, the reconciled confidence is low — say so.
 - **Merge the conditions, fix-prompts, and mentor questions** from both reviewers; de-duplicate.

@@ -12,8 +12,11 @@ We're in-person at Workshop #1 — 3D printers humming, a full tool bench, mento
 
 **Timeline revised** (Mo's confirmation): Workshop #1 today (13 Jun) · home/remote tinkering 14–20 Jun · Workshop #2 (integration) Sun 21 Jun · demo ≈28 Jun (was 7 Jul) · v0 freeze PROPOSED ~24 Jun (was 20 Jun, pending Mo's sign-off). Canonical dates live in [memory.md](memory.md).
 
+**Compute call changed (Mo, today):** use the **AI HAT+ 26 TOPS (Hailo-8)** for v0. The HAT is in hand and fits on the Pi 5, so v0 vision runs Hailo-accelerated detection rather than CPU-first OpenCV (state machine + timing logic still on the CPU). This reverses the earlier "no AI HAT+ for v0" call — see [memory.md](memory.md).
+
 **First assembly tasks (today)**
 - Clip the active cooler onto the Pi 5.
+- Fit the **AI HAT+ (Hailo-8)** on top (stacks over the cooler via the GPIO header + standoffs; PCIe ribbon to the Pi).
 - Flash Pi OS to the microSD card.
 - Connect Camera Module 3 (Pi-5-compatible cable).
 - 3D-print a top-down camera mount.
@@ -32,7 +35,7 @@ We're in-person at Workshop #1 — 3D printers humming, a full tool bench, mento
 ## Day 0 — Fri 13 Jun 2026
 
 **Done**
-- Gates locked: mock bench (Blue Garage) · serial-dilution protocol · timing-only deviations · Pi 5 4GB + Cam Module 3, CPU-first (OpenCV/MediaPipe), **no AI HAT+ for v0** (deferred).
+- Gates locked: mock bench (Blue Garage) · serial-dilution protocol · timing-only deviations · Pi 5 4GB + Cam Module 3 + **AI HAT+ 26 TOPS (Hailo-8), used for v0** (Hailo-accelerated detection; state machine + timing on CPU). *(Updated 13 Jun: HAT now in hand — reverses the earlier CPU-first/no-HAT call.)*
 - Project operating system set up: CLAUDE.md, context.md, agents.md, skills.md, memory.md.
 - Judging rubric confirmed: Novelty · Deployment · Impact (was four axes).
 
@@ -43,4 +46,4 @@ We're in-person at Workshop #1 — 3D printers humming, a full tool bench, mento
 - Hardware gaps noted: microSD, Pi-5 camera cable, micro-HDMI (see hardware-inventory).
 
 **Tomorrow's single outcome (Day 1)**
-- Flash Pi OS, boot, camera live, run a classical OpenCV (or MediaPipe) detection demo on the bare Pi 5 — CPU-first, no AI HAT+. Pure "does the rig see anything" day.
+- Flash Pi OS, boot, camera live, run a Hailo-accelerated detection demo on the Pi 5 via the **AI HAT+ (Hailo-8)**. Pure "does the rig see anything" day.

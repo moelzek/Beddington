@@ -9,6 +9,7 @@ Catalogued from photos taken 13 Jun 2026. **The photos were renamed 13 Jun 2026*
 | Item | Plain-English: what it is | Role in Lab Witness |
 |---|---|---|
 | **Raspberry Pi 5 (4GB)** (`raspberry_pi_5_4gb_box`) | The tiny computer — the "brain". 4GB of memory. | The brain. Runs everything. 4GB is enough for v0. |
+| **AI HAT+ 26 TOPS (Hailo-8)** *(acquired after the 13 Jun photo catalogue)* | Add-on board with a Hailo-8 AI chip (26 TOPS) that runs the object-recognition maths fast. Stacks on top of the Pi 5. | **Runs v0 vision.** Hailo-accelerated object detection (e.g. YOLO via `picamera2`), freeing the CPU for the state machine + timing logic. |
 | **27W USB-C Power Supply, UK plug** (`raspberry_pi_27w_power_supply_box`) | The official Pi 5 charger. | Powers the Pi. Correct one — don't substitute a phone charger. |
 | **Active Cooler for Pi 5** (`raspberry_pi_active_cooler`) | A small heatsink + fan that clips on top of the Pi. | Stops the Pi overheating/slowing. Fit it before anything else. |
 | **2× Camera Module 3** (`raspberry_pi_camera_module_3_boxes`) | Two official Pi cameras (autofocus). | The "eyes" over the bench. Two means a spare — huge for a sprint. |
@@ -36,9 +37,9 @@ These are small/cheap but each can stop you dead. Resolve today.
    - *The gotcha:* your white HDMI cable (`hdmi_cable`) is full-size both ends. The **Pi 5 has tiny "micro-HDMI" sockets**, so a normal HDMI plug won't fit.
    - *Action:* either get a **micro-HDMI-to-HDMI adapter/cable**, OR skip the monitor entirely and control the Pi from your laptop ("headless" setup). Either works — decide with Flomotion.
 
-4. **AI HAT+ (the Hailo AI accelerator) — you don't appear to have one.**
+4. ~~**AI HAT+ (the Hailo AI accelerator) — you don't appear to have one.**~~ ✅ **SORTED — AI HAT+ 26 TOPS (Hailo-8) acquired and now used for v0 (13 Jun).**
    - *What it is:* an add-on board that speeds up the "recognise objects in the camera" maths.
-   - *Honest take:* for a simple dilution series you may **not need it** — the Pi 5 alone can likely run the vision with classical methods (OpenCV) or MediaPipe. Don't buy reflexively. Try CPU-only first; add the AI HAT+ only if it's too slow. **Open decision — good question for Flomotion + mentors.**
+   - *Decision (13 Jun, Mo's call):* the HAT is in hand and fitted to the Pi 5, so **v0 vision runs on it** (Hailo-accelerated detection) rather than CPU-only. This reverses the earlier "try CPU-first, defer the HAT" plan. Now listed under **Use now** above.
 
 5. **Top-down camera mount + a light.**
    - *Why:* fixing the camera directly overhead at a steady height, with steady lighting, is the single biggest thing that makes the vision reliable.

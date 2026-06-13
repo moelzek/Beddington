@@ -18,7 +18,7 @@
 | **Deployment** | Mock bench at Blue Garage as the spine; a friend's real bench as upside B-roll only | Controlled lighting + fixed angle from day one. Real bench never becomes a dependency that can collapse week two. |
 | **Protocol** | Serial dilution / pipetting series (one mix/incubation step included) | Most visually distinct, most repeatable, lowest CV risk, guaranteed working v0. Built-in timing hook. |
 | **Deviation scope** | **Timing only** for v0 (incubation/mix over- or under-run). Reagent-order & skipped-step → v2 roadmap slide | Timing deviation is nearly free once step-start is detected — a timer keyed to a state change, no extra ML. Still a genuinely "unprogrammed" decision judges can watch fire live. |
-| **Compute** | Pi 5 (4GB) + Camera Module 3, **CPU-first vision (OpenCV / MediaPipe)**. **No AI HAT+ for v0** — deferred (add 13 TOPS / Hailo-8L post-v0 only if CPU too slow). Cloud LLM for language generation (hybrid allowed) | Pi 5 4GB is what's on hand; classical CV on high-contrast labware is enough for a dilution series. Keeps v0 dependency-free; the NPU is a post-v0 speed lever, not a blocker. |
+| **Compute** | Pi 5 (4GB) + Camera Module 3 + **AI HAT+ 26 TOPS (Hailo-8), on hand & fitted — used for v0 vision** (Hailo-accelerated object detection; state machine + timing on CPU). Cloud LLM for language generation (hybrid allowed) | The HAT is now in hand, so v0 runs real-time Hailo detection — a stronger Deployment + Novelty story than CPU-only. Classical OpenCV on the bare Pi remains the fallback. *(Reverses the earlier CPU-first/no-HAT call — Mo's decision 13 Jun.)* |
 
 ---
 
@@ -47,8 +47,8 @@
 [Top-down camera] 
       │  frames
       ▼
-[Perception]  — labware/object detection (classical OpenCV on high-contrast labware;
-                AI HAT+/Hailo model is a deferred post-v0 option). Optional MediaPipe
+[Perception]  — labware/object detection on the AI HAT+ (Hailo-8): a small detector
+                (e.g. YOLO via the picamera2 Hailo examples). Optional MediaPipe
                 hand-presence as an "is the scientist active?" gate, NOT for fine action.
       │  detected objects + positions per frame
       ▼
@@ -75,13 +75,13 @@
 | Raspberry Pi 5 | **4GB (on hand)** | ~£60 | The brain. 4GB is enough for v0. |
 | Active cooler + 27W USB-C PSU | Official | ~£20 | Pi 5 throttles without cooling; don't skip. |
 | Camera Module 3 | Standard or Wide | ~£25 | Wide if your bench area is large. Autofocus helps. |
-| ~~AI HAT+~~ (deferred) | 13 TOPS / Hailo-8L | ~£70 | **Not for v0.** CPU-first (OpenCV/MediaPipe) on the bare Pi 5. Add post-v0 only if CPU is too slow; if so, the cheapest 13 TOPS is plenty. |
+| **AI HAT+ (on hand)** | **26 TOPS / Hailo-8** | ~£110 | **Used for v0.** Stacks on the Pi 5; runs the Hailo-accelerated detector. State machine + timing logic stay on the CPU. |
 | microSD | 64GB A2 | ~£10 | Flash Raspberry Pi OS (64-bit). |
 | Camera cable for Pi 5 | Correct narrow connector | ~£3 | Pi 5 uses a different camera connector — verify you get the Pi-5-compatible cable. |
 | **Top-down mount** | Cheap overhead arm / clamp / copy-stand | ~£15–30 | **Single biggest reliability lever.** Fix angle + height early. |
 | Controlled light | Small LED panel / ring light | ~£15 | Kill shadows and lighting variance on day one. |
 | Optional: LED or buzzer | GPIO indicator | ~£5 | The physical "Act" flourish for the demo. |
-| Deferred fallback: Pi AI Camera (IMX500) | On-sensor detection | ~£70 | Post-v0 option if CPU vision is too slow — runs detection on the sensor. Don't buy upfront. |
+| Unused alt: Pi AI Camera (IMX500) | On-sensor detection | ~£70 | Not needed now the AI HAT+ is in hand. On-sensor detection alternative if the HAT route ever fails. |
 
 **Order today.** Shipping is your hidden enemy against a 20 Jun deadline. If anything risks not arriving by ~16 Jun, source locally or have your CV dev bring a spare Pi.
 
@@ -92,7 +92,7 @@
 | Day | Date | Goal — one outcome per day |
 |---|---|---|
 | 0 | Fri 13 Jun | **Lock the two gates** (done). Order all kit. Recruit/confirm CV dev. Write the exact ordered step-list for your chosen dilution series (your bench intuition — this is the ground truth). |
-| 1 | Sat 14 Jun | Flash Pi OS, boot, camera working, run a classical OpenCV (or MediaPipe) detection demo on the bare Pi 5 (CPU-first; no AI HAT+). Pure "does the rig see anything" day. |
+| 1 | Sat 14 Jun | Flash Pi OS, boot, camera working, run a Hailo-accelerated detection demo on the Pi 5 via the **AI HAT+ (Hailo-8)**. Pure "does the rig see anything" day. |
 | 2 | Sun 15 Jun | Build the physical rig: top-down mount fixed, lighting fixed, bench area framed. Record 5–10 clips of the dilution series being performed. This is your dataset + demo footage. |
 | 3 | Mon 16 Jun | Perception: reliably detect the key labware (rack, tips, reservoir, tubes). Classical OpenCV first; NPU model only if needed. Output object positions per frame. |
 | 4 | Tue 17 Jun | State machine: map detected states → ordered protocol steps. Emit step-start/step-end with timestamps. Get it firing correctly on your recorded clips. |
@@ -114,7 +114,7 @@
    *Mitigation:* v0 frozen 20 Jun; rig owned by your CV dev from Day 7; week two is footage + slides + rehearsal only. The dev owning the hardware is non-negotiable — recruit for that.
 
 3. **Kit / shipping slips past the build window.**
-   *Mitigation:* order the remaining bits today; CV dev brings a backup Pi + camera; mock bench means zero dependency on an external lab's calendar. v0 runs classical OpenCV on the bare Pi 5 — no AI HAT+ dependency to slip.
+   *Mitigation:* CV dev brings a backup Pi + camera; mock bench means zero dependency on an external lab's calendar. Vision runs on the AI HAT+ (Hailo-8); if the HAT ever fails, classical OpenCV on the bare Pi 5 is the fallback.
 
 *(Honourable mention: lighting/angle variance — fully mitigated by fixing a top-down mount + light panel on Day 2 and never moving them.)*
 

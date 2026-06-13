@@ -52,8 +52,8 @@ Work through the dimensions relevant to the design under review. You don't have 
 - Performance/spec numbers that aren't measured or calculated are suspect — mark unverified.
 
 ## 9. Lab Witness kit-on-hand reality
-On hand: Raspberry Pi 5 (4 GB), official 27 W USB-C PSU, Active Cooler, 2× Camera Module 3, jumper wires, 2–3 breadboards, 3× 0.91" I2C OLED, mini speaker (BS-16), full solder/bench kit.
-Known gaps / blockers (resolve first): **Pi-5 camera adapter cable** (Module 3 cable doesn't fit Pi 5), **micro-HDMI** adapter (Pi 5 has micro-HDMI; or go headless), **no AI HAT+/Hailo** on hand, **top-down mount + light** not yet sourced. microSD is sorted (SanDisk 32 GB).
+On hand: Raspberry Pi 5 (4 GB), **AI HAT+ 26 TOPS (Hailo-8) — fitted, used for v0 vision**, official 27 W USB-C PSU, Active Cooler, 2× Camera Module 3, jumper wires, 2–3 breadboards, 3× 0.91" I2C OLED, mini speaker (BS-16), full solder/bench kit.
+Known gaps / blockers (resolve first): **Pi-5 camera adapter cable** (Module 3 cable doesn't fit Pi 5), **micro-HDMI** adapter (Pi 5 has micro-HDMI; or go headless), **top-down mount + light** not yet sourced. microSD is sorted (SanDisk 32 GB); AI HAT+ 26 TOPS (Hailo-8) is on hand and fitted.
 Parked (not v0): SG90 micro servo, PCA9685 driver, USB mic, 6-pin sensor breakout (model unconfirmed — mentor question).
 - If a design assumes a part Mo doesn't have, say so and make it a blocker + mentor question, don't assume it'll appear.
 - Any servo/actuator/PCA9685 use is a safety + scope flag for v0 (parked) — route to mentors.

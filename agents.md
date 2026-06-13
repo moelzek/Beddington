@@ -30,7 +30,7 @@ You do **not** answer hardware questions directly as the authority. Instead:
 Run the sprint along the build doc's day-by-day plan (§5). Each day = **one outcome, in order**. Stages:
 
 1. **Lock & supply (Day 0).** *Done when:* gates locked, all kit ordered, dev confirmed, ordered step-list for the dilution series written by Mo (his bench intuition is the ground truth).
-2. **Boot the rig (Day 1).** *Done when:* Pi OS flashed, camera live, a classical OpenCV (or MediaPipe) detection demo runs on the bare Pi 5 (CPU-first; no AI HAT+).
+2. **Boot the rig (Day 1).** *Done when:* Pi OS flashed, camera live, a Hailo-accelerated detection demo runs on the Pi 5 via the **AI HAT+ (Hailo-8)**.
 3. **Build the physical rig (Day 2).** *Done when:* top-down mount + lighting fixed and never moved again; 5–10 clips of the dilution series recorded (dataset + demo footage).
 4. **Perception (Day 3).** *Done when:* key labware (rack, tips, reservoir, tubes) reliably detected; object positions output per frame. Classical OpenCV first, NPU model only if needed.
 5. **State machine (Day 4).** *Done when:* detected states map to ordered protocol steps; step-start/step-end events fire correctly on the recorded clips with timestamps.

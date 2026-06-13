@@ -36,6 +36,16 @@ Each step is tagged **[DONE] / [NEXT] / [TODO]**. Keep it current as the build p
 4. Press each pin until it clicks through (firm but gentle; support the board from underneath).
 5. Plug the **4-pin fan lead** into the Pi's **FAN** connector (the small white socket near the 40-pin GPIO header). It only fits one way.
 
+## 2b. Fit the AI HAT+ (26 TOPS / Hailo-8)  [NEXT]
+
+The AI HAT+ stacks on top of the Pi 5 (over the Active Cooler) and runs the v0 vision detector.
+
+1. Power off / unplugged.
+2. Fit the supplied **GPIO stacking header** and **spacers/standoffs** so the HAT clears the Active Cooler fan.
+3. Seat the HAT on the 40-pin GPIO header; secure with the standoff screws.
+4. Connect the supplied **PCIe ribbon (FFC)** between the Pi 5's PCIe port and the HAT — contacts the right way round, latch closed. (The Hailo-8 module is pre-fitted to the HAT.)
+5. Drivers/firmware come later (section 6): on the booted Pi, `sudo apt install hailo-all`, reboot, then check with `hailortcli fw-control identify`.
+
 ## 3. Insert SD + first boot  [TODO]
 
 1. Insert the flashed microSD into the Pi.
@@ -59,8 +69,9 @@ Each step is tagged **[DONE] / [NEXT] / [TODO]**. Keep it current as the build p
 
 ## 6. Software / perception  [TODO — CV dev]
 
-- CPU-first vision (OpenCV / MediaPipe) on the Pi 5; no AI HAT+ for v0.
-- Detector → state machine → timing check → Notion write + on-screen deviation banner.
+- Vision runs on the **AI HAT+ 26 TOPS (Hailo-8)** — Hailo-accelerated object detection (e.g. YOLO via the `picamera2` Hailo examples / `hailo-rpi5-examples`). The state machine, timing check and Notion write stay plain Python on the CPU.
+- Software setup on the booted Pi: `sudo apt update && sudo apt full-upgrade`, then `sudo apt install hailo-all`, reboot, verify with `hailortcli fw-control identify`.
+- Detector (Hailo) → state machine → timing check → Notion write + on-screen deviation banner.
 - See [lab-witness-v0-build-doc.md](lab-witness-v0-build-doc.md) for the design.
 
 ---

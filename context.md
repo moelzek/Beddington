@@ -53,7 +53,7 @@ A Raspberry Pi over the bench that watches a scientist work, silently writes the
 
 ## Current status snapshot — 13 Jun 2026 (Day 0)
 
-- Both gates **locked** (deployment = mock bench at Blue Garage as spine; protocol = serial dilution; deviation = timing only; compute = Pi 5 4GB + Camera Module 3, **CPU-first (OpenCV/MediaPipe), no AI HAT+ for v0** — HAT deferred, add post-v0 only if CPU too slow).
+- Both gates **locked** (deployment = mock bench at Blue Garage as spine; protocol = serial dilution; deviation = timing only; compute = Pi 5 4GB + Camera Module 3 + **AI HAT+ 26 TOPS (Hailo-8), on hand & fitted — used for v0 vision** (Hailo-accelerated detection; state machine + timing on CPU). *Reverses the earlier "CPU-first, no AI HAT+ for v0" call — Mo's decision 13 Jun.*).
 - **Kit all in hand** (ordering done) — Day-0 mode is now hands-on assembly at Workshop #1 (in-person, with 3D printers, full tool bench, mentors on site). **Still open:** recruit/confirm the CV/embedded dev (rig is present but no confirmed dev); write the exact ordered step-list for the dilution series.
 - No code, rig, or footage exists yet. Build doc is written and is the source of truth: `lab-witness-v0-build-doc.md`.
 
@@ -62,5 +62,5 @@ Live, changing detail (kit order status, dev recruitment, daily progress) lives 
 ## Sources
 
 - Baker, M. "1,500 scientists lift the lid on reproducibility." *Nature* 533, 452–454 (2016). Verified figures: n = 1,576 researchers; **70%** failed to reproduce another scientist's experiments; **>50%** failed to reproduce their own; **~90%** acknowledged a crisis (only 3% said none). [nature.com/articles/533452a](https://www.nature.com/articles/533452a)
-- Raspberry Pi AI HAT+ (13 TOPS / Hailo-8L), product brief published Oct 2024 — confirmed: Hailo-8L, 13 TOPS INT8, Pi 5 host, handles object detection / segmentation / pose. *(Deferred for v0 — kept as the post-v0 acceleration option if CPU vision is too slow.)* [Product page](https://www.raspberrypi.com/products/ai-hat/) · [Docs](https://www.raspberrypi.com/documentation/accessories/ai-hat-plus.html)
+- Raspberry Pi AI HAT+ — the **26 TOPS variant (Hailo-8)** is the one on hand and **used for v0** (the 13 TOPS / Hailo-8L is the smaller sibling). Pi 5 host; handles object detection / segmentation / pose. Detection runs via the `picamera2` Hailo examples. [Product page](https://www.raspberrypi.com/products/ai-hat/) · [Docs](https://www.raspberrypi.com/documentation/accessories/ai-hat-plus.html)
 - `picamera2` Hailo examples (ship working detection + pose): [github.com/raspberrypi/picamera2](https://github.com/raspberrypi/picamera2)
