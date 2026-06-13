@@ -32,3 +32,30 @@ This folder is the **Lab Witness** hackathon build sprint. This file is a **rout
 - **The 20 Jun v0 freeze is sacred.** If a day slips, cut scope, never extend.
 
 > Persistent memory (`lab-witness-project`, `lab-witness-working-agreement`) also auto-loads each session and carries the gist even if these files are stale — but keep both in sync.
+
+---
+
+# Version control — instructions for Claude
+
+## Auto-commit after every task
+After you finish a unit of work for me, commit it automatically — don't wait to be asked.
+1. Stage everything:  git add -A
+2. Commit with a clear message using Conventional Commit prefixes (feat, fix, docs,
+   refactor, chore, test), e.g.  git commit -m "feat: add dual-camera capture loop"
+3. If an `origin` remote exists, push:  git push
+   If the push fails (offline / no upstream), keep the local commit and tell me.
+
+Rules:
+- Never commit secrets. .gitignore already excludes .env, keys, model weights, and
+  camera captures — keep it that way.
+- If nothing changed, don't commit. Never create empty commits.
+- One logical change per commit where practical.
+- If a commit is blocked by a stale .git/index.lock, remove it
+  (rm -f .git/index.lock .git/HEAD.lock) and retry once.
+
+## Sign off when done
+End every finished task with this, so I know it's safe to walk away:
+
+✅ Done & committed — <short-hash> "<message>"
+Saved in git. Safe to clear the terminal or close the window.
+(Say whether it was pushed to origin, or committed locally only.)
