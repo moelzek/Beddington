@@ -42,14 +42,31 @@ After you finish a unit of work for me, commit it automatically — don't wait t
 1. Stage everything:  git add -A
 2. Commit with a clear message using Conventional Commit prefixes (feat, fix, docs,
    refactor, chore, test), e.g.  git commit -m "feat: add dual-camera capture loop"
-3. If an `origin` remote exists, push:  git push
-   If the push fails (offline / no upstream), keep the local commit and tell me.
+3. Get the commit onto `main` (the source of truth) and up to GitHub:
+   - **If you're on `main`** (e.g. working in `~/Code/Labie`):  git push
+   - **If you're in a worktree on a `claude/*` branch** (the path contains
+     `.claude/worktrees/`): push the commit straight onto main without
+     disturbing the main checkout —
+         git push origin HEAD:main
+     The local `~/Code/Labie` main will sit behind origin/main until you run
+     `git pull` there; that's normal and fine.
+   - **If that push is rejected** because main moved on, reconcile and retry once:
+         git fetch origin && git rebase origin/main && git push origin HEAD:main
+     If it then hits conflicts or still fails, STOP — keep the local commit,
+     never force-push, and tell me so I can sort it out.
+   - If there's no network or no `origin`, keep the local commit and tell me.
+
+Why: sessions are often launched in a throwaway worktree on a `claude/*` branch.
+A plain `git push` there would publish a stray branch and never update `main`.
+Pushing to `HEAD:main` keeps everything converging on one source of truth.
 
 Rules:
 - Never commit secrets. .gitignore already excludes .env, keys, model weights, and
   camera captures — keep it that way.
 - If nothing changed, don't commit. Never create empty commits.
 - One logical change per commit where practical.
+- Never force-push `main` (no `--force` / `-f`). The `claude/*` worktree branches
+  are throwaway; `main` is the source of truth.
 - If a commit is blocked by a stale .git/index.lock, remove it
   (rm -f .git/index.lock .git/HEAD.lock) and retry once.
 
