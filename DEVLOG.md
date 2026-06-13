@@ -23,16 +23,9 @@ We're in-person at Workshop #1 — 3D printers humming, a full tool bench, mento
 - CV/embedded dev not yet confirmed — rig's here, but no one to own it from week two yet.
 - Ordered step-list for the dilution series still to write (Mo's bench intuition = ground truth).
 
-**Live build log (in progress):**
-- Set up the microSD card on the laptop and flashed **Raspberry Pi OS (64-bit)** using Raspberry Pi Imager v2.0.7, targeting the SanDisk microSD.
-- In Imager customisation, configured **Wi-Fi** and enabled **SSH** (Remote access). Hostname/username set to `labwitness`. ⚠️ Password may not have been set — to verify at first connection; if missing, re-flash or add a password (cheap fix).
-- Decided to run the Pi **headless** (no monitor): the only HDMI cable on hand is full-size, but the Pi 5 needs micro-HDMI — so control will be over wifi via SSH.
-- SD card write started (watched progress in Imager). Next: fit the Active Cooler to the Pi 5 board.
+**Progress so far:** microSD flashed with Raspberry Pi OS (64-bit); Wi-Fi + SSH configured; running **headless** (no micro-HDMI on hand, so controlled from the laptop over Wi-Fi). Active cooler going on next. Full step-by-step lives in [BUILD.md](BUILD.md).
 
-**Open flags / to-verify:**
-- Pi 5 camera adapter cable (22-pin → 15-pin) likely still needed — Camera Module 3 ships only the 15-pin cable, which does not fit the Pi 5. Verify when the camera box is opened.
-- micro-HDMI gap (only full-size HDMI present) → running headless for now.
-- "Active Cooler" box carried a contradictory sticker labelling it a "Case" (CM5A221) — confirm it's the fan cooler when opened.
+**Blocked / to-verify:** Pi-5 camera adapter cable (22→15 pin) likely still needed (verify on opening the camera box); SSH password to confirm at first boot; confirm the cooler part is the fan cooler, not a passive case.
 
 ---
 

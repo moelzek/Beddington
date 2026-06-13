@@ -13,6 +13,7 @@ This folder is the **Lab Witness** hackathon build sprint. This file is a **rout
 5. **[lab-witness-v0-build-doc.md](lab-witness-v0-build-doc.md)** — the detailed build bible (historical source doc; where it disagrees with memory.md on mutable facts, memory.md is current).
 6. **[DEVLOG.md](DEVLOG.md)** — daily build journal (what happened at the bench each day; also Demo Night narrative material). Append one block per day; don't restate canonical facts here.
 7. **[ROADMAP.md](ROADMAP.md)** — forward plan: Tier A (v0 core) / B (polish) / C (narrative) and who/what builds each piece through Demo Night. Sequences the work; `memory.md` holds live status.
+8. **[BUILD.md](BUILD.md)** — the **rig build runbook**: the reproducible, step-by-step way to assemble + flash/boot the hardware, each step tagged DONE/NEXT/TODO. This is the *how* (DEVLOG is the *what happened*, lab-witness-v0-build-doc.md is the *why*). Hand this to the CV/embedded dev for the rig.
 
 ## Supporting files & folders (in this folder, not part of the operating system)
 
