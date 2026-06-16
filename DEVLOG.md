@@ -4,6 +4,24 @@ Reverse-chronological. One block per day: **what got done · what's blocked · t
 
 ---
 
+## Sun 14 Jun 2026 — software skeleton (reusing Hatch)
+
+**Done**
+- Stood up the Lab Witness code skeleton, mirroring the build-doc §3 architecture (Camera → Perception → State machine → Decision → Notion/Flag). Package `lab_witness/`: `protocol.py` (the timing state machine), `runtime.py` (perceivers + act sinks + the loop).
+- **Reused the Hatch decision kernel.** `BrainPerceiver` wraps `hatch-brain`'s `Brain.decide(frame, policy)` — one whitelist action per protocol step — so the perception spine isn't rebuilt from scratch. `pyproject.toml` depends on `hatch-brain` from the Hatch repo (ADR-0009: the brain is a reusable, archetype-agnostic kernel).
+- **Demoable with no hardware:** `examples/serial_dilution.py` replays a dilution where the incubation over-runs; the live deviation flag fires mid-step at 63s. `tests/test_protocol.py` — 5 deterministic timing tests, all passing.
+- The hard CV is decoupled behind a one-method `Perceiver` interface, so the CV dev's classical-OpenCV path drops in without touching the loop (de-risks the single biggest reliability lever).
+
+**Blocked / open**
+- CV/embedded dev still unconfirmed (owns the rig from Day 7 — non-negotiable).
+- Notion write + on-screen banner are stubs (`NotionNotebook`, `ConsoleFlag`) pending the connector + rig.
+- Merge Hatch PR #1 before relying on `BrainPerceiver` live — it carries the per-action persistence fix the multi-step use needs.
+
+**Tomorrow's single outcome**
+- Per the day-by-day plan: boot the Pi, camera live, a classical OpenCV detection demo on the bare Pi 5 — the software skeleton is ready to receive it.
+
+---
+
 ## Sat 13 Jun 2026 — Workshop #1 — assembly
 
 > Same day as the Day-0 block below; logged separately as the day's mode shifted from ordering to building.
