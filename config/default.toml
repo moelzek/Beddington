@@ -1,0 +1,14 @@
+[detection]
+# YAMNet scores are model scores, not calibrated medical probabilities.
+threshold = 0.40
+sustained_seconds = 1.5
+release_seconds = 1.0
+notification_cooldown_seconds = 30.0
+
+[notifications]
+desktop = true
+
+[llm]
+enabled = false
+base_url = ""
+model = ""

@@ -2,7 +2,7 @@
 
 > Forward sequence only. Live state and decisions are in [memory.md](memory.md). Build one tier at a time; later tiers require Mo’s explicit approval.
 
-## Tier 0 — audio spine (active)
+## Tier 0 — audio spine
 
 **Outcome:** a complete hardware-free nightly loop.
 

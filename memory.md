@@ -12,11 +12,12 @@
 
 ## Current status
 
-- **Active tier:** Tier 0 — audio spine.
+- **Active tier:** Tier 0 — audio spine, implemented and acceptance-tested locally. Stop here until Mo explicitly approves Tier 1.
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
-- **Code state:** no application code yet at the documentation-pivot commit.
+- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
-- **Next gate:** run an included sample recording on a laptop and produce detected cry events, a night log, a morning digest, and one debounced sustained-cry notification.
+- **Acceptance result:** the included CC0 sample produces one sustained-cry episode, one notification, `events.json`, `night-log.txt`, and `morning-digest.txt`; the hardware-free test suite passes.
+- **Next gate:** Mo reviews Tier 0 and explicitly decides whether to begin Tier 1.
 
 ## Locked decisions
 
@@ -105,3 +106,4 @@ On a laptop with no hardware attached:
 ## Changelog
 
 - **2026-06-18** — Pivoted the repository from Lab Witness to **Lullaby** as the main project. Archived Lab Witness build documents, prompts, reviewer skills, and devlog without deleting them. Promoted the baby-monitor evaluation and build plan into project-core documents. Migrated reusable hardware facts, locked privacy/safety/LLM boundaries, and set Tier 0 audio as the only active build scope.
+- **2026-06-18** — Built and acceptance-tested Tier 0: official YAMNet TFLite baby-cry scoring, laptop WAV and optional live microphone adapters, deterministic sustained-cry/release/cooldown logic, local JSON and readable logs, rule-based morning digest, console/desktop notification, optional derived-text-only LLM polish, public CC0 sample audio, and hardware-free tests. Tier 1 remains blocked pending Mo’s explicit approval.
