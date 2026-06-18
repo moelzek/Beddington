@@ -1,3 +1,5 @@
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
+
 # Lab Witness — v0 Build Bible
 
 **One-liner:** A Pi over the bench that watches a scientist work, silently writes the lab notebook for them, and flags when reality drifts from the protocol.

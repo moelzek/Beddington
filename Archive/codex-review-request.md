@@ -1,3 +1,5 @@
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
+
 # Codex review request — Lab Witness reviewer skills
 
 **Ask:** Give an independent, adversarial review of three coordinated Claude *skills* I built. I want a second opinion — find what's wrong, not reassurance. Claude has already reviewed them (findings at the bottom); **verify those independently and tell me what Claude missed.**

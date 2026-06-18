@@ -1,26 +1,23 @@
-# meshmesh baby‑monitor — evaluation & reviewer gate
+# Lullaby — baby-monitor evaluation and reviewer gate
 
-> Standalone evaluation doc on branch `claude/meshmesh-baby-monitor-eval-x8pkue`.
-> Self‑contained — does **not** touch any Lab Witness file. Companion: [meshmesh-baby-monitor-build-plan.md](meshmesh-baby-monitor-build-plan.md).
+> Canonical evaluation for the repository pivot from Lab Witness to Lullaby.
+> Companion: [baby-monitor-build-plan.md](baby-monitor-build-plan.md).
 > British English. Written for Mo (physician‑scientist, new to hardware, ADHD, newborn = live test subject).
 
-## ⚠️ Framing assumption (correct me if wrong)
-"meshmesh" is treated here as a **separate / personal build**, ~1‑week scope, using your newborn as the live test subject — **not** a pivot off Lab Witness (whose 24 Jun v0 freeze stays sacred). If it's actually a pivot, the opportunity‑cost call below changes.
-
-Two terms decoded: **"claw"** = Claude (cloud LLM); **"hermes"** = a local open LLM (Nous Hermes / Llama‑class). Recommendation lands on **Claude in the cloud, event‑driven** (see §3).
+The pivot is now decided: Lullaby is the main project. The build remains local-first and works without an LLM; an optional cloud model may polish derived text only.
 
 ---
 
 ## TL;DR verdict
-- **As a personal build: strong.** You own ~90% of the hardware and have a live subject. Genuinely motivating, very demoable.
+- **As the main build: strong.** You own most of the hardware and have direct access to the real problem. Genuinely motivating and demoable.
 - **As a competition entry: great deployment, weak novelty as "a baby monitor," real downside risk.** Cry detection is crowded — commercial (Cubo AI, Nanit, ChatterBaby) *and* DIY (multiple open‑source Pi builds).
-- **The defensible reframe = your Lab Witness bet pointed at a cot:** a passive **multimodal companion that logs the night and surfaces best‑guess insights**, with an honest *"assistive notebook, not a medical guardian"* line — plus a **proactive soothe loop** as the wow. The **plushie form factor** (OLED eyes, talk‑back speaker) is what lifts novelty and softens the surveillance vibe.
+- **The defensible product:** a passive **multimodal companion that logs the night and surfaces best‑guess insights**, with an honest *"assistive notebook, not a medical guardian"* line — plus a **proactive soothe loop** as the wow. The companion form factor (OLED eyes, talk‑back speaker) lifts novelty and softens the surveillance vibe.
 - **Reviewer gate (your own skills): REVISE / Safe‑to‑build‑conditional.** Build Tier 0–1 now; gate Tiers 2–5 on the safety/framing conditions in §8.
 
 ---
 
 ## 1. Hardware fit — excellent (the strongest argument *for*)
-You already own most of the bill of materials, and the bits "parked" for Lab Witness become the heroes:
+You already own most of the bill of materials:
 
 | Need | On hand | Note |
 |---|---|---|
@@ -53,14 +50,14 @@ Two **different** problems — conflating them is the classic trap:
 
 ---
 
-## 3. The LLM / proactive layer ("claw / hermes") — where novelty lives
+## 3. The optional LLM / proactive layer — where novelty lives
 Reactive "cry → ping" is what everyone ships. The value is the **reason + log + proactive** layer:
 1. **Night log / digest (your wheelhouse).** "3 wakings, longest settle 12 min, first cry 23:40" → a nightly Notion entry, reusing your **Granola→Notion** pipeline.
-2. **Multimodal fusion (the real LLM edge).** cry + time‑since‑feed + video (rooting/eyes‑open) + radar movement → *"likely hunger — 4h since feed."* This is where an LLM beats a classifier.
+2. **Multimodal fusion (later and optional).** cry + time-since-feed + derived video/radar events may support *"likely hunger — best guess."* Deterministic rules should be tried first; an LLM may help explain the evidence but must not create the detection.
 3. **Proactive soothe ladder.** detect → auto‑play lullaby/white‑noise/**parent's voice** → wait → escalate to phone only if it persists. The demo "wow."
 4. **Natural‑language Q&A.** "How did she sleep?"
 
-**Brain choice:** **Claude (Haiku‑class), cloud, event‑driven** — cheap (fires on events), zero local RAM, and you send **features/text, not raw infant audio**. Local **Hermes/Llama** only buys fully‑offline privacy at the cost of quality + RAM pressure on 4GB + setup time — not worth it for a 1‑week demo (but "runs offline" is a good story if privacy is judged). Mirrors Lab Witness's *local‑first inference, cloud LLM for prose only.*
+**LLM choice:** none is required. If enabled, use a provider-neutral, event-driven adapter configured through environment variables and send **features/text, not raw infant audio**. A local model remains a later privacy option, but the 4GB Pi makes model size and integration cost real constraints.
 
 ---
 
@@ -95,7 +92,7 @@ The 4GB Pi 5 is an **orchestrator/hub, not the workhorse** — load is distribut
 
 ## 7. Reviewer pass (your own three gates, applied)
 
-> Procedures from `reviewer-skills/*` applied directly (sanctioned by `flomotion-cto/SKILL.md` when the sibling skills can't be invoked). Guardrails held: **#1 no fabricated specs · #2 escalate safety · #3 stay in scope · #4 no rubber‑stamp.** "Freeze" reinterpreted as the meshmesh ~1‑week scope.
+> The historical review procedures now preserved under `Archive/reviewer-skills/` informed this gate. Guardrails held: **#1 no fabricated specs · #2 escalate safety · #3 stay in scope · #4 no rubber-stamp.**
 
 ### 7a. hardware‑reviewer
 **Setpoint:** a plush companion housing sensors that watch a sleeping baby and surface insights. **Done‑when:** sensors read reliably, nothing overheats, nothing unsafe is near the cot.
@@ -162,7 +159,7 @@ flowchart TD
   V --> T2[Tier 2-5: GATED on conditions]
 ```
 
-**Reconciled verdict: REVISE / Safe‑to‑build‑conditional.** Build **Tier 0–1** (audio + NoIR camera + hunger inference + log/notify) now. **Tiers 2–5 gated** on:
+**Reconciled verdict: REVISE / Safe‑to‑build‑conditional.** Build **Tier 0** (audio detection + local log/digest/notification) now. Tier 1 adds soothing; camera begins at Tier 2. **Tiers 2–5 remain gated** on:
 1. Hot compute in a **vented base**, not the plush.
 2. **Breathing = non‑medical insight only**, mentor sign‑off, never an alarm.
 3. **No raw audio/video leaves the device.**
@@ -178,14 +175,14 @@ flowchart TD
 
 ---
 
-## 8. Scorecard (Lab Witness rubric — confirm meshmesh's)
+## 8. Scorecard
 | Axis | Score | Why |
 |---|---|---|
 | **Novelty** | Low as "baby monitor" → **Med‑high** as plushie multimodal LLM companion + proactive soothe + honest best‑guess | Category crowded; framing + form factor are everything |
-| **Deployment** | **High** | Live baby + most hardware; "in the wild" is literally your nursery — a *better* deployment story than Lab Witness |
+| **Deployment** | **High** | Most hardware is on hand and the real environment is available once the hardware-free spine is stable |
 | **Impact** | **Medium** | Real parental pain (anxiety, paywalls, privacy) — must avoid the medical‑impact trap |
 
-**Net:** a genuinely good, demoable, personally‑motivated build with a stronger deployment story than Lab Witness but weaker novelty unless framed well. **Build it if meshmesh is separate/personal; do NOT pivot off Lab Witness mid‑sprint for it.**
+**Net:** a genuinely good, demoable, personally motivated main project. Its defensibility comes from privacy, honest framing, overnight aggregation, and the soothe-before-escalation loop rather than from cry detection alone.
 
 ---
 

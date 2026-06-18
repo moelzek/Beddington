@@ -1,3 +1,5 @@
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
+
 # BUILD.md — Lab Witness rig build runbook
 
 **Purpose:** the reproducible, step-by-step way to assemble and boot the Lab Witness rig from scratch — so Mo (or the CV/embedded dev taking over from week two) can rebuild it without guesswork. This is the **"how"**. The **"what happened"** lives in [DEVLOG.md](DEVLOG.md); the design **"what & why"** lives in [lab-witness-v0-build-doc.md](lab-witness-v0-build-doc.md); canonical status/dates live in [memory.md](memory.md).

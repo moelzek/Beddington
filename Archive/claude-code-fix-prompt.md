@@ -1,3 +1,5 @@
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
+
 # Fix prompt — Lab Witness reviewer skills
 
 **Paste this into Claude Code, run from `~/Code/Labie`.**
