@@ -1,20 +1,21 @@
-# DEVLOG — Lullaby
+# DEVLOG — Lullaby build journal
 
-Reverse-chronological build journal. Canonical decisions live in [memory.md](memory.md).
+Reverse-chronological. Keep entries short: what changed, what was learned, what is next. Canonical decisions and status belong in [memory.md](memory.md).
 
-## Fri 19 Jun 2026 — Pivot Cleanup
+---
 
-**Done**
-- Confirmed the project pivot: Labie is now **Lullaby**.
-- Marked Lab Witness as retired/archive material.
-- Reframed the active product around privacy-first baby monitoring.
-- Replaced the active Python skeleton with deterministic local-monitor code.
+## 18 June 2026 — project pivot
 
-**Guardrails now active**
-- Raw audio/video stays on-device.
-- No medical claims.
-- Deterministic detection works with the LLM off.
-- Hot compute stays in a vented base beside the cot, not in the cot.
+Lab Witness is retired as the main project and preserved under `Archive/`. The repository is now Lullaby, a privacy-first baby-monitor companion.
 
-**Next outcome**
-- Decide the first demo surface: CLI, local web UI, or hardware rig.
+The active scope is Tier 0 only: process sample audio or a microphone locally, detect sustained crying with YAMNet, write a night log, generate a rule-based morning digest, and send one debounced notification. Development starts on a laptop with no nursery hardware attached.
+
+**Next single outcome:** run the included sample recording end-to-end and open the generated log and digest.
+
+### Tier 0 completed
+
+The hardware-free spine now runs end-to-end. The public CC0 sample triggers one sustained-cry event and one console notification, then writes `events.json`, `night-log.txt`, and `morning-digest.txt`. Tests use injected detector scores, so they stay fast and offline.
+
+YAMNet remains a trigger, not a source of truth: its output is logged as an uncalibrated model score and must be tuned against the real room. No private recording or model weight is committed.
+
+**Next single outcome:** Mo reviews the Tier 0 outputs and decides whether Tier 1 should start.

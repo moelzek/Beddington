@@ -1,6 +1,4 @@
-# ARCHIVED — Lab Witness v0 Build Bible
-
-> Lab Witness is retired. This file is preserved for historical reference only and is not active Lullaby scope. Current facts live in [memory.md](memory.md).
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
 
 # Lab Witness — v0 Build Bible
 

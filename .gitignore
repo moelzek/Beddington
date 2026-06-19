@@ -17,6 +17,7 @@ ENV/
 # --- Secrets / config ---
 .env
 .env.*
+!.env.example
 *.local
 secrets.*
 *.key
@@ -33,7 +34,7 @@ config.local.*
 *.bin
 weights/
 
-# --- Captures / media (Lab Witness camera output) ---
+# --- Private captures / media ---
 captures/
 recordings/
 *.mp4
@@ -44,10 +45,13 @@ recordings/
 *.png
 !docs/**/*.png
 !docs/**/*.jpg
+!sample_data/**/*.wav
 
 # --- Logs / data ---
 *.log
 logs/
+output/
+.gbrain-source
 data/raw/
 *.sqlite
 *.db

@@ -1,42 +1,51 @@
-# context.md — Lullaby (WHAT & WHY)
+# context.md — Lullaby: what and why
 
-Durable orientation for anyone working on Lullaby. Live status and decisions live in [memory.md](memory.md).
+> Durable orientation. Live state and locked decisions are in [memory.md](memory.md).
 
-## One-Line Purpose
+## One-line purpose
 
-A privacy-first baby-monitor companion that helps caregivers know when to check the baby, while keeping raw audio/video local and avoiding medical claims.
+Lullaby is a privacy-first baby-monitor companion that turns local observations into a useful overnight pattern and, in later tiers, tries a gentle soothe step before escalating to a parent.
 
-## Pitch
+## The problem
 
-Most baby monitors stream raw feeds and leave tired parents to interpret everything. Lullaby turns local observations into calm, bounded check prompts: "baby is fussing", "camera view is blocked", "please check". It is a companion, not a clinician.
+A simple “the baby is crying” alert often repeats something a parent can already hear. The more useful jobs are:
 
-## Product Boundaries
+1. **Aggregate:** reconstruct the night into a pattern a sleep-deprived parent cannot reliably perceive at 03:00.
+2. **Act:** attempt a configurable soothe step before escalating, while keeping the parent in control.
 
-- **Local-first:** raw audio/video stays on-device.
-- **Deterministic-first:** core detection and alerting work without an LLM.
-- **Caregiver agency:** alerts prompt a human check; they do not assert safety or danger.
-- **No medical claims:** no diagnosis, treatment, SIDS-prevention, breathing-health, or "all clear" guarantees.
-- **Safe hardware posture:** hot compute lives in a vented base beside the cot, not inside the cot.
+Tier 0 proves the first job with cry events, a night log, and a morning digest. Tier 1 introduces the second.
 
-## Domain Terms
+## What Lullaby is
 
-- **Observation:** simple local signal from a perceiver, such as sound state, motion state, baby presence, view clarity, or optional room comfort values.
-- **Policy:** user-configured duration thresholds for when an observation should become a check prompt.
-- **Deterministic alert:** a rule-based prompt that fires without cloud inference.
-- **Journal:** local text log of status and check events. It can later be summarised, but raw media is not sent to a cloud model.
+- An assistive night notebook.
+- A local-first event detector and logger.
+- A hardware-free-first software project that later deploys to a Raspberry Pi 5.
+- A deterministic application with an optional LLM for prose polish only.
 
-## Active Architecture
+## What Lullaby is not
 
-```text
-[Camera/mic/local replay] -> [Perceiver] -> [Observation]
-                                      -> [LullabyMonitor deterministic rules]
-                                      -> [Local journal]
-                                      -> [Caregiver check alert]
-```
+- Not a medical device or diagnostic system.
+- Not a SIDS, apnoea, fever, or vital-sign monitor.
+- Not a replacement for adult supervision or approved monitoring equipment.
+- Not a system that uploads nursery audio or video.
+- Not a source of certainty about why a baby is crying.
 
-## What Could Go Wrong
+## Product principles
 
-- Hardware gets placed too close to the cot: reject and move compute to a vented base beside the cot.
-- Copy drifts into medical reassurance: remove it.
-- LLM becomes required for alerts: cut it; deterministic rules must remain primary.
-- Raw media leaves the device: block it unless Mo explicitly changes the privacy boundary.
+- **Privacy is architectural:** raw audio/video stays on the device.
+- **Honesty beats theatre:** uncertain interpretations are labelled best guesses with confidence.
+- **Useful before clever:** Tier 0 works without a camera, cloud account, or connected hardware.
+- **Safe physical design:** hot compute is vented and separate from any soft companion; nothing enters the cot.
+- **Small replaceable adapters:** file inputs and mocks on a laptop swap for mic, picamera2, Hailo, or sensors later.
+
+## Intended architecture
+
+- Audio cry detection runs locally on CPU using YAMNet behind a detector interface.
+- Video later runs locally through OpenCV/file adapters on a laptop and picamera2/Hailo on the Pi.
+- Radar later remains its own ESP32 subsystem and sends small derived readings over Wi-Fi/MQTT.
+- Logs and summaries are local by default.
+- An optional cloud LLM receives only derived events/features/short text and never controls detection or timing.
+
+## Success for Tier 0
+
+A beginner can follow the README on a laptop, process an included sample `.wav`, see sustained-cry events, receive one debounced notification, and open both the night log and morning digest. No hardware or API key is attached.

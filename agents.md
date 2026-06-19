@@ -1,46 +1,42 @@
-# agents.md — Lullaby (HOW to operate)
+# agents.md — how to work on Lullaby
 
-This is the operating manual. Pairs with [context.md](context.md), [skills.md](skills.md), and [memory.md](memory.md).
+> Operating manual. Project facts live in [memory.md](memory.md).
 
-## Mission
+## Working style
 
-Help Mo turn Labie into **Lullaby**, a privacy-first baby-monitor companion, without drifting into unsafe hardware choices or medical claims.
+- Explain software and hardware in plain English. Define jargon briefly.
+- Keep steps small and ADHD-friendly.
+- After each completed step, state exactly what Mo should run and what he should see.
+- Prefer simple, reliable code over clever abstractions.
+- Use British English in project prose.
+- Flag uncertainty. Do not invent hardware specifications, model performance, or safety claims.
 
-## Voice Rules
+## Build discipline
 
-- British English.
-- ADHD-friendly: one decision at a time, short sections, direct next action.
-- Explain hardware as if Mo is a beginner.
-- Be blunt about scope and safety risk.
-- Flag uncertain hardware decisions for Flomotion or human hardware mentors; do not bluff.
+1. Read `memory.md` and check the active tier.
+2. Work only inside that tier.
+3. Develop and test with files/mocks before relying on Pi hardware.
+4. Put hardware-specific behaviour behind an adapter interface.
+5. Keep detection/timing deterministic and testable.
+6. Keep cloud/LLM behaviour optional and disabled by default.
+7. Run focused tests and one end-to-end sample before committing.
+8. Update `memory.md` and its changelog when status or decisions change.
+9. Commit each logical unit. Never include secrets or private recordings.
 
-## Hard Guardrails
+## Non-negotiable review checks
 
-- No medical claims. Never say Lullaby diagnoses, treats, predicts, prevents SIDS, verifies breathing health, or proves the baby is safe.
-- Raw audio/video stays on-device.
-- Deterministic detection must work with the LLM off.
-- Hot compute stays in a vented base beside the cot, not in the cot.
-- Cloud LLMs may only see redacted text events if Mo explicitly approves.
-- Lab Witness is retired. Do not reuse its lab-bench scope unless Mo explicitly asks.
+- No medical or safety claims.
+- No raw audio/video off-device.
+- No unlabelled inference presented as fact.
+- No hot compute in a plush toy or cot.
+- No later-tier work without Mo’s explicit approval.
+- No required API key for core operation.
 
-## Hardware Loop
+## Definition of done for a user-facing step
 
-For wiring, power, thermals, camera placement, cot-adjacent mounting, or enclosure choices:
+Mo has:
 
-1. Draft a sharp prompt for Flomotion.
-2. Ask Mo to paste the answer back.
-3. Review it against the Lullaby guardrails.
-4. Escalate risky/uncertain calls to a human hardware mentor.
-
-## Build Cadence
-
-1. Confirm the current single outcome.
-2. Cut scope before adding dependencies.
-3. Keep the mock software path working even if hardware slips.
-4. Verify after each meaningful change.
-
-## Living-Document Protocol
-
-- `memory.md` is canonical for mutable facts.
-- Update `memory.md` and persistent memory when a decision changes.
-- If another doc disagrees with `memory.md`, fix the doc or flag the drift.
+1. one command to run;
+2. a short description of the expected output;
+3. a clear next action if it works;
+4. a useful error message or troubleshooting note if it fails.

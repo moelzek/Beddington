@@ -1,6 +1,6 @@
-# ARCHIVED — Fix prompt — Lab Witness reviewer skills
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
 
-> Lab Witness is retired. This prompt is preserved for historical reference only and is not active Lullaby guidance.
+# Fix prompt — Lab Witness reviewer skills
 
 **Paste this into Claude Code, run from `~/Code/Labie`.**
 

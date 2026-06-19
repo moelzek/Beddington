@@ -1,6 +1,6 @@
-# ARCHIVED — Flomotion hand-off — 2026-06-13 (Day 0)
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
 
-> Lab Witness is retired. This hand-off prompt is preserved for historical reference only and is not active Lullaby hardware guidance.
+# Flomotion hand-off — 2026-06-13 (Day 0)
 
 **Purpose:** kickoff prompt to start the Lab Witness build with Flomotion (external hardware oracle). Scope = get from boxed kit → camera reliably seeing the bench. Beginner-level, one step at a time (Mo is new to hardware + ADHD).
 

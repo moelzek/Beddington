@@ -1,6 +1,4 @@
-# ARCHIVED — Lab Witness Hardware Inventory
-
-> Lab Witness is retired. This file is preserved for historical reference only and is not active Lullaby hardware guidance. Lullaby hardware must follow the cot-adjacent safety boundary in [memory.md](memory.md): hot compute in a vented base beside the cot, not in the cot.
+> Superseded by the Lullaby baby-monitor pivot on 2026-06-18; retained for history.
 
 # Lab Witness — Hardware Inventory (what Mo has)
 

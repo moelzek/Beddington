@@ -1,42 +1,62 @@
-# ROADMAP.md — Lullaby
+# ROADMAP.md — Lullaby Tier 0–5
 
-Forward plan only. Live decisions live in [memory.md](memory.md).
+> Forward sequence only. Live state and decisions are in [memory.md](memory.md). Build one tier at a time; later tiers require Mo’s explicit approval.
 
-## Prime Directive
+## Tier 0 — audio spine
 
-Ship the smallest privacy-first baby-monitor companion that works locally and never makes medical claims.
+**Outcome:** a complete hardware-free nightly loop.
 
-## V0 Core
+- WAV files on laptop and microphone adapter for Pi.
+- YAMNet baby-cry detection behind an interface.
+- Deterministic sustained-cry threshold, debounce, and cooldown.
+- Timestamped JSON night log plus readable text log.
+- Rule-based morning digest.
+- Console notification and best-effort desktop notification.
+- Optional LLM digest polish behind a disabled-by-default flag.
+- Included sample audio and tests.
 
-| Piece | Done when |
-|---|---|
-| Local observation model | The app can represent presence, motion, sound state, view clarity, and optional comfort readings. |
-| Deterministic monitor | Configured duration rules fire check alerts with the LLM off. |
-| Mock demo | `python3 examples/sleep_monitor.py` shows normal status, persistent crying, blocked view, and caregiver check prompts. |
-| Tests | Core rules pass with no hardware. |
-| Caregiver copy | Alerts say "check baby" and avoid safety/medical guarantees. |
-| Hardware boundary | Any physical plan keeps hot compute in a vented base beside the cot. |
+**Done when:** the README’s sample command produces detections, one sustained-cry notification, a night log, and a morning digest on a laptop with no hardware or cloud key.
 
-## V1 Candidates
+## Tier 1 — soothe before escalation
 
-- Local web dashboard.
-- Camera/mic adapter for a Pi or laptop webcam.
-- On-device event summaries from text-only logs.
-- Night review timeline for caregivers.
-- Enclosure/base design review.
+- Lullaby, white noise, or recorded parent voice.
+- Configurable soothe ladder and wait periods.
+- Notify only if crying persists after the ladder.
+- Optional “likely hungry — best guess” from crying plus time since feed.
 
-## Explicit Non-Goals
+**Gate:** Tier 0 is stable and Mo explicitly asks to proceed.
 
-- Medical monitoring or diagnosis.
-- SIDS prevention claims.
-- Breathing-health verification.
-- Cloud raw audio/video.
-- Face identity or multi-user surveillance.
-- Resurrecting Lab Witness lab-protocol scope.
+## Tier 2 — local video observations
 
-## Next Few Actions
+- File/OpenCV adapter for laptop development.
+- picamera2/Hailo adapter for Pi deployment.
+- Active/still and face-covered observations.
+- No raw frames leave the device.
 
-1. Keep the mock software path green.
-2. Decide the first demo surface: CLI, local web UI, or hardware rig.
-3. Write the caregiver-facing UX script.
-4. Only then choose hardware.
+**Gate:** privacy review, false-alarm plan, cot-safe mount, and dark-room hardware decision.
+
+## Tier 3 — radar presence and movement
+
+- MR60BHA2 through its ESP32 Wi-Fi/MQTT bridge.
+- Presence and gross movement.
+- Breathing, if ever displayed, is a non-medical trend only and never drives an alarm.
+
+**Gate:** mentor safety sign-off.
+
+## Tier 4 — nursery environment
+
+- Room temperature/humidity.
+- Nappy VOC as a clearly labelled best guess.
+
+**Gate:** calibration, placement, and hygiene plan.
+
+## Tier 5 — optional thermal trend
+
+- Relative warmth trend and local visualisation.
+- Never described as body temperature or fever detection.
+
+**Gate:** explicit decision that the value justifies the risk and complexity. Default is to cut.
+
+## Cut order
+
+If time or attention is tight, cut from Tier 5 downward. Never weaken privacy, safety, deterministic operation, or the ability to run with the LLM off.
