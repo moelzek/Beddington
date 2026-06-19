@@ -1,4 +1,6 @@
-# Hardware review checklist
+# ARCHIVED — Hardware review checklist
+
+> Lab Witness is retired. This checklist belongs to legacy reviewer skills and is not active Lullaby guidance.
 
 Work through the dimensions relevant to the design under review. You don't have to touch every row — pick what applies and say which ones you checked (Rule #4). For each finding, decide PASS or FAIL and attach evidence (a calculation, a datasheet reference, a measured value, or a test you can describe). Never invent a part number, pin, or rating to fill a gap — unknowns become mentor questions (Rule #1). Physical-safety doubts default to Do-not-build (Rule #2).
 

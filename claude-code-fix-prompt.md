@@ -1,4 +1,6 @@
-# Fix prompt — Lab Witness reviewer skills
+# ARCHIVED — Fix prompt — Lab Witness reviewer skills
+
+> Lab Witness is retired. This prompt is preserved for historical reference only and is not active Lullaby guidance.
 
 **Paste this into Claude Code, run from `~/Code/Labie`.**
 

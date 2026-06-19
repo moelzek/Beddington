@@ -1,4 +1,6 @@
 ---
+
+# LEGACY NOTICE: Lab Witness-era reviewer skill. Do not use as an active Lullaby hardware reviewer until rewritten for cot-adjacent hardware, thermals, cable safety, privacy, and no-medical-claims boundaries.
 name: hardware-reviewer
 description: >-
   Specialist hardware critic and verifier for Mo's robotics project Lab Witness

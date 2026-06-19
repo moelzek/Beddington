@@ -1,4 +1,6 @@
-# Software & LLM review checklist
+# ARCHIVED — Software & LLM review checklist
+
+> Lab Witness is retired. This checklist belongs to legacy reviewer skills and is not active Lullaby guidance.
 
 Work through the dimensions relevant to the suggestion under review. You don't have to touch every row every time — pick what applies and say which ones you checked (Rule #4). For each finding, decide PASS or FAIL and attach evidence (a traceable reason, a calculation, a doc reference, or a test you can describe). Never invent behaviour to fill a gap — unknowns become mentor questions (Rule #1).
 

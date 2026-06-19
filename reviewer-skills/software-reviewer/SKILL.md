@@ -1,4 +1,6 @@
 ---
+
+# LEGACY NOTICE: Lab Witness-era reviewer skill. Do not use as an active Lullaby reviewer until rewritten for Lullaby privacy, no-medical-claims, and cot-adjacent hardware boundaries.
 name: software-reviewer
 description: >-
   Specialist software + LLM/agentic critic and verifier for Mo's robotics

@@ -1,4 +1,6 @@
-# Codex review request — Lab Witness reviewer skills
+# ARCHIVED — Codex review request — Lab Witness reviewer skills
+
+> Lab Witness is retired. This review request is preserved for historical reference only and is not active Lullaby guidance.
 
 **Ask:** Give an independent, adversarial review of three coordinated Claude *skills* I built. I want a second opinion — find what's wrong, not reassurance. Claude has already reviewed them (findings at the bottom); **verify those independently and tell me what Claude missed.**
 

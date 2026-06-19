@@ -1,3 +1,7 @@
+# ARCHIVED — Lab Witness v0 Build Bible
+
+> Lab Witness is retired. This file is preserved for historical reference only and is not active Lullaby scope. Current facts live in [memory.md](memory.md).
+
 # Lab Witness — v0 Build Bible
 
 **One-liner:** A Pi over the bench that watches a scientist work, silently writes the lab notebook for them, and flags when reality drifts from the protocol.

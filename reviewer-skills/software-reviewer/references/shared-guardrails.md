@@ -1,4 +1,6 @@
-# Shared guardrails — Lab Witness reviewer skills
+# ARCHIVED — Shared guardrails — Lab Witness reviewer skills
+
+> Lab Witness is retired. This file belongs to legacy reviewer skills and is not active Lullaby guidance.
 
 These four rules are **identical across all three coordinated skills**: `flomotion-cto`, `hardware-reviewer`, and `software-reviewer`. This file is the single canonical copy — if one changes, change all three. They exist because the whole point of a verifier is to be a source of truth Mo and Flomotion can rely on. A reviewer that bluffs is worse than no reviewer.
 

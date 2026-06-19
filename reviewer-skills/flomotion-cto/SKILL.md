@@ -1,4 +1,6 @@
 ---
+
+# LEGACY NOTICE: Lab Witness-era reviewer skill. Do not use as an active Lullaby CTO reviewer until rewritten for Lullaby's privacy-first baby-monitor scope.
 name: flomotion-cto
 description: >-
   CTO-level orchestrator for reviewing Mo's robotics project Lab Witness

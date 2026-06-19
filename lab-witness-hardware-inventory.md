@@ -1,3 +1,7 @@
+# ARCHIVED — Lab Witness Hardware Inventory
+
+> Lab Witness is retired. This file is preserved for historical reference only and is not active Lullaby hardware guidance. Lullaby hardware must follow the cot-adjacent safety boundary in [memory.md](memory.md): hot compute in a vented base beside the cot, not in the cot.
+
 # Lab Witness — Hardware Inventory (what Mo has)
 
 Catalogued from photos taken 13 Jun 2026. **The photos were renamed 13 Jun 2026** from camera defaults (IMG_7802–7822) to descriptive snake_case names — see the old→new mapping at the foot of this file. Photo files live in `~/Code/Labie/hardware-photos/` — the `hardware-photos/` subfolder of the working folder. Beginner-friendly. Three buckets: **Use now**, **Check or buy**, **Park for later**. Plus a short "ask your mentors" list.
