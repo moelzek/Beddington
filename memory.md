@@ -133,6 +133,7 @@ minutes.
 
 ## Changelog
 
+- **2026-06-21** — Renamed lowercase `agents.md` to root `AGENTS.md` and added Codex-specific loading notes so Codex sessions read the project operating manual by default while `CLAUDE.md` remains the Claude Code router.
 - **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`. The first default uterine-style step now has a 30-minute play window, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.
 - **2026-06-21** — Added a stronger generated `uterine_whoosh.wav` asset and placed it first in the default Tier 1 soothe ladder. It is a synthetic womb-like output-test sound, not a recording or soothe claim.
 - **2026-06-21** — Added generated local Tier 1 soothe assets: white noise, heartbeat-style pulses, and soothing music, plus the reproducible generator script, asset metadata test, and default config ladder paths. Real playback remains the next gate and should start at low laptop volume.

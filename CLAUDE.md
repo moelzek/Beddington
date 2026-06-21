@@ -7,7 +7,7 @@ This repository is **Lullaby**, a privacy-first baby-monitor companion. This fil
 ## Read these in order
 
 1. [memory.md](memory.md) — **single source of truth** for status, locked decisions, hardware, safety boundaries, tier state, and changelog.
-2. [agents.md](agents.md) — how to work with Mo and how to preserve the living-document system.
+2. [AGENTS.md](AGENTS.md) — how agents work with Mo and how to preserve the living-document system.
 3. [context.md](context.md) — the durable what and why.
 4. [baby-monitor-build-plan.md](baby-monitor-build-plan.md) — the Tier 0–5 build sequence and bill of materials.
 5. [baby-monitor-evaluation.md](baby-monitor-evaluation.md) — opportunity analysis and reviewer gate.

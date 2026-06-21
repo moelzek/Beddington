@@ -1,6 +1,23 @@
-# agents.md — how to work on Lullaby
+# AGENTS.md — how to work on Lullaby
 
-> Operating manual. Project facts live in [memory.md](memory.md).
+> Codex reads `AGENTS.md` by default. Claude Code reads `CLAUDE.md`. This file
+> is the canonical agent operating manual for Codex and replaces the old
+> lowercase `agents.md` name. Project facts live in [memory.md](memory.md).
+
+## Before work
+
+1. Run persistent-memory recall:
+
+   ```bash
+   engram recall "<task in 4-6 words>" --top-k 5 --json
+   ```
+
+2. Read `memory.md` and check the active tier. `memory.md` wins if any document
+   disagrees.
+3. Read `CLAUDE.md` for document order, project rules, version control, and
+   sign-off format.
+4. After learning a stable preference, decision, correction, or project fact,
+   save it with `engram remember`.
 
 ## Working style
 
@@ -29,7 +46,7 @@
 - No raw audio/video off-device.
 - No unlabelled inference presented as fact.
 - No hot compute in a plush toy or cot.
-- No later-tier work without Mo’s explicit approval.
+- No later-tier work without Mo's explicit approval.
 - No required API key for core operation.
 
 ## Definition of done for a user-facing step
