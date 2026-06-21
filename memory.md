@@ -126,6 +126,16 @@ mode, such as `white_noise`, `heartbeat`, or `soothing_music`, rather than
 cycling through all sounds automatically. `uterine_whoosh` remains available as
 an optional synthetic output-test preset.
 
+## Future soothe verification
+
+When soothing is playing, audio ML remains the primary signal for whether
+crying is still detected. Future work should add quiet-check windows and an
+echo-cancellation experiment. Camera/video and radar/breathing may later add
+supporting context, but must not prove the baby is safe, asleep, or breathing
+normally. If signals disagree, Lullaby should keep checking or notify the
+parent. Log wording must stay honest: “crying no longer detected”, not “baby is
+asleep” or “baby is safe”.
+
 ## Living-document protocol
 
 1. Read this file at the start of each session.
@@ -135,6 +145,7 @@ an optional synthetic output-test preset.
 
 ## Changelog
 
+- **2026-06-21** — Added future roadmap work for verifying whether crying has stopped while a soothe preset is playing: quiet-check windows, echo-cancellation experiment, camera context, and radar/breathing context under strict non-medical wording and never as sole proof of safety.
 - **2026-06-21** — Mo corrected the Tier 1 product model: Lullaby should use one selected soothe preset, not cycle through all sounds automatically. Config now supports `soothe.preset` and named presets; default preset is `white_noise`.
 - **2026-06-21** — Renamed lowercase `agents.md` to root `AGENTS.md` and added Codex-specific loading notes so Codex sessions read the project operating manual by default while `CLAUDE.md` remains the Claude Code router.
 - **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.

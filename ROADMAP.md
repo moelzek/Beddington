@@ -28,17 +28,30 @@
 - [x] Available presets include `white_noise`, `heartbeat`, and `soothing_music`; `uterine_whoosh` remains optional.
 - [ ] Real local audio-file playback test on laptop.
 - [ ] Pi speaker/amplifier bench test at low volume.
+- [ ] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
+- [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.
 - [ ] Recorded parent voice asset.
 - [ ] Optional “likely hungry — best guess” from crying plus time since feed.
 
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
+### Future cry-stopped verification while soothing
+
+- [ ] Keep audio ML as the primary signal for “crying still detected”.
+- [ ] Add listen-only checks during long playback windows before marking crying as no longer detected.
+- [ ] Require multiple quiet checks rather than one quiet moment.
+- [ ] Use camera/video later only as supporting context: visible agitation, movement trend, or stillness trend.
+- [ ] Use radar/breathing later only as non-medical context if approved; never as proof that the baby is safe, asleep, or breathing normally.
+- [ ] If audio, video, or sensor context disagree, keep checking or notify the parent.
+- [ ] Log wording must stay honest: “crying no longer detected”, not “baby is asleep” or “baby is safe”.
+
 ## Tier 2 — local video observations
 
 - File/OpenCV adapter for laptop development.
 - picamera2/Hailo adapter for Pi deployment.
 - Active/still and face-covered observations.
+- Supporting context for soothe verification: visible agitation, movement trend, and stillness trend while audio remains primary.
 - No raw frames leave the device.
 
 **Gate:** privacy review, false-alarm plan, cot-safe mount, and dark-room hardware decision.
@@ -47,7 +60,8 @@ until the audio-output hardware is bench-tested safely.
 
 - MR60BHA2 through its ESP32 Wi-Fi/MQTT bridge.
 - Presence and gross movement.
-- Breathing, if ever displayed, is a non-medical trend only and never drives an alarm.
+- Supporting context for soothe verification: presence and gross movement trends only.
+- Breathing, if ever displayed, is a non-medical trend only and never drives an alarm or suppresses a parent notification by itself.
 
 **Gate:** mentor safety sign-off.
 
