@@ -16,8 +16,8 @@
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
 - **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview playback worked for the main generated presets; soothe playback can loop short files for long configured windows; the hardware-free test suite passes.
-- **Next gate:** run a short looped real playback test on the laptop, then decide whether to bench-test the Pi speaker/amplifier.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; the hardware-free test suite passes.
+- **Next gate:** test Pi audio output with a Bluetooth speaker before wiring the MAX98357 speaker/amplifier.
 
 ## Locked decisions
 
@@ -162,6 +162,7 @@ asleep” or “baby is safe”.
 ## Changelog
 
 - **2026-06-21** — Added `hardware-guide.md` with Mo’s servo, power, audio, microphone, distance-sensor, and OLED wiring notes, including install snippets, reference links, and a safer bench-test order.
+- **2026-06-21** — Confirmed short looped laptop playback worked for the selected white-noise soothe preset. Next gate is Pi audio output with a Bluetooth speaker before wiring the MAX98357 amplifier.
 - **2026-06-21** — Confirmed low-volume laptop preview playback worked for the generated Tier 1 soothe presets. Next gate is a short looped real playback test before Pi speaker/amplifier bench testing.
 - **2026-06-21** — Added future roadmap work for verifying whether crying has stopped while a soothe preset is playing: quiet-check windows, echo-cancellation experiment, camera context, and radar/breathing context under strict non-medical wording and never as sole proof of safety.
 - **2026-06-21** — Added user-mentioned HC-SR04 ultrasonic distance sensor to inventory as an optional utility/proximity part only; it is not part of baby-state inference.

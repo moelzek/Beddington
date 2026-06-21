@@ -27,8 +27,9 @@
 - [x] Loop the selected short soothe WAV for long configured play windows.
 - [x] Available presets include `white_noise`, `heartbeat`, and `soothing_music`; `uterine_whoosh` remains optional.
 - [x] Low-volume local preview playback test on laptop.
-- [ ] Short looped real playback test on laptop.
-- [ ] Pi speaker/amplifier bench test at low volume.
+- [x] Short looped real playback test on laptop.
+- [ ] Pi Bluetooth speaker playback test at low volume.
+- [ ] Pi MAX98357 speaker/amplifier bench test at low volume.
 - [ ] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
 - [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.
 - [ ] Recorded parent voice asset.

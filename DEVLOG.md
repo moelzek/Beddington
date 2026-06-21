@@ -9,10 +9,11 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 ### Laptop playback gate
 
 Low-volume laptop preview playback worked for the generated white-noise,
-heartbeat-style, and soothing-music presets.
+heartbeat-style, and soothing-music presets. A short repeated white-noise loop
+also worked on the laptop.
 
-**Next single outcome:** run a short looped playback test on the laptop, then
-move to a Bluetooth speaker or one MAX98357 speaker bench test on the Pi.
+**Next single outcome:** move to a Bluetooth speaker playback test on the Pi,
+before wiring one MAX98357 speaker bench test.
 
 ### Hardware inventory guide
 
@@ -21,8 +22,8 @@ trigger boards, MAX98357 amplifiers, speakers, INMP441 mics, VL53L0X sensors,
 HC-SR04 sensors, and OLEDs. Captured them in `hardware-guide.md` with a
 bench-test order that keeps the simplest Pi tests first.
 
-**Next single outcome:** run the laptop looped playback test, then move to a
-Bluetooth speaker or one MAX98357 speaker bench test on the Pi.
+**Next single outcome:** run a Bluetooth speaker playback test on the Pi, then
+move to one MAX98357 speaker bench test.
 
 Mo explicitly approved starting Tier 1. The first slice keeps the build
 laptop-first: a configurable soothe preset can run in dry-run mode, write
