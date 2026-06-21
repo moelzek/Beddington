@@ -14,6 +14,7 @@ ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "soothe"
 def main() -> None:
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
     _write_wav(ASSET_DIR / "white_noise.wav", _white_noise(seconds=20.0))
+    _write_wav(ASSET_DIR / "uterine_whoosh.wav", _uterine_whoosh(seconds=30.0))
     _write_wav(ASSET_DIR / "heartbeat.wav", _heartbeat(seconds=20.0))
     _write_wav(ASSET_DIR / "soothing_music.wav", _soothing_music(seconds=24.0))
 
@@ -36,6 +37,29 @@ def _heartbeat(seconds: float) -> np.ndarray:
     samples = _low_pass(samples, smoothing=0.96)
     samples = _fade(samples, seconds=1.0)
     return _normalise(samples, peak=0.16)
+
+
+def _uterine_whoosh(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260622)
+    t = _time(seconds)
+    noise = rng.normal(0.0, 1.0, len(t))
+    deep_noise = _low_pass(noise, smoothing=0.994)
+    swell = 0.55 + 0.28 * np.sin(2 * np.pi * 0.42 * t) + 0.17 * np.sin(
+        2 * np.pi * 0.86 * t + 0.8
+    )
+    rumble = 0.55 * np.sin(2 * np.pi * 42.0 * t) + 0.22 * np.sin(
+        2 * np.pi * 67.0 * t + 0.4
+    )
+    samples = 1.25 * deep_noise * swell + 0.22 * rumble
+
+    beat_interval = 60.0 / 72.0
+    for start in np.arange(0.35, seconds, beat_interval):
+        samples += 0.8 * _pulse(t, start, 32.0, width=0.055)
+        samples += 0.35 * _pulse(t, start + 0.16, 44.0, width=0.065)
+
+    samples = _low_pass(samples, smoothing=0.965)
+    samples = _fade(samples, seconds=2.5)
+    return _normalise(samples, peak=0.22)
 
 
 def _soothing_music(seconds: float) -> np.ndarray:

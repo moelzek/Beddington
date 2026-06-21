@@ -45,6 +45,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     config = load_config(Path("config/default.toml"))
 
     assert [step.name for step in config.soothe.steps] == [
+        "uterine whoosh",
         "white noise",
         "heartbeat",
         "soothing music",

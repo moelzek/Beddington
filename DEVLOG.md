@@ -22,6 +22,10 @@ unless soothing is explicitly enabled and `soothe.player` is set to `auto`.
 
 **Next single outcome:** preview the assets at low laptop volume.
 
+Added a stronger synthetic `uterine_whoosh.wav` and moved it to the first
+default ladder step. It is a womb-like rumble/whoosh for output testing, not a
+recording or a soothe claim.
+
 ## 18 June 2026 — project pivot
 
 Lab Witness is retired as the main project and preserved under `Archive/`. The repository is now Lullaby, a privacy-first baby-monitor companion.

@@ -17,6 +17,11 @@ enabled = false
 player = "none"
 
 [[soothe.steps]]
+name = "uterine whoosh"
+sound_path = "../assets/soothe/uterine_whoosh.wav"
+wait_seconds = 90.0
+
+[[soothe.steps]]
 name = "white noise"
 sound_path = "../assets/soothe/white_noise.wav"
 wait_seconds = 60.0

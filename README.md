@@ -72,8 +72,9 @@ cat output/tier1-demo/night-log.txt
 ```
 
 Expected: a `SOOTHE` line before any `NOTIFIED` line. The default ladder now
-has three generated local sounds:
+has four generated local sounds:
 
+- [uterine_whoosh.wav](assets/soothe/uterine_whoosh.wav)
 - [white_noise.wav](assets/soothe/white_noise.wav)
 - [heartbeat.wav](assets/soothe/heartbeat.wav)
 - [soothing_music.wav](assets/soothe/soothing_music.wav)
@@ -84,6 +85,7 @@ set `soothe.player = "auto"`, keep the volume low, and run with `--soothe`.
 To preview the generated sounds directly on your Mac:
 
 ```bash
+afplay assets/soothe/uterine_whoosh.wav
 afplay assets/soothe/white_noise.wav
 afplay assets/soothe/heartbeat.wav
 afplay assets/soothe/soothing_music.wav
@@ -142,8 +144,9 @@ Edit [config/default.toml](config/default.toml):
 - `soothe.steps[].sound_path`: local audio file to play when `player = "auto"`.
 - `soothe.steps[].wait_seconds`: how long Lullaby waits before the next soothe step or parent notification.
 
-The included generated sounds are synthetic placeholders for testing the ladder,
-not evidence that a particular sound will soothe a baby.
+The included generated sounds are synthetic placeholders for testing the ladder.
+The uterine-style file is a generated womb-like rumble/whoosh, not a recording
+and not evidence that a particular sound will soothe a baby.
 
 Keep the first real audio tests on a laptop at low volume before wiring the Pi speaker.
 

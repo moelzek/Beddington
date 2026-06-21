@@ -23,7 +23,7 @@
 - [x] Dry-run laptop mode that records soothe attempts without playing sound.
 - [x] Parent notification moves after the ladder when soothing is enabled.
 - [x] Night log and morning digest mention soothe attempts.
-- [x] Generated local WAV assets for white noise, heartbeat-style pulses, and soothing music.
+- [x] Generated local WAV assets for uterine-style whoosh, white noise, heartbeat-style pulses, and soothing music.
 - [ ] Real local audio-file playback test on laptop.
 - [ ] Pi speaker/amplifier bench test at low volume.
 - [ ] Recorded parent voice asset.
