@@ -26,7 +26,8 @@
 - [x] Generated local WAV assets for uterine-style whoosh, white noise, heartbeat-style pulses, and soothing music.
 - [x] Loop the selected short soothe WAV for long configured play windows.
 - [x] Available presets include `white_noise`, `heartbeat`, and `soothing_music`; `uterine_whoosh` remains optional.
-- [ ] Real local audio-file playback test on laptop.
+- [x] Low-volume local preview playback test on laptop.
+- [ ] Short looped real playback test on laptop.
 - [ ] Pi speaker/amplifier bench test at low volume.
 - [ ] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
 - [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.

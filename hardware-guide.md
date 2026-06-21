@@ -10,7 +10,7 @@ surface.
 
 ## Bench-test order
 
-- [ ] Preview the generated soothe WAV files on the laptop at low volume.
+- [x] Preview the generated soothe WAV files on the laptop at low volume.
 - [ ] Test Pi audio with a Bluetooth speaker first.
 - [ ] Bench-test one MAX98357 amplifier with one 3W 4Ω speaker.
 - [ ] Test a USB microphone or USB sound card for live cry detection.
