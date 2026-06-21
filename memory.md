@@ -47,6 +47,8 @@ These facts were migrated from the retired Lab Witness inventory.
 | USB mini microphone | On hand | Tier 0 live audio input on the Pi |
 | 0.91-inch I²C OLED ×3 | On hand | Later companion eyes/status |
 | BS-16 mini speaker | On hand | Tier 1 soothe output; may require an amplifier |
+| Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 | On hand, quantity 1 | Later presence/gross movement; breathing may be shown only as a non-medical trend after mentor safety sign-off |
+| Pimoroni BME688 4-in-1 air quality breakout | On hand, quantity 1 | Later room temperature/humidity and experimental nappy-VOC best guess after calibration and hygiene review |
 | microSD card, 32GB | On hand | Pi OS and deployment |
 | Breadboards, jumper wires, electronics bench | On hand | Prototyping |
 
@@ -56,7 +58,9 @@ These facts were migrated from the retired Lab Witness inventory.
 - **Tier 1:** verify whether the BS-16 speaker needs a small amplifier.
 - **Tier 2:** NoIR Camera Module 3 plus an 850nm IR illuminator if dark-room video is required; cot-safe mount with cables out of reach.
 - **All Pi deployment:** vented base/enclosure and an overnight thermal check.
-- **Tier 3+:** MR60BHA2 radar with its ESP32 bridge, BME688, and optional MLX90640 only after the relevant gate is approved.
+- **Tier 3:** MR60BHA2 is owned; later verify cot-distance signal quality, mounting, and ESPHome/MQTT integration only after the radar gate is approved.
+- **Tier 4:** BME688 is owned; later verify placement, hygiene, calibration, and nappy-VOC limits only after the environment gate is approved.
+- **Tier 5:** optional MLX90640 only after the relevant gate is approved.
 
 ## Architecture boundary
 
@@ -105,6 +109,7 @@ On a laptop with no hardware attached:
 
 ## Changelog
 
+- **2026-06-21** — Added one Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 and one Pimoroni BME688 4-in-1 air quality breakout to the owned hardware inventory. Tier 0 remains active; radar and environment work remain gated later-tier scope.
 - **2026-06-19** — Merged `codex/lullaby-tier0` into `main`: promoted the `src/lullaby/` Tier 0 audio spine, CLI, config, sample-data workflow, logs, morning digest, optional derived-text-only LLM polish, and hardware-free tests as the canonical implementation. Kept Lab Witness material archived and ignored local `.gbrain-source`.
 - **2026-06-18** — Pivoted the repository from Lab Witness to **Lullaby** as the main project. Archived Lab Witness build documents, prompts, reviewer skills, and devlog without deleting them. Promoted the baby-monitor evaluation and build plan into project-core documents. Migrated reusable hardware facts, locked privacy/safety/LLM boundaries, and set Tier 0 audio as the only active build scope.
 - **2026-06-18** — Built and acceptance-tested Tier 0: official YAMNet TFLite baby-cry scoring, laptop WAV and optional live microphone adapters, deterministic sustained-cry/release/cooldown logic, local JSON and readable logs, rule-based morning digest, console/desktop notification, optional derived-text-only LLM polish, public CC0 sample audio, and hardware-free tests. Tier 1 remains blocked pending Mo’s explicit approval.
