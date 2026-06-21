@@ -6,6 +6,16 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ## 21 June 2026 — Tier 1 started
 
+### Hardware inventory guide
+
+Mo added exact wiring notes for the owned servos, PCA9685 boards, USB-C PD
+trigger boards, MAX98357 amplifiers, speakers, INMP441 mics, VL53L0X sensors,
+HC-SR04 sensors, and OLEDs. Captured them in `hardware-guide.md` with a
+bench-test order that keeps the simplest Pi tests first.
+
+**Next single outcome:** run the laptop audio playback test, then move to a
+Bluetooth speaker or one MAX98357 speaker bench test on the Pi.
+
 Mo explicitly approved starting Tier 1. The first slice keeps the build
 laptop-first: a configurable soothe preset can run in dry-run mode, write
 `SOOTHE` lines to the night log, mention soothe attempts in the digest, and

@@ -76,6 +76,9 @@ These facts were migrated from the retired Lab Witness inventory.
 - **Utility sensors:** VL53L0X is the preferred distance/proximity sensor. HC-SR04 may be useful for bench proximity checks or mount/enclosure experiments, but needs a voltage divider and should not be used to infer baby state.
 - **Tier 5:** optional MLX90640 only after the relevant gate is approved.
 
+Detailed wiring notes, smoke-test snippets, and the safe bench-test order live in
+[hardware-guide.md](hardware-guide.md).
+
 ## Architecture boundary
 
 ```text
@@ -158,6 +161,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-21** — Added `hardware-guide.md` with Mo’s servo, power, audio, microphone, distance-sensor, and OLED wiring notes, including install snippets, reference links, and a safer bench-test order.
 - **2026-06-21** — Added future roadmap work for verifying whether crying has stopped while a soothe preset is playing: quiet-check windows, echo-cancellation experiment, camera context, and radar/breathing context under strict non-medical wording and never as sole proof of safety.
 - **2026-06-21** — Added user-mentioned HC-SR04 ultrasonic distance sensor to inventory as an optional utility/proximity part only; it is not part of baby-state inference.
 - **2026-06-21** — Updated hardware inventory with Mo’s exact component quantities: servos, PCA9685 boards, MAX98357 amplifiers, 3W speakers, INMP441 mics, HC-SR04, VL53L0X, OLEDs, USB-C PD trigger boards, and bench supplies. Added caveats for I²S mics, servo power, HC-SR04 voltage divider, and VL53L0X preference.

@@ -190,6 +190,7 @@ Archive/           retired Lab Witness material
 - [memory.md](memory.md) — canonical state and decisions
 - [baby-monitor-build-plan.md](baby-monitor-build-plan.md) — tiered build plan and BOM
 - [baby-monitor-evaluation.md](baby-monitor-evaluation.md) — evaluation and safety gate
+- [hardware-guide.md](hardware-guide.md) — wiring notes and bench-test order for owned parts
 - [ROADMAP.md](ROADMAP.md) — Tier 0–5 sequence
 
 ## Safety and privacy
