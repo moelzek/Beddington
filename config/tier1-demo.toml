@@ -11,11 +11,13 @@ desktop = false
 [soothe]
 enabled = true
 player = "none"
+preset = "white_noise"
 
-[[soothe.steps]]
+[soothe.presets.white_noise]
 name = "white noise dry run"
 sound_path = ""
 wait_seconds = 0.0
+play_seconds = 0.0
 
 [llm]
 enabled = false

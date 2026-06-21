@@ -59,7 +59,7 @@ def _readable_log(report: NightReport) -> str:
             ) or "none"
             lines.append(f"{at}  NOTIFIED     {targets}")
         elif event.kind == "soothe_attempted":
-            name = event.details.get("name", "soothe step")
+            name = event.details.get("name", "soothe preset")
             wait = float(event.details.get("wait_seconds", 0.0))
             play = float(event.details.get("play_seconds", wait))
             playback = event.details.get("playback", {})
@@ -71,7 +71,7 @@ def _readable_log(report: NightReport) -> str:
         elif event.kind == "soothe_settled":
             lines.append(f"{at}  SETTLED     crying ended before parent notification")
         elif event.kind == "soothe_unresolved":
-            lines.append(f"{at}  UNRESOLVED  recording ended before soothe ladder finished")
+            lines.append(f"{at}  UNRESOLVED  recording ended before soothe preset finished")
     lines.extend(
         [
             "",

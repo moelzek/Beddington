@@ -19,12 +19,13 @@
 
 ## Tier 1 — soothe before escalation
 
-- [x] Configurable soothe ladder and wait periods.
+- [x] Configurable single-preset soothe mode and wait period.
 - [x] Dry-run laptop mode that records soothe attempts without playing sound.
-- [x] Parent notification moves after the ladder when soothing is enabled.
+- [x] Parent notification moves after the selected preset when soothing is enabled.
 - [x] Night log and morning digest mention soothe attempts.
 - [x] Generated local WAV assets for uterine-style whoosh, white noise, heartbeat-style pulses, and soothing music.
-- [x] Loop short soothe WAVs for long configured play windows; first uterine step is 30 minutes.
+- [x] Loop the selected short soothe WAV for long configured play windows.
+- [x] Available presets include `white_noise`, `heartbeat`, and `soothing_music`; `uterine_whoosh` remains optional.
 - [ ] Real local audio-file playback test on laptop.
 - [ ] Pi speaker/amplifier bench test at low volume.
 - [ ] Recorded parent voice asset.

@@ -1,13 +1,13 @@
 # Lullaby
 
-Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locally, records sustained crying events, writes a readable night log, and produces a morning digest. Later tiers may try a gentle soothe step before escalating. It is an assistive notebook, not a medical guardian: raw audio/video never leaves the device, uncertain interpretations are labelled best guesses, and the complete app works with cloud features disabled.
+Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locally, records sustained crying events, writes a readable night log, and produces a morning digest. Tier 1 may try one selected soothe preset before escalating. It is an assistive notebook, not a medical guardian: raw audio/video never leaves the device, uncertain interpretations are labelled best guesses, and the complete app works with cloud features disabled.
 
 ## What works now
 
 - Laptop `.wav` input and optional live microphone input.
 - Official YAMNet TFLite `Baby cry, infant cry` model score.
 - Deterministic confidence threshold, sustained-duration debounce, release delay, and notification cooldown.
-- Optional Tier 1 dry-run soothe ladder before parent notification.
+- Optional Tier 1 dry-run soothe preset before parent notification.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
 - Console notification plus best-effort macOS/Linux desktop notification.
 - Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.
@@ -53,10 +53,10 @@ python -m json.tool output/sample-night/events.json
 
 Generated output is gitignored.
 
-## Try the Tier 1 soothe ladder
+## Try the Tier 1 soothe preset
 
 Tier 1 is explicit and off in the default config. The demo config uses dry-run
-playback, so it records the soothe step without playing sound:
+playback, so it records the selected soothe preset without playing sound:
 
 ```bash
 lullaby --config config/tier1-demo.toml analyze \
@@ -64,24 +64,25 @@ lullaby --config config/tier1-demo.toml analyze \
   --output output/tier1-demo
 ```
 
-You should see a digest that says Lullaby tried one soothe step before
+You should see a digest that says Lullaby tried one soothe preset before
 escalation. Open the readable log:
 
 ```bash
 cat output/tier1-demo/night-log.txt
 ```
 
-Expected: a `SOOTHE` line before any `NOTIFIED` line. The default ladder has
-four generated local sounds:
+Expected: a `SOOTHE` line before any `NOTIFIED` line. Lullaby chooses exactly
+one configured preset; it does not cycle through every sound. The default
+preset is `white_noise`. Available generated presets are:
 
 - [uterine_whoosh.wav](assets/soothe/uterine_whoosh.wav)
 - [white_noise.wav](assets/soothe/white_noise.wav)
 - [heartbeat.wav](assets/soothe/heartbeat.wav)
 - [soothing_music.wav](assets/soothe/soothing_music.wav)
 
-The files themselves are short, but Lullaby can loop them for the configured
-`play_seconds`. The first default step, `uterine whoosh`, is set to play for up
-to 30 minutes when real playback is enabled.
+The files themselves are short, but Lullaby can loop the selected preset for
+the configured `play_seconds`. The default presets are set up for 30-minute
+play windows when real playback is enabled.
 
 To test real playback later, edit [config/default.toml](config/default.toml),
 set `soothe.player = "auto"`, keep the volume low, and run with `--soothe`.
@@ -144,12 +145,12 @@ Edit [config/default.toml](config/default.toml):
 
 - `soothe.enabled`: default `false`; can also be enabled per run with `--soothe`.
 - `soothe.player`: `none` logs a dry run; `auto` plays a configured local sound file.
-- `soothe.steps[].name`: label shown in the night log.
-- `soothe.steps[].sound_path`: local audio file to play when `player = "auto"`.
-- `soothe.steps[].play_seconds`: how long the sound may loop for this step.
-- `soothe.steps[].wait_seconds`: how long Lullaby waits before the next soothe step or parent notification.
+- `soothe.preset`: the one preset to use, such as `white_noise`, `heartbeat`, or `soothing_music`.
+- `soothe.presets.<name>.sound_path`: local audio file to play when `player = "auto"`.
+- `soothe.presets.<name>.play_seconds`: how long that preset may loop.
+- `soothe.presets.<name>.wait_seconds`: how long Lullaby waits before parent notification.
 
-The included generated sounds are synthetic placeholders for testing the ladder.
+The included generated sounds are synthetic placeholders for testing the preset.
 The uterine-style file is a generated womb-like rumble/whoosh, not a recording
 and not evidence that a particular sound will soothe a baby.
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 
@@ -39,6 +39,8 @@ class SootheStepConfig:
 class SootheConfig:
     enabled: bool = False
     player: str = "none"
+    preset: str = "white_noise"
+    presets: dict[str, SootheStepConfig] = field(default_factory=dict)
     steps: tuple[SootheStepConfig, ...] = (
         SootheStepConfig(name="white noise dry run", wait_seconds=30.0),
     )
@@ -68,7 +70,19 @@ def load_config(path: Path | None = None) -> AppConfig:
         notifications = raw.get("notifications", {})
         llm = raw.get("llm", {})
         soothe = raw.get("soothe", {})
+        raw_soothe_presets = soothe.get("presets")
         raw_soothe_steps = soothe.get("steps")
+        soothe_preset = str(soothe.get("preset", config.soothe.preset))
+        soothe_presets = _load_soothe_presets(raw_soothe_presets, path.parent)
+        soothe_steps = (
+            (soothe_presets[soothe_preset],)
+            if soothe_presets and soothe_preset in soothe_presets
+            else (
+                _load_soothe_steps(raw_soothe_steps, path.parent)
+                if raw_soothe_steps is not None
+                else config.soothe.steps
+            )
+        )
         config = AppConfig(
             detection=DetectionConfig(
                 threshold=float(detection.get("threshold", config.detection.threshold)),
@@ -96,11 +110,9 @@ def load_config(path: Path | None = None) -> AppConfig:
             soothe=SootheConfig(
                 enabled=bool(soothe.get("enabled", config.soothe.enabled)),
                 player=str(soothe.get("player", config.soothe.player)),
-                steps=(
-                    _load_soothe_steps(raw_soothe_steps, path.parent)
-                    if raw_soothe_steps is not None
-                    else config.soothe.steps
-                ),
+                preset=soothe_preset,
+                presets=soothe_presets,
+                steps=soothe_steps,
             ),
         )
 
@@ -150,6 +162,42 @@ def _load_soothe_steps(raw_steps: object, config_dir: Path) -> tuple[SootheStepC
     return tuple(steps)
 
 
+def _load_soothe_presets(
+    raw_presets: object,
+    config_dir: Path,
+) -> dict[str, SootheStepConfig]:
+    if not isinstance(raw_presets, dict):
+        return {}
+
+    presets: dict[str, SootheStepConfig] = {}
+    for key, raw_step in raw_presets.items():
+        if not isinstance(raw_step, dict):
+            raise ValueError(f"soothe.presets.{key} must be a table")
+        presets[str(key)] = _load_soothe_step(raw_step, config_dir, str(key))
+    return presets
+
+
+def _load_soothe_step(
+    raw_step: dict[str, object],
+    config_dir: Path,
+    fallback_name: str,
+) -> SootheStepConfig:
+    sound_path = str(raw_step.get("sound_path", "")).strip()
+    path = Path(sound_path).expanduser() if sound_path else None
+    if path is not None and not path.is_absolute():
+        path = config_dir / path
+    return SootheStepConfig(
+        name=str(raw_step.get("name", fallback_name.replace("_", " "))),
+        sound_path=path,
+        wait_seconds=float(raw_step.get("wait_seconds", 30.0)),
+        play_seconds=(
+            float(raw_step["play_seconds"])
+            if "play_seconds" in raw_step
+            else None
+        ),
+    )
+
+
 def _validate(config: AppConfig) -> None:
     if not 0.0 <= config.detection.threshold <= 1.0:
         raise ValueError("detection.threshold must be between 0 and 1")
@@ -166,7 +214,14 @@ def _validate(config: AppConfig) -> None:
     if config.soothe.player not in {"none", "auto"}:
         raise ValueError("soothe.player must be 'none' or 'auto'")
     if config.soothe.enabled and not config.soothe.steps:
-        raise ValueError("soothe.steps must include at least one step when soothe is enabled")
+        raise ValueError(
+            "soothe must include one selected preset or one step when enabled"
+        )
+    if config.soothe.presets and config.soothe.preset not in config.soothe.presets:
+        options = ", ".join(sorted(config.soothe.presets))
+        raise ValueError(f"soothe.preset must be one of: {options}")
+    if len(config.soothe.steps) > 1:
+        raise ValueError("soothe must select exactly one preset or one step")
     for index, step in enumerate(config.soothe.steps, start=1):
         if not step.name.strip():
             raise ValueError(f"soothe.steps[{index}].name must not be empty")

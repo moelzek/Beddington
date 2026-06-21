@@ -4,7 +4,7 @@
 
 ## The build in one line
 
-A privacy-first companion beside the cot, tethered to a vented compute base, that detects locally, logs the night, and later tries a gentle soothe step before notifying a parent.
+A privacy-first companion beside the cot, tethered to a vented compute base, that detects locally, logs the night, and later tries one selected soothe preset before notifying a parent.
 
 ## Architecture
 
@@ -33,23 +33,25 @@ flowchart LR
 
 **Acceptance:** the included sample recording produces detections, a night log, a digest, and one sustained-cry notification without hardware or an API key.
 
-## Tier 1 — soothe ladder and best-guess hunger
+## Tier 1 — soothe preset and best-guess hunger
 
 Approved on 2026-06-21 and started laptop-first. The first slice adds a
-configurable dry-run soothe ladder that records a soothe attempt, waits, and
-notifies only if crying persists. Next, play a local lullaby, white noise, or
-recorded parent voice file at low volume on a laptop before moving to the Pi
-speaker/amplifier bench test. “Likely hungry” may combine cry plus time since
-feed, but is always a labelled best guess.
+configurable dry-run soothe preset that records one soothe attempt, waits, and
+notifies only if crying persists. The parent chooses one mode such as white
+noise, heartbeat-style pulses, or soothing music; Lullaby does not cycle
+through all sounds automatically. Next, play the selected local preset at low
+volume on a laptop before moving to the Pi speaker/amplifier bench test.
+“Likely hungry” may combine cry plus time since feed, but is always a labelled
+best guess.
 
 Generated local placeholder assets now cover a stronger uterine-style whoosh,
 white noise, heartbeat-style pulses, and soothing music. They are for testing
-the ladder and audio-output path; they are not evidence that any sound will
+the preset and audio-output path; they are not evidence that any sound will
 settle a baby.
 
-The soothe player loops short local WAV files for the configured play window.
-The first default uterine-style step is configured for 30 minutes because a
-real settling window may be much longer than a preview clip.
+The soothe player loops the selected short local WAV file for the configured
+play window. Presets are configured for 30 minutes because a real settling
+window may be much longer than a preview clip.
 
 ## Tier 2 — local video
 

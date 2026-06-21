@@ -24,7 +24,7 @@ def build_digest(report: NightReport) -> str:
     )
     soothe_sentence = ""
     if soothe_count:
-        soothe_word = "step" if soothe_count == 1 else "steps"
+        soothe_word = "preset" if soothe_count == 1 else "presets"
         soothe_sentence = f"Lullaby tried {soothe_count} soothe {soothe_word} before escalation. "
     return (
         f"Lullaby detected {len(episodes)} sustained crying {episode_word}. "

@@ -12,11 +12,11 @@
 
 ## Current status
 
-- **Active tier:** Tier 1 — soothe ladder, explicitly approved by Mo on 2026-06-21. The first slice is laptop-first dry-run soothing before parent notification.
+- **Active tier:** Tier 1 — single-preset soothe before escalation, explicitly approved by Mo on 2026-06-21. The first slice is laptop-first dry-run soothing before parent notification.
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
-- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe ladder, local logs, morning digest, notifications, and optional LLM polish.
+- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records a dry-run soothe step before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; soothe playback can loop short files for long configured windows; the hardware-free test suite passes.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; soothe playback can loop short files for long configured windows; the hardware-free test suite passes.
 - **Next gate:** test real local playback of the generated soothing audio files at low laptop volume, including a longer looped run, then decide whether to bench-test the Pi speaker/amplifier.
 
 ## Locked decisions
@@ -83,7 +83,7 @@ Raw recordings remain local. Generated logs must not contain raw media or secret
 | Tier | Outcome | Gate |
 |---|---|---|
 | **0 — Spine** | WAV/mic → YAMNet baby-cry detection → sustained-cry events → JSON/readable night log → rule-based morning digest → debounced console/desktop notification | Complete |
-| **1 — Act** | Soothe ladder: lullaby/white noise/recorded parent voice before notification; optional “likely hungry” best guess from cry + time since feed | Active; laptop dry-run slice implemented |
+| **1 — Act** | One selected soothe preset before notification; optional “likely hungry” best guess from cry + time since feed | Active; laptop dry-run slice implemented |
 | **2 — Video** | File/OpenCV laptop adapter and picamera2/Hailo Pi adapter; active/still and face-covered observations | Mo must approve; privacy and false-alarm review |
 | **3 — Radar** | Presence and gross movement; breathing may be shown only as a non-medical trend | Mentor safety sign-off; never alarms |
 | **4 — Environment** | Room temperature/humidity and nappy-VOC best guess | Calibration and hygiene review |
@@ -107,7 +107,7 @@ On a laptop with no speaker hardware attached:
 
 1. Run the included sample cry recording with `config/tier1-demo.toml`.
 2. See a `SOOTHE` line in the readable night log before any `NOTIFIED` line.
-3. See the morning digest mention one soothe step before escalation.
+3. See the morning digest mention one soothe preset before escalation.
 4. Run tests without playing audio, downloading a model, or requiring a cloud key.
 
 ## Tier 1 audio assets
@@ -119,10 +119,12 @@ Local generated placeholder WAVs live under `assets/soothe/`:
 3. `heartbeat.wav` — heartbeat-style pulses, not a medical recording.
 4. `soothing_music.wav`
 
-They are for testing the ladder and audio-output path. They do not imply that a
-given sound will soothe a baby. The files are short, but playback can loop them
-for long configured windows; the first default uterine-style step is set to 30
-minutes.
+They are for testing the preset and audio-output path. They do not imply that a
+given sound will soothe a baby. The files are short, but playback can loop the
+selected preset for long configured windows. Lullaby should play one selected
+mode, such as `white_noise`, `heartbeat`, or `soothing_music`, rather than
+cycling through all sounds automatically. `uterine_whoosh` remains available as
+an optional synthetic output-test preset.
 
 ## Living-document protocol
 
@@ -133,11 +135,12 @@ minutes.
 
 ## Changelog
 
+- **2026-06-21** — Mo corrected the Tier 1 product model: Lullaby should use one selected soothe preset, not cycle through all sounds automatically. Config now supports `soothe.preset` and named presets; default preset is `white_noise`.
 - **2026-06-21** — Renamed lowercase `agents.md` to root `AGENTS.md` and added Codex-specific loading notes so Codex sessions read the project operating manual by default while `CLAUDE.md` remains the Claude Code router.
-- **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`. The first default uterine-style step now has a 30-minute play window, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.
-- **2026-06-21** — Added a stronger generated `uterine_whoosh.wav` asset and placed it first in the default Tier 1 soothe ladder. It is a synthetic womb-like output-test sound, not a recording or soothe claim.
-- **2026-06-21** — Added generated local Tier 1 soothe assets: white noise, heartbeat-style pulses, and soothing music, plus the reproducible generator script, asset metadata test, and default config ladder paths. Real playback remains the next gate and should start at low laptop volume.
-- **2026-06-21** — Mo explicitly approved starting Tier 1. Implemented the first laptop-first slice: configurable dry-run soothe ladder, `--soothe` CLI enablement, Tier 1 demo config, soothe events in JSON/readable logs, soothe mention in the morning digest, and tests for soothe-before-notify and settle-before-notify paths. Tiers 2–5 remain gated.
+- **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.
+- **2026-06-21** — Added a stronger generated `uterine_whoosh.wav` asset. It is a synthetic womb-like output-test sound, not a recording or soothe claim.
+- **2026-06-21** — Added generated local Tier 1 soothe assets: white noise, heartbeat-style pulses, and soothing music, plus the reproducible generator script, asset metadata test, and config paths. Real playback remains the next gate and should start at low laptop volume.
+- **2026-06-21** — Mo explicitly approved starting Tier 1. Implemented the first laptop-first slice: configurable dry-run soothing, `--soothe` CLI enablement, Tier 1 demo config, soothe events in JSON/readable logs, soothe mention in the morning digest, and tests for soothe-before-notify and settle-before-notify paths. Tiers 2–5 remain gated.
 - **2026-06-21** — Added the owned 3W 4Ω speaker and MAX98357 I2S amplifier to the hardware inventory. It may be bench-tested on the Pi now; product soothe-output integration remains Tier 1-gated.
 - **2026-06-21** — Added one Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 and one Pimoroni BME688 4-in-1 air quality breakout to the owned hardware inventory. Tier 0 remains active; radar and environment work remain gated later-tier scope.
 - **2026-06-19** — Merged `codex/lullaby-tier0` into `main`: promoted the `src/lullaby/` Tier 0 audio spine, CLI, config, sample-data workflow, logs, morning digest, optional derived-text-only LLM polish, and hardware-free tests as the canonical implementation. Kept Lab Witness material archived and ignored local `.gbrain-source`.

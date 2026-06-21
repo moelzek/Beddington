@@ -9,35 +9,38 @@ notification_cooldown_seconds = 30.0
 desktop = true
 
 [soothe]
-# Tier 1 is explicit. Keep this off unless you want Lullaby to try a soothe
-# step before notifying.
+# Tier 1 is explicit. Keep this off unless you want Lullaby to play the
+# selected preset before notifying.
 enabled = false
-# "none" records the ladder without playing audio. Use "auto" with sound_path
+# "none" records the preset without playing audio. Use "auto" with sound_path
 # for a real local WAV/AIFF/MP3 file on macOS or Raspberry Pi OS.
 player = "none"
+# Pick exactly one: white_noise, heartbeat, soothing_music, or uterine_whoosh.
+preset = "white_noise"
 
-[[soothe.steps]]
-name = "uterine whoosh"
-sound_path = "../assets/soothe/uterine_whoosh.wav"
-# Real settling can take much longer than a preview clip. The player loops the
-# short local WAV for play_seconds when soothe.player = "auto".
+[soothe.presets.white_noise]
+name = "white noise"
+sound_path = "../assets/soothe/white_noise.wav"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
-[[soothe.steps]]
-name = "white noise"
-sound_path = "../assets/soothe/white_noise.wav"
-wait_seconds = 60.0
-
-[[soothe.steps]]
-name = "heartbeat"
+[soothe.presets.heartbeat]
+name = "heartbeat-style pulses"
 sound_path = "../assets/soothe/heartbeat.wav"
-wait_seconds = 60.0
+wait_seconds = 1800.0
+play_seconds = 1800.0
 
-[[soothe.steps]]
+[soothe.presets.soothing_music]
 name = "soothing music"
 sound_path = "../assets/soothe/soothing_music.wav"
-wait_seconds = 90.0
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.uterine_whoosh]
+name = "uterine whoosh"
+sound_path = "../assets/soothe/uterine_whoosh.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
 
 [llm]
 enabled = false

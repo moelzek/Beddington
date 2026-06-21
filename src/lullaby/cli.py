@@ -56,7 +56,7 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--soothe",
         action="store_true",
-        help="Enable the configured Tier 1 soothe ladder before parent notification",
+        help="Enable the selected Tier 1 soothe preset before parent notification",
     )
     parser.add_argument(
         "--started-at",

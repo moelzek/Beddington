@@ -103,7 +103,7 @@ def test_pipeline_writes_events_log_and_digest(tmp_path: Path) -> None:
     ]
 
 
-def test_soothe_ladder_runs_before_notification(tmp_path: Path) -> None:
+def test_selected_soothe_preset_runs_before_notification(tmp_path: Path) -> None:
     scores = [0.8, 0.9, 0.7, 0.1, 0.1]
     notifier = FakeNotifier()
     soothe_player = FakeSoothePlayer()
@@ -147,10 +147,10 @@ def test_soothe_ladder_runs_before_notification(tmp_path: Path) -> None:
         "cry_ended",
     ]
     assert result.report.events[1].details["play_seconds"] == 1800.0
-    assert "tried 1 soothe step" in result.digest
+    assert "tried 1 soothe preset" in result.digest
 
 
-def test_soothe_ladder_suppresses_notification_when_crying_settles(
+def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
     tmp_path: Path,
 ) -> None:
     scores = [0.8, 0.9, 0.1, 0.1]

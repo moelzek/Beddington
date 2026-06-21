@@ -7,9 +7,9 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 ## 21 June 2026 — Tier 1 started
 
 Mo explicitly approved starting Tier 1. The first slice keeps the build
-laptop-first: a configurable soothe ladder can run in dry-run mode, write
+laptop-first: a configurable soothe preset can run in dry-run mode, write
 `SOOTHE` lines to the night log, mention soothe attempts in the digest, and
-move parent notification until after the ladder when crying persists.
+move parent notification until after the selected preset when crying persists.
 
 **Next single outcome:** test a real local soothing audio file at low laptop
 volume, then decide whether to bench-test the Pi speaker/amplifier.
@@ -17,19 +17,23 @@ volume, then decide whether to bench-test the Pi speaker/amplifier.
 ### Generated soothe assets
 
 Added synthetic local WAV assets for white noise, heartbeat-style pulses, and
-soothing music. The default ladder points at them, but playback is still off
+soothing music. The default presets point at them, but playback is still off
 unless soothing is explicitly enabled and `soothe.player` is set to `auto`.
 
 **Next single outcome:** preview the assets at low laptop volume.
 
-Added a stronger synthetic `uterine_whoosh.wav` and moved it to the first
-default ladder step. It is a womb-like rumble/whoosh for output testing, not a
-recording or a soothe claim.
+Added a stronger synthetic `uterine_whoosh.wav`. It is a womb-like
+rumble/whoosh for output testing, not a recording or a soothe claim.
 
 Mo pointed out that a few seconds is not a realistic settling window; it may
 take around 30 minutes. The player now loops short local WAV files for a
-separate `play_seconds` window, and the first default uterine-style step is set
-to 30 minutes.
+separate `play_seconds` window; presets can now be configured for 30-minute
+play windows.
+
+Mo also clarified the product behaviour: parents should choose one soothe mode,
+not have Lullaby cycle through every sound. Config now uses `soothe.preset`
+with named presets; `white_noise` is the default, with heartbeat-style pulses,
+soothing music, and the synthetic uterine whoosh available.
 
 ## 18 June 2026 — project pivot
 
