@@ -23,9 +23,10 @@
 - [x] Dry-run laptop mode that records soothe attempts without playing sound.
 - [x] Parent notification moves after the ladder when soothing is enabled.
 - [x] Night log and morning digest mention soothe attempts.
+- [x] Generated local WAV assets for white noise, heartbeat-style pulses, and soothing music.
 - [ ] Real local audio-file playback test on laptop.
 - [ ] Pi speaker/amplifier bench test at low volume.
-- [ ] Lullaby, white noise, or recorded parent voice assets.
+- [ ] Recorded parent voice asset.
 - [ ] Optional “likely hungry — best guess” from crying plus time since feed.
 
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first

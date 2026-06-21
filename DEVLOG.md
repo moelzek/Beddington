@@ -14,6 +14,14 @@ move parent notification until after the ladder when crying persists.
 **Next single outcome:** test a real local soothing audio file at low laptop
 volume, then decide whether to bench-test the Pi speaker/amplifier.
 
+### Generated soothe assets
+
+Added synthetic local WAV assets for white noise, heartbeat-style pulses, and
+soothing music. The default ladder points at them, but playback is still off
+unless soothing is explicitly enabled and `soothe.player` is set to `auto`.
+
+**Next single outcome:** preview the assets at low laptop volume.
+
 ## 18 June 2026 — project pivot
 
 Lab Witness is retired as the main project and preserved under `Archive/`. The repository is now Lullaby, a privacy-first baby-monitor companion.

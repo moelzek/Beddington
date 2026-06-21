@@ -16,8 +16,8 @@
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
 - **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe ladder, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records a dry-run soothe step before escalation; the hardware-free test suite passes.
-- **Next gate:** test a real local soothing audio file at low laptop volume, then decide whether to bench-test the Pi speaker/amplifier.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records a dry-run soothe step before escalation; generated white-noise, heartbeat-style, and soothing-music WAV assets exist; the hardware-free test suite passes.
+- **Next gate:** test real local playback of the generated soothing audio files at low laptop volume, then decide whether to bench-test the Pi speaker/amplifier.
 
 ## Locked decisions
 
@@ -110,6 +110,17 @@ On a laptop with no speaker hardware attached:
 3. See the morning digest mention one soothe step before escalation.
 4. Run tests without playing audio, downloading a model, or requiring a cloud key.
 
+## Tier 1 audio assets
+
+Local generated placeholder WAVs live under `assets/soothe/`:
+
+1. `white_noise.wav`
+2. `heartbeat.wav` — heartbeat-style pulses, not a medical recording.
+3. `soothing_music.wav`
+
+They are for testing the ladder and audio-output path. They do not imply that a
+given sound will soothe a baby.
+
 ## Living-document protocol
 
 1. Read this file at the start of each session.
@@ -119,6 +130,7 @@ On a laptop with no speaker hardware attached:
 
 ## Changelog
 
+- **2026-06-21** — Added generated local Tier 1 soothe assets: white noise, heartbeat-style pulses, and soothing music, plus the reproducible generator script, asset metadata test, and default config ladder paths. Real playback remains the next gate and should start at low laptop volume.
 - **2026-06-21** — Mo explicitly approved starting Tier 1. Implemented the first laptop-first slice: configurable dry-run soothe ladder, `--soothe` CLI enablement, Tier 1 demo config, soothe events in JSON/readable logs, soothe mention in the morning digest, and tests for soothe-before-notify and settle-before-notify paths. Tiers 2–5 remain gated.
 - **2026-06-21** — Added the owned 3W 4Ω speaker and MAX98357 I2S amplifier to the hardware inventory. It may be bench-tested on the Pi now; product soothe-output integration remains Tier 1-gated.
 - **2026-06-21** — Added one Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 and one Pimoroni BME688 4-in-1 air quality breakout to the owned hardware inventory. Tier 0 remains active; radar and environment work remain gated later-tier scope.

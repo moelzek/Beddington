@@ -18,8 +18,18 @@ player = "none"
 
 [[soothe.steps]]
 name = "white noise"
-sound_path = ""
-wait_seconds = 30.0
+sound_path = "../assets/soothe/white_noise.wav"
+wait_seconds = 60.0
+
+[[soothe.steps]]
+name = "heartbeat"
+sound_path = "../assets/soothe/heartbeat.wav"
+wait_seconds = 60.0
+
+[[soothe.steps]]
+name = "soothing music"
+sound_path = "../assets/soothe/soothing_music.wav"
+wait_seconds = 90.0
 
 [llm]
 enabled = false

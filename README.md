@@ -71,9 +71,23 @@ escalation. Open the readable log:
 cat output/tier1-demo/night-log.txt
 ```
 
-Expected: a `SOOTHE` line before any `NOTIFIED` line. To use a real local sound
-file later, edit [config/default.toml](config/default.toml), set
-`soothe.player = "auto"`, set `sound_path`, and run with `--soothe`.
+Expected: a `SOOTHE` line before any `NOTIFIED` line. The default ladder now
+has three generated local sounds:
+
+- [white_noise.wav](assets/soothe/white_noise.wav)
+- [heartbeat.wav](assets/soothe/heartbeat.wav)
+- [soothing_music.wav](assets/soothe/soothing_music.wav)
+
+To test real playback later, edit [config/default.toml](config/default.toml),
+set `soothe.player = "auto"`, keep the volume low, and run with `--soothe`.
+
+To preview the generated sounds directly on your Mac:
+
+```bash
+afplay assets/soothe/white_noise.wav
+afplay assets/soothe/heartbeat.wav
+afplay assets/soothe/soothing_music.wav
+```
 
 ## Run the tests
 
@@ -127,6 +141,9 @@ Edit [config/default.toml](config/default.toml):
 - `soothe.steps[].name`: label shown in the night log.
 - `soothe.steps[].sound_path`: local audio file to play when `player = "auto"`.
 - `soothe.steps[].wait_seconds`: how long Lullaby waits before the next soothe step or parent notification.
+
+The included generated sounds are synthetic placeholders for testing the ladder,
+not evidence that a particular sound will soothe a baby.
 
 Keep the first real audio tests on a laptop at low volume before wiring the Pi speaker.
 

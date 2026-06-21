@@ -42,6 +42,10 @@ recorded parent voice file at low volume on a laptop before moving to the Pi
 speaker/amplifier bench test. “Likely hungry” may combine cry plus time since
 feed, but is always a labelled best guess.
 
+Generated local placeholder assets now cover white noise, heartbeat-style
+pulses, and soothing music. They are for testing the ladder and audio-output
+path; they are not evidence that any sound will settle a baby.
+
 ## Tier 2 — local video
 
 Add file/OpenCV and picamera2/Hailo adapters for active/still and face-covered observations. Raw video never leaves the device.

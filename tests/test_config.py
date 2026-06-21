@@ -41,6 +41,18 @@ wait_seconds = 2.5
     assert config.soothe.steps[0].wait_seconds == 2.5
 
 
+def test_default_config_points_at_generated_soothe_assets() -> None:
+    config = load_config(Path("config/default.toml"))
+
+    assert [step.name for step in config.soothe.steps] == [
+        "white noise",
+        "heartbeat",
+        "soothing music",
+    ]
+    assert all(step.sound_path is not None for step in config.soothe.steps)
+    assert all(step.sound_path.exists() for step in config.soothe.steps if step.sound_path)
+
+
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text("[detection]\nthreshold = 1.5\n", encoding="utf-8")
