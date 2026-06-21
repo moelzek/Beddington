@@ -17,6 +17,15 @@ notification_cooldown_seconds = 20
 
 [notifications]
 desktop = false
+
+[soothe]
+enabled = true
+player = "none"
+
+[[soothe.steps]]
+name = "white noise"
+sound_path = "white-noise.wav"
+wait_seconds = 2.5
 """,
         encoding="utf-8",
     )
@@ -26,6 +35,10 @@ desktop = false
     assert config.detection.threshold == 0.4
     assert config.detection.sustained_seconds == 2.0
     assert config.notifications.desktop is False
+    assert config.soothe.enabled is True
+    assert config.soothe.steps[0].name == "white noise"
+    assert config.soothe.steps[0].sound_path == tmp_path / "white-noise.wav"
+    assert config.soothe.steps[0].wait_seconds == 2.5
 
 
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
@@ -33,4 +46,12 @@ def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
     path.write_text("[detection]\nthreshold = 1.5\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="between 0 and 1"):
+        load_config(path)
+
+
+def test_enabled_soothe_requires_steps(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[soothe]\nenabled = true\nsteps = []\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="soothe.steps"):
         load_config(path)

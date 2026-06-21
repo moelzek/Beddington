@@ -8,7 +8,13 @@ from pathlib import Path
 
 import numpy as np
 
-from lullaby.config import AppConfig, DetectionConfig, NotificationConfig
+from lullaby.config import (
+    AppConfig,
+    DetectionConfig,
+    NotificationConfig,
+    SootheConfig,
+    SootheStepConfig,
+)
 from lullaby.models import AudioWindow
 from lullaby.pipeline import run_pipeline
 
@@ -49,6 +55,15 @@ class FakeNotifier:
         return {"console": True, "desktop": False}
 
 
+class FakeSoothePlayer:
+    def __init__(self) -> None:
+        self.steps: list[str] = []
+
+    def play(self, step: SootheStepConfig) -> dict[str, object]:
+        self.steps.append(step.name)
+        return {"played": True, "player": "fake"}
+
+
 def test_pipeline_writes_events_log_and_digest(tmp_path: Path) -> None:
     scores = [0.1, 0.8, 0.9, 0.7, 0.1, 0.1]
     notifier = FakeNotifier()
@@ -81,4 +96,83 @@ def test_pipeline_writes_events_log_and_digest(tmp_path: Path) -> None:
         "cry_started",
         "notification_sent",
         "cry_ended",
+    ]
+
+
+def test_soothe_ladder_runs_before_notification(tmp_path: Path) -> None:
+    scores = [0.8, 0.9, 0.7, 0.1, 0.1]
+    notifier = FakeNotifier()
+    soothe_player = FakeSoothePlayer()
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        notifications=NotificationConfig(desktop=False),
+        soothe=SootheConfig(
+            enabled=True,
+            player="none",
+            steps=(SootheStepConfig(name="white noise", wait_seconds=0.0),),
+        ),
+    )
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=notifier,
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+        soothe_player=soothe_player,
+    )
+
+    assert notifier.calls == 1
+    assert soothe_player.steps == ["white noise"]
+    assert [event.kind for event in result.report.events] == [
+        "cry_started",
+        "soothe_attempted",
+        "notification_sent",
+        "cry_ended",
+    ]
+    assert "tried 1 soothe step" in result.digest
+
+
+def test_soothe_ladder_suppresses_notification_when_crying_settles(
+    tmp_path: Path,
+) -> None:
+    scores = [0.8, 0.9, 0.1, 0.1]
+    notifier = FakeNotifier()
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        notifications=NotificationConfig(desktop=False),
+        soothe=SootheConfig(
+            enabled=True,
+            player="none",
+            steps=(SootheStepConfig(name="white noise", wait_seconds=10.0),),
+        ),
+    )
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=notifier,
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+        soothe_player=FakeSoothePlayer(),
+    )
+
+    assert notifier.calls == 0
+    assert [event.kind for event in result.report.events] == [
+        "cry_started",
+        "soothe_attempted",
+        "cry_ended",
+        "soothe_settled",
     ]

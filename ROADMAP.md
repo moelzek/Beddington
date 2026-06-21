@@ -19,12 +19,17 @@
 
 ## Tier 1 — soothe before escalation
 
-- Lullaby, white noise, or recorded parent voice.
-- Configurable soothe ladder and wait periods.
-- Notify only if crying persists after the ladder.
-- Optional “likely hungry — best guess” from crying plus time since feed.
+- [x] Configurable soothe ladder and wait periods.
+- [x] Dry-run laptop mode that records soothe attempts without playing sound.
+- [x] Parent notification moves after the ladder when soothing is enabled.
+- [x] Night log and morning digest mention soothe attempts.
+- [ ] Real local audio-file playback test on laptop.
+- [ ] Pi speaker/amplifier bench test at low volume.
+- [ ] Lullaby, white noise, or recorded parent voice assets.
+- [ ] Optional “likely hungry — best guess” from crying plus time since feed.
 
-**Gate:** Tier 0 is stable and Mo explicitly asks to proceed.
+**Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
+until the audio-output hardware is bench-tested safely.
 
 ## Tier 2 — local video observations
 

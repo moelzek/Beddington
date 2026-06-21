@@ -7,6 +7,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Laptop `.wav` input and optional live microphone input.
 - Official YAMNet TFLite `Baby cry, infant cry` model score.
 - Deterministic confidence threshold, sustained-duration debounce, release delay, and notification cooldown.
+- Optional Tier 1 dry-run soothe ladder before parent notification.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
 - Console notification plus best-effort macOS/Linux desktop notification.
 - Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.
@@ -52,6 +53,28 @@ python -m json.tool output/sample-night/events.json
 
 Generated output is gitignored.
 
+## Try the Tier 1 soothe ladder
+
+Tier 1 is explicit and off in the default config. The demo config uses dry-run
+playback, so it records the soothe step without playing sound:
+
+```bash
+lullaby --config config/tier1-demo.toml analyze \
+  sample_data/crying_baby_cc0.wav \
+  --output output/tier1-demo
+```
+
+You should see a digest that says Lullaby tried one soothe step before
+escalation. Open the readable log:
+
+```bash
+cat output/tier1-demo/night-log.txt
+```
+
+Expected: a `SOOTHE` line before any `NOTIFIED` line. To use a real local sound
+file later, edit [config/default.toml](config/default.toml), set
+`soothe.player = "auto"`, set `sound_path`, and run with `--soothe`.
+
 ## Run the tests
 
 ```bash
@@ -94,6 +117,18 @@ Edit [config/default.toml](config/default.toml):
 - `notification_cooldown_seconds`: minimum time between notifications.
 
 YAMNet scores are uncalibrated model scores, not probabilities. Tune against recordings from the real room before relying on notifications.
+
+## Tune soothing
+
+Edit [config/default.toml](config/default.toml):
+
+- `soothe.enabled`: default `false`; can also be enabled per run with `--soothe`.
+- `soothe.player`: `none` logs a dry run; `auto` plays a configured local sound file.
+- `soothe.steps[].name`: label shown in the night log.
+- `soothe.steps[].sound_path`: local audio file to play when `player = "auto"`.
+- `soothe.steps[].wait_seconds`: how long Lullaby waits before the next soothe step or parent notification.
+
+Keep the first real audio tests on a laptop at low volume before wiring the Pi speaker.
 
 ## Optional LLM polish
 

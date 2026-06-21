@@ -12,12 +12,12 @@
 
 ## Current status
 
-- **Active tier:** Tier 0 — audio spine, merged to `main`, implemented, and acceptance-tested locally. Stop here until Mo explicitly approves Tier 1.
+- **Active tier:** Tier 1 — soothe ladder, explicitly approved by Mo on 2026-06-21. The first slice is laptop-first dry-run soothing before parent notification.
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
-- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, local logs, morning digest, notifications, and optional LLM polish.
+- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe ladder, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
-- **Acceptance result:** the included CC0 sample produces one sustained-cry episode, one notification, `events.json`, `night-log.txt`, and `morning-digest.txt`; the hardware-free test suite passes.
-- **Next gate:** Mo reviews Tier 0 and explicitly decides whether to begin Tier 1.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records a dry-run soothe step before escalation; the hardware-free test suite passes.
+- **Next gate:** test a real local soothing audio file at low laptop volume, then decide whether to bench-test the Pi speaker/amplifier.
 
 ## Locked decisions
 
@@ -31,7 +31,7 @@
 | Core logic | Detection, thresholds, timers, debounce, and event generation are deterministic. |
 | LLM | Optional, provider-agnostic, environment-configured, and behind a flag. The complete app works with it off. |
 | Development | Hardware-free first. Audio/video files and mock sensors use the same adapter interfaces as real Pi hardware. |
-| Scope | Build Tier 0 only until Mo explicitly approves Tier 1. |
+| Scope | Build Tier 1 only. Tiers 2–5 still require Mo’s explicit approval and their safety gates. |
 
 ## Hardware on hand
 
@@ -45,6 +45,7 @@ These facts were migrated from the retired Lab Witness inventory.
 | Camera Module 3 ×2 | On hand | Later daytime video; standard modules are not suitable for dark-room IR work |
 | Pi 5 camera adapter cable | On hand; camera was previously detected | Later camera connection |
 | USB mini microphone | On hand | Tier 0 live audio input on the Pi |
+| 3W 4Ω speaker + MAX98357 I2S amplifier | On hand | Bench audio-output test now; Tier 1 soothe output only after explicit approval |
 | 0.91-inch I²C OLED ×3 | On hand | Later companion eyes/status |
 | BS-16 mini speaker | On hand | Tier 1 soothe output; may require an amplifier |
 | Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 | On hand, quantity 1 | Later presence/gross movement; breathing may be shown only as a non-medical trend after mentor safety sign-off |
@@ -81,8 +82,8 @@ Raw recordings remain local. Generated logs must not contain raw media or secret
 
 | Tier | Outcome | Gate |
 |---|---|---|
-| **0 — Spine** | WAV/mic → YAMNet baby-cry detection → sustained-cry events → JSON/readable night log → rule-based morning digest → debounced console/desktop notification | Active |
-| **1 — Act** | Soothe ladder: lullaby/white noise/recorded parent voice before notification; optional “likely hungry” best guess from cry + time since feed | Mo must approve |
+| **0 — Spine** | WAV/mic → YAMNet baby-cry detection → sustained-cry events → JSON/readable night log → rule-based morning digest → debounced console/desktop notification | Complete |
+| **1 — Act** | Soothe ladder: lullaby/white noise/recorded parent voice before notification; optional “likely hungry” best guess from cry + time since feed | Active; laptop dry-run slice implemented |
 | **2 — Video** | File/OpenCV laptop adapter and picamera2/Hailo Pi adapter; active/still and face-covered observations | Mo must approve; privacy and false-alarm review |
 | **3 — Radar** | Presence and gross movement; breathing may be shown only as a non-medical trend | Mentor safety sign-off; never alarms |
 | **4 — Environment** | Room temperature/humidity and nappy-VOC best guess | Calibration and hygiene review |
@@ -100,6 +101,15 @@ On a laptop with no hardware attached:
 6. Generate a plain-English morning digest.
 7. Run tests without downloading a model or requiring a cloud key.
 
+## Tier 1 first-slice acceptance
+
+On a laptop with no speaker hardware attached:
+
+1. Run the included sample cry recording with `config/tier1-demo.toml`.
+2. See a `SOOTHE` line in the readable night log before any `NOTIFIED` line.
+3. See the morning digest mention one soothe step before escalation.
+4. Run tests without playing audio, downloading a model, or requiring a cloud key.
+
 ## Living-document protocol
 
 1. Read this file at the start of each session.
@@ -109,6 +119,8 @@ On a laptop with no hardware attached:
 
 ## Changelog
 
+- **2026-06-21** — Mo explicitly approved starting Tier 1. Implemented the first laptop-first slice: configurable dry-run soothe ladder, `--soothe` CLI enablement, Tier 1 demo config, soothe events in JSON/readable logs, soothe mention in the morning digest, and tests for soothe-before-notify and settle-before-notify paths. Tiers 2–5 remain gated.
+- **2026-06-21** — Added the owned 3W 4Ω speaker and MAX98357 I2S amplifier to the hardware inventory. It may be bench-tested on the Pi now; product soothe-output integration remains Tier 1-gated.
 - **2026-06-21** — Added one Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 and one Pimoroni BME688 4-in-1 air quality breakout to the owned hardware inventory. Tier 0 remains active; radar and environment work remain gated later-tier scope.
 - **2026-06-19** — Merged `codex/lullaby-tier0` into `main`: promoted the `src/lullaby/` Tier 0 audio spine, CLI, config, sample-data workflow, logs, morning digest, optional derived-text-only LLM polish, and hardware-free tests as the canonical implementation. Kept Lab Witness material archived and ignored local `.gbrain-source`.
 - **2026-06-18** — Pivoted the repository from Lab Witness to **Lullaby** as the main project. Archived Lab Witness build documents, prompts, reviewer skills, and devlog without deleting them. Promoted the baby-monitor evaluation and build plan into project-core documents. Migrated reusable hardware facts, locked privacy/safety/LLM boundaries, and set Tier 0 audio as the only active build scope.

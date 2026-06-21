@@ -1,3 +1,3 @@
-"""Lullaby Tier 0: local cry events, night logs, and morning digests."""
+"""Lullaby: local cry events, soothe attempts, night logs, and digests."""
 
 __version__ = "0.1.0"

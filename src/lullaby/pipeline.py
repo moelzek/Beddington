@@ -12,6 +12,7 @@ from .llm import polish_digest
 from .logging import OutputPaths, write_outputs
 from .models import Event, NightReport
 from .notifications import Notifier
+from .soothe import SoothePlayer, build_soothe_player, SootheController
 from .state import CryEventTracker
 
 
@@ -30,6 +31,7 @@ def run_pipeline(
     output_dir: Path,
     started_at: datetime | None = None,
     use_llm: bool | None = None,
+    soothe_player: SoothePlayer | None = None,
 ) -> RunResult:
     started_at = started_at or datetime.now(UTC)
     if started_at.tzinfo is None:
@@ -39,6 +41,13 @@ def run_pipeline(
     events: list[Event] = []
     windows_processed = 0
     peak_score = 0.0
+    soothe = None
+    if config.soothe.enabled:
+        soothe = SootheController(
+            config.soothe,
+            started_at,
+            soothe_player or build_soothe_player(config.soothe),
+        )
 
     for window in source.windows():
         score = detector.score(window.samples)
@@ -46,13 +55,25 @@ def run_pipeline(
         peak_score = max(peak_score, score)
         result = tracker.observe(window.offset_seconds, score)
         events.extend(result.events)
-        if result.notify:
+        notify = result.notify
+        if soothe is not None:
+            soothe_result = soothe.observe(
+                window.offset_seconds,
+                score,
+                result.events,
+                escalation_due=result.notify,
+            )
+            events.extend(soothe_result.events)
+            notify = soothe_result.notify
+        if notify:
+            message = (
+                "Sustained crying still detected "
+                if soothe is not None
+                else "Sustained crying detected "
+            )
             targets = notifier.notify(
                 "Lullaby",
-                (
-                    "Sustained crying detected "
-                    f"(model score {score:.2f}). Please check the baby."
-                ),
+                message + f"(model score {score:.2f}). Please check the baby.",
             )
             events.append(
                 Event(
@@ -64,6 +85,26 @@ def run_pipeline(
                 )
             )
 
+    if soothe is not None:
+        soothe_result = soothe.finish(source.duration_seconds, peak_score)
+        events.extend(soothe_result.events)
+        if soothe_result.notify:
+            targets = notifier.notify(
+                "Lullaby",
+                (
+                    "Sustained crying still detected "
+                    f"(model score {peak_score:.2f}). Please check the baby."
+                ),
+            )
+            events.append(
+                Event(
+                    kind="notification_sent",
+                    occurred_at=started_at + timedelta(seconds=source.duration_seconds),
+                    offset_seconds=source.duration_seconds,
+                    score=peak_score,
+                    details=targets,
+                )
+            )
     events.extend(tracker.finish(source.duration_seconds))
     finished_at = started_at + timedelta(seconds=source.duration_seconds)
     report = NightReport(

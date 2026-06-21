@@ -35,7 +35,12 @@ flowchart LR
 
 ## Tier 1 — soothe ladder and best-guess hunger
 
-Play a configurable lullaby, white noise, or recorded parent voice, wait, and notify only if crying persists. “Likely hungry” may combine cry plus time since feed, but is always a labelled best guess.
+Approved on 2026-06-21 and started laptop-first. The first slice adds a
+configurable dry-run soothe ladder that records a soothe attempt, waits, and
+notifies only if crying persists. Next, play a local lullaby, white noise, or
+recorded parent voice file at low volume on a laptop before moving to the Pi
+speaker/amplifier bench test. “Likely hungry” may combine cry plus time since
+feed, but is always a labelled best guess.
 
 ## Tier 2 — local video
 

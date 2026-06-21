@@ -4,6 +4,16 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 21 June 2026 — Tier 1 started
+
+Mo explicitly approved starting Tier 1. The first slice keeps the build
+laptop-first: a configurable soothe ladder can run in dry-run mode, write
+`SOOTHE` lines to the night log, mention soothe attempts in the digest, and
+move parent notification until after the ladder when crying persists.
+
+**Next single outcome:** test a real local soothing audio file at low laptop
+volume, then decide whether to bench-test the Pi speaker/amplifier.
+
 ## 18 June 2026 — project pivot
 
 Lab Witness is retired as the main project and preserved under `Archive/`. The repository is now Lullaby, a privacy-first baby-monitor companion.

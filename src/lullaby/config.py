@@ -28,10 +28,27 @@ class LlmConfig:
 
 
 @dataclass(frozen=True)
+class SootheStepConfig:
+    name: str
+    sound_path: Path | None = None
+    wait_seconds: float = 30.0
+
+
+@dataclass(frozen=True)
+class SootheConfig:
+    enabled: bool = False
+    player: str = "none"
+    steps: tuple[SootheStepConfig, ...] = (
+        SootheStepConfig(name="white noise dry run", wait_seconds=30.0),
+    )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     detection: DetectionConfig = DetectionConfig()
     notifications: NotificationConfig = NotificationConfig()
     llm: LlmConfig = LlmConfig()
+    soothe: SootheConfig = SootheConfig()
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -49,6 +66,8 @@ def load_config(path: Path | None = None) -> AppConfig:
         detection = raw.get("detection", {})
         notifications = raw.get("notifications", {})
         llm = raw.get("llm", {})
+        soothe = raw.get("soothe", {})
+        raw_soothe_steps = soothe.get("steps")
         config = AppConfig(
             detection=DetectionConfig(
                 threshold=float(detection.get("threshold", config.detection.threshold)),
@@ -73,6 +92,15 @@ def load_config(path: Path | None = None) -> AppConfig:
                 base_url=str(llm.get("base_url", config.llm.base_url)),
                 model=str(llm.get("model", config.llm.model)),
             ),
+            soothe=SootheConfig(
+                enabled=bool(soothe.get("enabled", config.soothe.enabled)),
+                player=str(soothe.get("player", config.soothe.player)),
+                steps=(
+                    _load_soothe_steps(raw_soothe_steps, path.parent)
+                    if raw_soothe_steps is not None
+                    else config.soothe.steps
+                ),
+            ),
         )
 
     config = replace(
@@ -84,9 +112,36 @@ def load_config(path: Path | None = None) -> AppConfig:
             model=os.getenv("LULLABY_LLM_MODEL", config.llm.model),
             api_key=os.getenv("LULLABY_LLM_API_KEY", ""),
         ),
+        soothe=replace(
+            config.soothe,
+            enabled=_env_bool("LULLABY_SOOTHE_ENABLED", config.soothe.enabled),
+            player=os.getenv("LULLABY_SOOTHE_PLAYER", config.soothe.player),
+        ),
     )
     _validate(config)
     return config
+
+
+def _load_soothe_steps(raw_steps: object, config_dir: Path) -> tuple[SootheStepConfig, ...]:
+    if not isinstance(raw_steps, list):
+        return ()
+
+    steps: list[SootheStepConfig] = []
+    for index, raw_step in enumerate(raw_steps, start=1):
+        if not isinstance(raw_step, dict):
+            raise ValueError(f"soothe.steps[{index}] must be a table")
+        sound_path = str(raw_step.get("sound_path", "")).strip()
+        path = Path(sound_path).expanduser() if sound_path else None
+        if path is not None and not path.is_absolute():
+            path = config_dir / path
+        steps.append(
+            SootheStepConfig(
+                name=str(raw_step.get("name", f"step {index}")),
+                sound_path=path,
+                wait_seconds=float(raw_step.get("wait_seconds", 30.0)),
+            )
+        )
+    return tuple(steps)
 
 
 def _validate(config: AppConfig) -> None:
@@ -102,3 +157,12 @@ def _validate(config: AppConfig) -> None:
     ):
         if value < 0:
             raise ValueError(f"detection.{name} must be non-negative")
+    if config.soothe.player not in {"none", "auto"}:
+        raise ValueError("soothe.player must be 'none' or 'auto'")
+    if config.soothe.enabled and not config.soothe.steps:
+        raise ValueError("soothe.steps must include at least one step when soothe is enabled")
+    for index, step in enumerate(config.soothe.steps, start=1):
+        if not step.name.strip():
+            raise ValueError(f"soothe.steps[{index}].name must not be empty")
+        if step.wait_seconds < 0:
+            raise ValueError(f"soothe.steps[{index}].wait_seconds must be non-negative")

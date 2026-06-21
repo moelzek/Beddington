@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
@@ -53,6 +54,11 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-desktop", action="store_true")
     parser.add_argument("--llm", action="store_true")
     parser.add_argument(
+        "--soothe",
+        action="store_true",
+        help="Enable the configured Tier 1 soothe ladder before parent notification",
+    )
+    parser.add_argument(
         "--started-at",
         type=datetime.fromisoformat,
         help="Optional ISO timestamp for the start of the recording",
@@ -70,6 +76,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _digest_command(args, config)
 
     detector = YamNetTFLiteDetector(args.model)
+    if args.soothe:
+        config = replace(config, soothe=replace(config.soothe, enabled=True))
     notifier = LocalNotifier(desktop=config.notifications.desktop and not args.no_desktop)
     if args.command == "analyze":
         if not args.wav.exists():

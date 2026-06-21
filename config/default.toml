@@ -8,6 +8,19 @@ notification_cooldown_seconds = 30.0
 [notifications]
 desktop = true
 
+[soothe]
+# Tier 1 is explicit. Keep this off unless you want Lullaby to try a soothe
+# step before notifying.
+enabled = false
+# "none" records the ladder without playing audio. Use "auto" with sound_path
+# for a real local WAV/AIFF/MP3 file on macOS or Raspberry Pi OS.
+player = "none"
+
+[[soothe.steps]]
+name = "white noise"
+sound_path = ""
+wait_seconds = 30.0
+
 [llm]
 enabled = false
 base_url = ""
