@@ -38,6 +38,33 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
+### Current task: Pi Bluetooth speaker playback
+
+Purpose: prove the Pi can play the selected local soothe asset through a
+low-volume Bluetooth speaker before any wired amplifier work.
+
+1. On the Pi, pair a Bluetooth speaker in Raspberry Pi OS and select it as the
+   output device.
+2. From the repo root on the Pi, run:
+
+   ```bash
+   ffplay -nodisp -autoexit assets/soothe/white_noise.wav
+   ```
+
+3. Expected: the white-noise preset plays once through the Bluetooth speaker at
+   low volume, with no errors in the terminal.
+4. If `ffplay` is missing, install FFmpeg or try:
+
+   ```bash
+   mpv assets/soothe/white_noise.wav
+   ```
+
+5. If audio comes from HDMI, the wrong output is selected; choose the Bluetooth
+   speaker in Raspberry Pi OS and retry.
+6. If this works, mark the Bluetooth item complete and move to the MAX98357
+   bench test. If it fails, keep the wired amplifier untouched and debug Pi
+   audio output first.
+
 ### Future cry-stopped verification while soothing
 
 - [ ] Keep audio ML as the primary signal for “crying still detected”.
