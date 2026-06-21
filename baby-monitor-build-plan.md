@@ -47,6 +47,10 @@ white noise, heartbeat-style pulses, and soothing music. They are for testing
 the ladder and audio-output path; they are not evidence that any sound will
 settle a baby.
 
+The soothe player loops short local WAV files for the configured play window.
+The first default uterine-style step is configured for 30 minutes because a
+real settling window may be much longer than a preview clip.
+
 ## Tier 2 — local video
 
 Add file/OpenCV and picamera2/Hailo adapters for active/still and face-covered observations. Raw video never leaves the device.

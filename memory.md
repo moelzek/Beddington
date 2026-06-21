@@ -16,8 +16,8 @@
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
 - **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe ladder, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records a dry-run soothe step before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; the hardware-free test suite passes.
-- **Next gate:** test real local playback of the generated soothing audio files at low laptop volume, then decide whether to bench-test the Pi speaker/amplifier.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records a dry-run soothe step before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; soothe playback can loop short files for long configured windows; the hardware-free test suite passes.
+- **Next gate:** test real local playback of the generated soothing audio files at low laptop volume, including a longer looped run, then decide whether to bench-test the Pi speaker/amplifier.
 
 ## Locked decisions
 
@@ -120,7 +120,9 @@ Local generated placeholder WAVs live under `assets/soothe/`:
 4. `soothing_music.wav`
 
 They are for testing the ladder and audio-output path. They do not imply that a
-given sound will soothe a baby.
+given sound will soothe a baby. The files are short, but playback can loop them
+for long configured windows; the first default uterine-style step is set to 30
+minutes.
 
 ## Living-document protocol
 
@@ -131,6 +133,7 @@ given sound will soothe a baby.
 
 ## Changelog
 
+- **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`. The first default uterine-style step now has a 30-minute play window, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.
 - **2026-06-21** — Added a stronger generated `uterine_whoosh.wav` asset and placed it first in the default Tier 1 soothe ladder. It is a synthetic womb-like output-test sound, not a recording or soothe claim.
 - **2026-06-21** — Added generated local Tier 1 soothe assets: white noise, heartbeat-style pulses, and soothing music, plus the reproducible generator script, asset metadata test, and default config ladder paths. Real playback remains the next gate and should start at low laptop volume.
 - **2026-06-21** — Mo explicitly approved starting Tier 1. Implemented the first laptop-first slice: configurable dry-run soothe ladder, `--soothe` CLI enablement, Tier 1 demo config, soothe events in JSON/readable logs, soothe mention in the morning digest, and tests for soothe-before-notify and settle-before-notify paths. Tiers 2–5 remain gated.

@@ -58,10 +58,14 @@ class FakeNotifier:
 class FakeSoothePlayer:
     def __init__(self) -> None:
         self.steps: list[str] = []
+        self.stop_calls = 0
 
     def play(self, step: SootheStepConfig) -> dict[str, object]:
         self.steps.append(step.name)
-        return {"played": True, "player": "fake"}
+        return {"played": True, "player": "fake", "play_seconds": step.play_seconds}
+
+    def stop_all(self) -> None:
+        self.stop_calls += 1
 
 
 def test_pipeline_writes_events_log_and_digest(tmp_path: Path) -> None:
@@ -114,7 +118,13 @@ def test_soothe_ladder_runs_before_notification(tmp_path: Path) -> None:
         soothe=SootheConfig(
             enabled=True,
             player="none",
-            steps=(SootheStepConfig(name="white noise", wait_seconds=0.0),),
+            steps=(
+                SootheStepConfig(
+                    name="white noise",
+                    wait_seconds=0.0,
+                    play_seconds=1800.0,
+                ),
+            ),
         ),
     )
 
@@ -136,6 +146,7 @@ def test_soothe_ladder_runs_before_notification(tmp_path: Path) -> None:
         "notification_sent",
         "cry_ended",
     ]
+    assert result.report.events[1].details["play_seconds"] == 1800.0
     assert "tried 1 soothe step" in result.digest
 
 

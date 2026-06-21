@@ -71,13 +71,17 @@ escalation. Open the readable log:
 cat output/tier1-demo/night-log.txt
 ```
 
-Expected: a `SOOTHE` line before any `NOTIFIED` line. The default ladder now
-has four generated local sounds:
+Expected: a `SOOTHE` line before any `NOTIFIED` line. The default ladder has
+four generated local sounds:
 
 - [uterine_whoosh.wav](assets/soothe/uterine_whoosh.wav)
 - [white_noise.wav](assets/soothe/white_noise.wav)
 - [heartbeat.wav](assets/soothe/heartbeat.wav)
 - [soothing_music.wav](assets/soothe/soothing_music.wav)
+
+The files themselves are short, but Lullaby can loop them for the configured
+`play_seconds`. The first default step, `uterine whoosh`, is set to play for up
+to 30 minutes when real playback is enabled.
 
 To test real playback later, edit [config/default.toml](config/default.toml),
 set `soothe.player = "auto"`, keep the volume low, and run with `--soothe`.
@@ -142,6 +146,7 @@ Edit [config/default.toml](config/default.toml):
 - `soothe.player`: `none` logs a dry run; `auto` plays a configured local sound file.
 - `soothe.steps[].name`: label shown in the night log.
 - `soothe.steps[].sound_path`: local audio file to play when `player = "auto"`.
+- `soothe.steps[].play_seconds`: how long the sound may loop for this step.
 - `soothe.steps[].wait_seconds`: how long Lullaby waits before the next soothe step or parent notification.
 
 The included generated sounds are synthetic placeholders for testing the ladder.

@@ -26,6 +26,7 @@ player = "none"
 name = "white noise"
 sound_path = "white-noise.wav"
 wait_seconds = 2.5
+play_seconds = 1800
 """,
         encoding="utf-8",
     )
@@ -39,6 +40,7 @@ wait_seconds = 2.5
     assert config.soothe.steps[0].name == "white noise"
     assert config.soothe.steps[0].sound_path == tmp_path / "white-noise.wav"
     assert config.soothe.steps[0].wait_seconds == 2.5
+    assert config.soothe.steps[0].play_seconds == 1800.0
 
 
 def test_default_config_points_at_generated_soothe_assets() -> None:
@@ -50,6 +52,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
         "heartbeat",
         "soothing music",
     ]
+    assert config.soothe.steps[0].play_seconds == 1800.0
     assert all(step.sound_path is not None for step in config.soothe.steps)
     assert all(step.sound_path.exists() for step in config.soothe.steps if step.sound_path)
 

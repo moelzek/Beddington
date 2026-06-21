@@ -32,6 +32,7 @@ class SootheStepConfig:
     name: str
     sound_path: Path | None = None
     wait_seconds: float = 30.0
+    play_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,11 @@ def _load_soothe_steps(raw_steps: object, config_dir: Path) -> tuple[SootheStepC
                 name=str(raw_step.get("name", f"step {index}")),
                 sound_path=path,
                 wait_seconds=float(raw_step.get("wait_seconds", 30.0)),
+                play_seconds=(
+                    float(raw_step["play_seconds"])
+                    if "play_seconds" in raw_step
+                    else None
+                ),
             )
         )
     return tuple(steps)
@@ -166,3 +172,5 @@ def _validate(config: AppConfig) -> None:
             raise ValueError(f"soothe.steps[{index}].name must not be empty")
         if step.wait_seconds < 0:
             raise ValueError(f"soothe.steps[{index}].wait_seconds must be non-negative")
+        if step.play_seconds is not None and step.play_seconds < 0:
+            raise ValueError(f"soothe.steps[{index}].play_seconds must be non-negative")

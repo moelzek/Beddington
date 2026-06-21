@@ -24,6 +24,7 @@
 - [x] Parent notification moves after the ladder when soothing is enabled.
 - [x] Night log and morning digest mention soothe attempts.
 - [x] Generated local WAV assets for uterine-style whoosh, white noise, heartbeat-style pulses, and soothing music.
+- [x] Loop short soothe WAVs for long configured play windows; first uterine step is 30 minutes.
 - [ ] Real local audio-file playback test on laptop.
 - [ ] Pi speaker/amplifier bench test at low volume.
 - [ ] Recorded parent voice asset.

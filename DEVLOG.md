@@ -26,6 +26,11 @@ Added a stronger synthetic `uterine_whoosh.wav` and moved it to the first
 default ladder step. It is a womb-like rumble/whoosh for output testing, not a
 recording or a soothe claim.
 
+Mo pointed out that a few seconds is not a realistic settling window; it may
+take around 30 minutes. The player now loops short local WAV files for a
+separate `play_seconds` window, and the first default uterine-style step is set
+to 30 minutes.
+
 ## 18 June 2026 — project pivot
 
 Lab Witness is retired as the main project and preserved under `Archive/`. The repository is now Lullaby, a privacy-first baby-monitor companion.

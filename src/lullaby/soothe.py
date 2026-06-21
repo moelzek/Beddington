@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,8 @@ class SootheResult:
 class SoothePlayer(Protocol):
     def play(self, step: SootheStepConfig) -> dict[str, Any]: ...
 
+    def stop_all(self) -> None: ...
+
 
 class DryRunSoothePlayer:
     def play(self, step: SootheStepConfig) -> dict[str, Any]:
@@ -27,12 +30,20 @@ class DryRunSoothePlayer:
             "played": False,
             "player": "none",
             "reason": "dry_run",
+            "play_seconds": _play_seconds(step),
             "sound_path": str(step.sound_path) if step.sound_path else "",
         }
 
+    def stop_all(self) -> None:
+        return None
+
 
 class SubprocessSoothePlayer:
+    def __init__(self) -> None:
+        self._processes: list[subprocess.Popen[bytes]] = []
+
     def play(self, step: SootheStepConfig) -> dict[str, Any]:
+        self.stop_all()
         if step.sound_path is None:
             return {"played": False, "reason": "no_sound_path"}
         if not step.sound_path.exists():
@@ -42,7 +53,7 @@ class SubprocessSoothePlayer:
                 "sound_path": str(step.sound_path),
             }
 
-        command = _playback_command(step.sound_path)
+        command = _playback_command(step.sound_path, _play_seconds(step))
         if command is None:
             return {
                 "played": False,
@@ -55,12 +66,30 @@ class SubprocessSoothePlayer:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        self._processes.append(process)
         return {
             "played": True,
-            "player": command[0],
+            "player": _player_name(command),
             "pid": process.pid,
+            "play_seconds": _play_seconds(step),
             "sound_path": str(step.sound_path),
         }
+
+    def stop_all(self) -> None:
+        alive = [process for process in self._processes if process.poll() is None]
+        for process in alive:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+        for process in alive:
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        self._processes = [
+            process for process in self._processes if process.poll() is None
+        ]
 
 
 class SootheController:
@@ -106,10 +135,12 @@ class SootheController:
 
     def finish(self, offset_seconds: float, score: float) -> SootheResult:
         if not self._active:
+            self.player.stop_all()
             return SootheResult()
         result = self.observe(offset_seconds, score, (), escalation_due=False)
         if result.notify:
             self._reset()
+            self.player.stop_all()
             return result
         event = Event(
             kind="soothe_unresolved",
@@ -119,6 +150,7 @@ class SootheController:
             details={"reason": "recording_ended_before_escalation"},
         )
         self._reset()
+        self.player.stop_all()
         return SootheResult(result.events + (event,), notify=False)
 
     def _attempt_due_steps(self, offset_seconds: float, score: float) -> tuple[Event, ...]:
@@ -138,6 +170,7 @@ class SootheController:
                         "step": self._step_index + 1,
                         "name": step.name,
                         "wait_seconds": step.wait_seconds,
+                        "play_seconds": _play_seconds(step),
                         "sound_path": str(step.sound_path) if step.sound_path else "",
                         "playback": playback,
                     },
@@ -191,13 +224,75 @@ def build_soothe_player(config: SootheConfig) -> SoothePlayer:
     return DryRunSoothePlayer()
 
 
-def _playback_command(path: Path) -> list[str] | None:
-    for command in (
+def _play_seconds(step: SootheStepConfig) -> float:
+    if step.play_seconds is not None:
+        return step.play_seconds
+    return step.wait_seconds
+
+
+def _playback_command(path: Path, play_seconds: float) -> list[str] | None:
+    for command in _single_playback_commands(path):
+        if shutil.which(command[0]):
+            if play_seconds <= 0:
+                return command
+            return [
+                sys.executable,
+                "-c",
+                _LOOP_PLAYBACK_SCRIPT,
+                str(play_seconds),
+                *command,
+            ]
+    return None
+
+
+def _single_playback_commands(path: Path) -> tuple[list[str], ...]:
+    return (
         ["afplay", str(path)],
         ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
         ["paplay", str(path)],
         ["aplay", str(path)],
-    ):
-        if shutil.which(command[0]):
-            return command
-    return None
+    )
+
+
+def _player_name(command: list[str]) -> str:
+    if command[:2] == [sys.executable, "-c"] and len(command) >= 5:
+        return f"loop:{command[4]}"
+    return command[0]
+
+
+_LOOP_PLAYBACK_SCRIPT = """
+import signal
+import subprocess
+import sys
+import time
+
+duration = float(sys.argv[1])
+command = sys.argv[2:]
+deadline = time.monotonic() + duration
+running = True
+child = None
+
+def stop(signum, frame):
+    global running
+    running = False
+    if child is not None and child.poll() is None:
+        child.terminate()
+
+signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGINT, stop)
+
+while running and time.monotonic() < deadline:
+    child = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    while running and child.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.2)
+    if child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            child.kill()
+"""

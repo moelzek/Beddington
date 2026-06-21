@@ -19,7 +19,10 @@ player = "none"
 [[soothe.steps]]
 name = "uterine whoosh"
 sound_path = "../assets/soothe/uterine_whoosh.wav"
-wait_seconds = 90.0
+# Real settling can take much longer than a preview clip. The player loops the
+# short local WAV for play_seconds when soothe.player = "auto".
+wait_seconds = 1800.0
+play_seconds = 1800.0
 
 [[soothe.steps]]
 name = "white noise"
