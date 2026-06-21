@@ -44,15 +44,24 @@ These facts were migrated from the retired Lab Witness inventory.
 | AI HAT+ 26 TOPS, Hailo-8 | On hand and previously fitted | Later video inference; not needed for Tier 0 audio |
 | Camera Module 3 ×2 | On hand | Later daytime video; standard modules are not suitable for dark-room IR work |
 | Pi 5 camera adapter cable | On hand; camera was previously detected | Later camera connection |
-| USB mini microphone | On hand | Tier 0 live audio input on the Pi |
-| 3W 4Ω speaker + MAX98357 I2S amplifier | On hand | Bench audio-output test now; Tier 1 soothe output only after explicit approval |
-| 0.91-inch I²C OLED ×3 | On hand | Later companion eyes/status |
+| USB mini microphone | On hand | Tier 0 live audio input on the Pi; use before I²S mics |
+| MAX98357 I²S amplifier | On hand, quantity 2 | Tier 1 bench audio output |
+| 3W 4Ω speaker | On hand, quantity 4 | Wired to MAX98357 for Tier 1 soothe output tests |
+| INMP441 MEMS microphone | On hand, quantity 4 | I²S audio input; advanced, use USB/Bluetooth mic first |
+| 0.96-inch I²C OLED | On hand, quantity 4 | Later companion eyes/status |
+| 0.91-inch I²C OLED | On hand, quantity 2 | Later companion eyes/status |
 | BS-16 mini speaker | On hand | Tier 1 soothe output; may require an amplifier |
+| PCA9685 16-channel servo driver | On hand, quantity 3 | I²C servo driver; use this for servos, with separate servo power |
+| MG996R metal-gear servo | On hand, quantity 4 | Later movement/prototyping via PCA9685; not cot deployment by default |
+| Miuzei 9g micro servo | On hand, quantity 10 | Later light movement/prototyping via PCA9685 |
+| SG90 9g micro servo | On hand, quantity 10 | Later light movement/prototyping via PCA9685 |
+| USB-C PD trigger board | On hand, quantity 5 | Utility power board, especially separate servo power experiments |
 | Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 | On hand, quantity 1 | Later presence/gross movement; breathing may be shown only as a non-medical trend after mentor safety sign-off |
 | Pimoroni BME688 4-in-1 air quality breakout | On hand, quantity 1 | Later room temperature/humidity and experimental nappy-VOC best guess after calibration and hygiene review |
-| HC-SR04 ultrasonic distance sensor | On hand, user-mentioned | Optional bench/proximity utility; not a cry, breathing, or safety signal |
+| HC-SR04 ultrasonic distance sensor | On hand, quantity 5 | GPIO distance/proximity; needs voltage divider; optional utility only, not baby-state inference |
+| VL53L0X laser distance/ToF sensor | On hand, quantity 5 | I²C distance/proximity; preferred distance sensor over HC-SR04 |
 | microSD card, 32GB | On hand | Pi OS and deployment |
-| Breadboards, jumper wires, electronics bench | On hand | Prototyping |
+| Breadboards, jumper wires, wire, screws | On hand, many | Prototyping |
 
 ## Hardware to buy or verify later
 
@@ -60,9 +69,11 @@ These facts were migrated from the retired Lab Witness inventory.
 - **Tier 1:** verify whether the BS-16 speaker needs a small amplifier.
 - **Tier 2:** NoIR Camera Module 3 plus an 850nm IR illuminator if dark-room video is required; cot-safe mount with cables out of reach.
 - **All Pi deployment:** vented base/enclosure and an overnight thermal check.
+- **Audio hardware:** use USB/Bluetooth microphones first; INMP441 I²S microphones are advanced and should wait until the basic Pi audio loop works.
+- **Servo hardware:** servos must be driven through PCA9685 and separate power; do not power servos from Pi GPIO pins.
 - **Tier 3:** MR60BHA2 is owned; later verify cot-distance signal quality, mounting, and ESPHome/MQTT integration only after the radar gate is approved.
 - **Tier 4:** BME688 is owned; later verify placement, hygiene, calibration, and nappy-VOC limits only after the environment gate is approved.
-- **Utility sensors:** HC-SR04 may be useful later for bench proximity checks or mount/enclosure experiments, but should not be used to infer baby state.
+- **Utility sensors:** VL53L0X is the preferred distance/proximity sensor. HC-SR04 may be useful for bench proximity checks or mount/enclosure experiments, but needs a voltage divider and should not be used to infer baby state.
 - **Tier 5:** optional MLX90640 only after the relevant gate is approved.
 
 ## Architecture boundary
@@ -149,6 +160,7 @@ asleep” or “baby is safe”.
 
 - **2026-06-21** — Added future roadmap work for verifying whether crying has stopped while a soothe preset is playing: quiet-check windows, echo-cancellation experiment, camera context, and radar/breathing context under strict non-medical wording and never as sole proof of safety.
 - **2026-06-21** — Added user-mentioned HC-SR04 ultrasonic distance sensor to inventory as an optional utility/proximity part only; it is not part of baby-state inference.
+- **2026-06-21** — Updated hardware inventory with Mo’s exact component quantities: servos, PCA9685 boards, MAX98357 amplifiers, 3W speakers, INMP441 mics, HC-SR04, VL53L0X, OLEDs, USB-C PD trigger boards, and bench supplies. Added caveats for I²S mics, servo power, HC-SR04 voltage divider, and VL53L0X preference.
 - **2026-06-21** — Mo corrected the Tier 1 product model: Lullaby should use one selected soothe preset, not cycle through all sounds automatically. Config now supports `soothe.preset` and named presets; default preset is `white_noise`.
 - **2026-06-21** — Renamed lowercase `agents.md` to root `AGENTS.md` and added Codex-specific loading notes so Codex sessions read the project operating manual by default while `CLAUDE.md` remains the Claude Code router.
 - **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.
