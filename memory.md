@@ -50,6 +50,7 @@ These facts were migrated from the retired Lab Witness inventory.
 | BS-16 mini speaker | On hand | Tier 1 soothe output; may require an amplifier |
 | Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 | On hand, quantity 1 | Later presence/gross movement; breathing may be shown only as a non-medical trend after mentor safety sign-off |
 | Pimoroni BME688 4-in-1 air quality breakout | On hand, quantity 1 | Later room temperature/humidity and experimental nappy-VOC best guess after calibration and hygiene review |
+| HC-SR04 ultrasonic distance sensor | On hand, user-mentioned | Optional bench/proximity utility; not a cry, breathing, or safety signal |
 | microSD card, 32GB | On hand | Pi OS and deployment |
 | Breadboards, jumper wires, electronics bench | On hand | Prototyping |
 
@@ -61,6 +62,7 @@ These facts were migrated from the retired Lab Witness inventory.
 - **All Pi deployment:** vented base/enclosure and an overnight thermal check.
 - **Tier 3:** MR60BHA2 is owned; later verify cot-distance signal quality, mounting, and ESPHome/MQTT integration only after the radar gate is approved.
 - **Tier 4:** BME688 is owned; later verify placement, hygiene, calibration, and nappy-VOC limits only after the environment gate is approved.
+- **Utility sensors:** HC-SR04 may be useful later for bench proximity checks or mount/enclosure experiments, but should not be used to infer baby state.
 - **Tier 5:** optional MLX90640 only after the relevant gate is approved.
 
 ## Architecture boundary
@@ -146,6 +148,7 @@ asleep” or “baby is safe”.
 ## Changelog
 
 - **2026-06-21** — Added future roadmap work for verifying whether crying has stopped while a soothe preset is playing: quiet-check windows, echo-cancellation experiment, camera context, and radar/breathing context under strict non-medical wording and never as sole proof of safety.
+- **2026-06-21** — Added user-mentioned HC-SR04 ultrasonic distance sensor to inventory as an optional utility/proximity part only; it is not part of baby-state inference.
 - **2026-06-21** — Mo corrected the Tier 1 product model: Lullaby should use one selected soothe preset, not cycle through all sounds automatically. Config now supports `soothe.preset` and named presets; default preset is `white_noise`.
 - **2026-06-21** — Renamed lowercase `agents.md` to root `AGENTS.md` and added Codex-specific loading notes so Codex sessions read the project operating manual by default while `CLAUDE.md` remains the Claude Code router.
 - **2026-06-21** — Changed Tier 1 soothing from one-shot clip playback to looped playback with separate `play_seconds` and `wait_seconds`, reflecting Mo’s note that settling can take about 30 minutes rather than a few seconds.

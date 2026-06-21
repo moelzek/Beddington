@@ -71,7 +71,7 @@ Add MLX90640 relative warmth trend only. Never describe it as fever detection or
 
 ## Hardware on hand
 
-Pi 5 4GB; Active Cooler; official 27W PSU; AI HAT+ 26 TOPS/Hailo-8; Camera Module 3 ×2; Pi 5 camera cable; USB microphone; three I²C OLEDs; BS-16 speaker; Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6; Pimoroni BME688 4-in-1 air quality breakout; 32GB microSD; breadboards, jumpers, and electronics tools.
+Pi 5 4GB; Active Cooler; official 27W PSU; AI HAT+ 26 TOPS/Hailo-8; Camera Module 3 ×2; Pi 5 camera cable; USB microphone; three I²C OLEDs; BS-16 speaker; Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6; Pimoroni BME688 4-in-1 air quality breakout; HC-SR04 ultrasonic distance sensor; 32GB microSD; breadboards, jumpers, and electronics tools.
 
 ## Later purchases or checks
 
@@ -83,6 +83,7 @@ Pi 5 4GB; Active Cooler; official 27W PSU; AI HAT+ 26 TOPS/Hailo-8; Camera Modul
 | Cot-safe mount | 2 | Stable view and cables out of reach |
 | MR60BHA2 mounting, signal, and ESPHome/MQTT check | 3 | Presence/gross movement |
 | BME688 placement, calibration, and hygiene check | 4 | Room environment and experimental VOC |
+| HC-SR04 distance/proximity bench check | Utility | Optional mount/enclosure experiments, not baby-state inference |
 | MLX90640 | 5 | Optional relative warmth trend |
 
 Prices and availability change; verify before buying. Tier 0 laptop development requires no purchase.
