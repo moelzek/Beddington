@@ -14,6 +14,23 @@ audio output, and played the generated `soothing_music` preset successfully.
 **Next single outcome:** with Pi power unplugged, wire one MAX98357 amplifier to
 one 3W 4Ω speaker for a low-volume bench test.
 
+### USB microphone capture gate
+
+The USB mic appears as `USB PnP Sound Device` / `PCM2902 Audio Codec`. A raw
+ALSA 5-second recording worked and played back through the Anker SoundCore.
+Lullaby's Python microphone adapter initially failed because the mic accepts
+44.1/48 kHz directly rather than 16 kHz; the adapter now falls back to the
+device's native input rate and resamples internally to 16 kHz. Full tests pass
+on the Pi.
+
+A live `lullaby listen` run then downloaded YAMNet, analysed 12 live microphone
+windows locally, and wrote `output/pi-live-mic/` logs. That run exposed and
+fixed a Pi cache bug where moving the downloaded model from `/tmp` to
+`~/.cache` failed across filesystems.
+
+**Next single outcome:** implement deterministic quiet-check windows while
+soothe playback is active; keep the MAX98357 wiring deferred.
+
 ## 22 June 2026 - Pi playback preview helper
 
 Added `lullaby preview-soothe` so the next Pi audio check can play the selected

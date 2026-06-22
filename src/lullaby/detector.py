@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
+import shutil
 import tarfile
 import tempfile
 import urllib.request
@@ -92,7 +94,7 @@ def ensure_model(model_path: Path | None = None) -> Path:
         temporary_model = Path(temp_dir) / MODEL_FILENAME
         temporary_model.write_bytes(model_bytes)
         _verify_hash(temporary_model)
-        temporary_model.replace(destination)
+        _move_model_file(temporary_model, destination)
     return destination
 
 
@@ -103,6 +105,15 @@ def _verify_hash(path: Path) -> None:
             f"YAMNet model checksum mismatch for {path}. "
             "Delete the file and retry the download."
         )
+
+
+def _move_model_file(source: Path, destination: Path) -> None:
+    try:
+        source.replace(destination)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        shutil.move(str(source), str(destination))
 
 
 def _read_labels(model_path: Path) -> list[str]:

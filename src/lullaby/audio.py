@@ -63,13 +63,18 @@ class MicrophoneAudioSource:
                 'Microphone support is optional. Install it with: pip install -e ".[mic]"'
             ) from exc
 
+        input_sample_rate = _choose_input_sample_rate(sd, self.device)
+        input_block_samples = max(1, round(HOP_SECONDS * input_sample_rate))
         blocks: queue.Queue[np.ndarray] = queue.Queue()
 
         def callback(indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
             del frames, time_info
             if status:
                 print(f"Microphone warning: {status}")
-            blocks.put(indata[:, 0].astype(np.float32, copy=True))
+            block = indata[:, 0].astype(np.float32, copy=True)
+            if input_sample_rate != SAMPLE_RATE:
+                block = _resample(block, input_sample_rate, SAMPLE_RATE)
+            blocks.put(block)
 
         buffer = np.empty(0, dtype=np.float32)
         offset = 0.0
@@ -84,10 +89,10 @@ class MicrophoneAudioSource:
                 offset += HOP_SECONDS
 
         with sd.InputStream(
-            samplerate=SAMPLE_RATE,
+            samplerate=input_sample_rate,
             channels=1,
             dtype="float32",
-            blocksize=HOP_SAMPLES,
+            blocksize=input_block_samples,
             device=self.device,
             callback=callback,
         ):
@@ -149,6 +154,20 @@ def _decode_pcm(raw: bytes, sample_width: int) -> np.ndarray:
     if sample_width == 4:
         return np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2_147_483_648.0
     raise ValueError(f"Unsupported WAV sample width: {sample_width} bytes")
+
+
+def _choose_input_sample_rate(sounddevice: object, device: str | int | None) -> int:
+    try:
+        sounddevice.check_input_settings(
+            device=device,
+            channels=1,
+            samplerate=SAMPLE_RATE,
+            dtype="float32",
+        )
+        return SAMPLE_RATE
+    except Exception:
+        info = sounddevice.query_devices(device, "input")
+        return round(float(info["default_samplerate"]))
 
 
 def _resample(waveform: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:

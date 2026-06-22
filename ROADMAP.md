@@ -29,7 +29,9 @@
 - [x] Low-volume local preview playback test on laptop.
 - [x] Short looped real playback test on laptop.
 - [x] Pi Bluetooth speaker playback test with Anker SoundCore.
+- [x] Pi USB microphone capture test through Lullaby's microphone adapter.
 - [ ] Pi MAX98357 speaker/amplifier bench test at low volume.
+- [x] Pi live cry-detection smoke test with USB microphone.
 - [ ] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
 - [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.
 - [ ] Recorded parent voice asset.
@@ -38,23 +40,17 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Pi MAX98357 speaker/amplifier bench test
+### Current task: Quiet-check loop
 
-Purpose: prove one wired speaker path works on the bench after the Bluetooth
-audio path has been confirmed.
+Purpose: while a selected soothe preset is playing, briefly lower or pause
+playback, listen through the microphone, and require repeated quiet checks
+before logging that crying is no longer detected.
 
-1. Power the Pi off and unplug USB-C power before wiring.
-2. Wire one MAX98357 amplifier to one 3W 4Ω speaker exactly as shown in
-   [hardware-guide.md](hardware-guide.md).
-3. Reboot after enabling the I²S overlay.
-4. Keep the first test short and low volume:
-
-   ```bash
-   aplay assets/soothe/white_noise.wav
-   ```
-
-5. Expected: white noise plays from the wired 3W speaker, with no heat, smell,
-   brownout, or Pi reboot. Stop immediately if anything gets warm or unstable.
+1. Keep audio ML as the primary signal.
+2. Add deterministic quiet-check windows during long soothe playback.
+3. Require multiple quiet checks before saying crying is no longer detected.
+4. Keep wording honest: “crying no longer detected”, not “baby is asleep” or
+   “baby is safe”.
 
 ### Future cry-stopped verification while soothing
 

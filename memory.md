@@ -16,8 +16,8 @@
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
 - **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, short soothe playback preview, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks, with Pi bench tests only for gated hardware checks.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; Pi Bluetooth playback worked through an Anker SoundCore; the hardware-free test suite passes.
-- **Next gate:** bench-test one MAX98357 amplifier with one 3W 4Ω speaker at low volume.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; Pi Bluetooth playback worked through an Anker SoundCore; USB microphone capture and a live YAMNet listen smoke test worked on the Pi; the hardware-free test suite passes.
+- **Next gate:** implement the deterministic quiet-check loop for soothe verification. The MAX98357 wired speaker bench test is deferred.
 
 ## Locked decisions
 
@@ -161,6 +161,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-23** — Confirmed the USB microphone appears on the Pi as `USB PnP Sound Device` / `PCM2902 Audio Codec`. Raw ALSA recording and playback worked, then Lullaby's microphone adapter captured live windows after adding a fallback that records at the mic's native rate and resamples internally to 16 kHz. A live `lullaby listen` smoke test downloaded YAMNet, analysed 12 microphone windows locally, wrote output logs, and did not detect sustained crying, as expected for a non-cry test.
 - **2026-06-23** — Confirmed Pi Bluetooth audio output through an Anker SoundCore. `preview-soothe` played the generated soothing-music preset successfully, and the Pi volume was returned to 30% afterwards. Next gate is a powered-off MAX98357 plus 3W speaker bench test at low volume.
 - **2026-06-22** — Added a `preview-soothe` CLI command so Mo can run a short low-volume selected-preset playback test on the Pi without starting cry detection. The next gate remains confirming Bluetooth speaker output before MAX98357 wiring.
 - **2026-06-21** — Added `hardware-guide.md` with Mo’s servo, power, audio, microphone, distance-sensor, and OLED wiring notes, including install snippets, reference links, and a safer bench-test order.

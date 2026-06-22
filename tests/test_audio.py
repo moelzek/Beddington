@@ -5,7 +5,13 @@ from pathlib import Path
 
 import numpy as np
 
-from lullaby.audio import SAMPLE_RATE, WINDOW_SAMPLES, iter_windows, read_wav
+from lullaby.audio import (
+    SAMPLE_RATE,
+    WINDOW_SAMPLES,
+    _choose_input_sample_rate,
+    iter_windows,
+    read_wav,
+)
 
 
 def test_read_wav_converts_stereo_and_resamples(tmp_path: Path) -> None:
@@ -31,3 +37,18 @@ def test_short_audio_is_padded_to_one_model_window() -> None:
 
     assert len(windows) == 1
     assert windows[0].samples.shape == (WINDOW_SAMPLES,)
+
+
+def test_microphone_sample_rate_falls_back_to_device_default() -> None:
+    class FakeSoundDevice:
+        @staticmethod
+        def check_input_settings(**kwargs: object) -> None:
+            raise RuntimeError("invalid sample rate")
+
+        @staticmethod
+        def query_devices(device: object, kind: str) -> dict[str, float]:
+            assert device == 1
+            assert kind == "input"
+            return {"default_samplerate": 44_100.0}
+
+    assert _choose_input_sample_rate(FakeSoundDevice(), 1) == 44_100
