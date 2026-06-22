@@ -28,7 +28,7 @@
 - [x] Available presets include `white_noise`, `heartbeat`, and `soothing_music`; `uterine_whoosh` remains optional.
 - [x] Low-volume local preview playback test on laptop.
 - [x] Short looped real playback test on laptop.
-- [ ] Pi Bluetooth speaker playback test at low volume.
+- [x] Pi Bluetooth speaker playback test with Anker SoundCore.
 - [ ] Pi MAX98357 speaker/amplifier bench test at low volume.
 - [ ] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
 - [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.
@@ -38,33 +38,23 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Pi Bluetooth speaker playback
+### Current task: Pi MAX98357 speaker/amplifier bench test
 
-Purpose: prove the Pi can play the selected local soothe asset through a
-low-volume Bluetooth speaker before any wired amplifier work.
+Purpose: prove one wired speaker path works on the bench after the Bluetooth
+audio path has been confirmed.
 
-1. On the Pi, pair a Bluetooth speaker in Raspberry Pi OS and select it as the
-   output device.
-2. From the repo root on the Pi, run:
-
-   ```bash
-   lullaby --config config/default.toml preview-soothe --seconds 5
-   ```
-
-3. Expected: the white-noise preset plays once through the Bluetooth speaker at
-   low volume, with no errors in the terminal.
-4. If Lullaby reports `no_supported_player`, install FFmpeg or try the direct
-   player fallback:
+1. Power the Pi off and unplug USB-C power before wiring.
+2. Wire one MAX98357 amplifier to one 3W 4Ω speaker exactly as shown in
+   [hardware-guide.md](hardware-guide.md).
+3. Reboot after enabling the I²S overlay.
+4. Keep the first test short and low volume:
 
    ```bash
-   ffplay -nodisp -autoexit assets/soothe/white_noise.wav
+   aplay assets/soothe/white_noise.wav
    ```
 
-5. If audio comes from HDMI, the wrong output is selected; choose the Bluetooth
-   speaker in Raspberry Pi OS and retry.
-6. If this works, mark the Bluetooth item complete and move to the MAX98357
-   bench test. If it fails, keep the wired amplifier untouched and debug Pi
-   audio output first.
+5. Expected: white noise plays from the wired 3W speaker, with no heat, smell,
+   brownout, or Pi reboot. Stop immediately if anything gets warm or unstable.
 
 ### Future cry-stopped verification while soothing
 

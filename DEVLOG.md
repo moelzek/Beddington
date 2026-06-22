@@ -4,6 +4,16 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Pi Bluetooth playback gate passed
+
+Re-imaged the Pi, logged in as `lab`, copied Lullaby to `~/Labie`, installed a
+lightweight editable environment, and verified the hardware-free tests pass on
+the Pi. Paired the Anker SoundCore over Bluetooth, selected it as the default
+audio output, and played the generated `soothing_music` preset successfully.
+
+**Next single outcome:** with Pi power unplugged, wire one MAX98357 amplifier to
+one 3W 4Ω speaker for a low-volume bench test.
+
 ## 22 June 2026 - Pi playback preview helper
 
 Added `lullaby preview-soothe` so the next Pi audio check can play the selected

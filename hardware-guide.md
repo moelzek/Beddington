@@ -12,7 +12,7 @@ surface.
 
 - [x] Preview the generated soothe WAV files on the laptop at low volume.
 - [x] Short looped white-noise playback on the laptop.
-- [ ] Test Pi audio with a Bluetooth speaker first.
+- [x] Test Pi audio with a Bluetooth speaker first.
 - [ ] Bench-test one MAX98357 amplifier with one 3W 4Ω speaker.
 - [ ] Test a USB microphone or USB sound card for live cry detection.
 - [ ] Test one OLED display as a simple status screen.
