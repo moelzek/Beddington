@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
 from .audio import MicrophoneAudioSource, WavFileAudioSource
-from .config import AppConfig, load_config
+from .config import AppConfig, SootheStepConfig, load_config
 from .detector import YamNetTFLiteDetector, ensure_model
 from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
 from .notifications import LocalNotifier
 from .pipeline import run_pipeline
+from .soothe import build_soothe_player
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +47,17 @@ def build_parser() -> argparse.ArgumentParser:
     digest.add_argument("events_json", type=Path)
     digest.add_argument("--llm", action="store_true")
     digest.add_argument("--output", type=Path)
+
+    preview = subparsers.add_parser(
+        "preview-soothe", help="Play the selected soothe preset briefly"
+    )
+    preview.add_argument("--preset", help="Preset name from the config")
+    preview.add_argument("--seconds", type=float, default=5.0)
+    preview.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the selected preset without playing audio",
+    )
     return parser
 
 
@@ -74,6 +87,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "digest":
         return _digest_command(args, config)
+    if args.command == "preview-soothe":
+        return _preview_soothe_command(args, config)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -144,3 +159,65 @@ def _digest_command(args: argparse.Namespace, config: AppConfig) -> int:
         args.output.write_text(summary + "\n", encoding="utf-8")
     print(summary)
     return 0
+
+
+def _preview_soothe_command(args: argparse.Namespace, config: AppConfig) -> int:
+    if args.seconds <= 0:
+        raise SystemExit("--seconds must be positive")
+
+    preset, step = _select_soothe_step(config, args.preset)
+    preview_step = replace(
+        step,
+        wait_seconds=args.seconds,
+        play_seconds=args.seconds,
+    )
+    player_mode = "none" if args.dry_run else "auto"
+    preview_config = replace(
+        config.soothe,
+        enabled=True,
+        player=player_mode,
+        preset=preset,
+        steps=(preview_step,),
+    )
+    player = build_soothe_player(preview_config)
+    playback = player.play(preview_step)
+
+    print(f"Preset: {preset} ({preview_step.name})")
+    print(f"Sound: {preview_step.sound_path or 'none'}")
+    print(f"Seconds: {args.seconds:g}")
+
+    if not playback.get("played"):
+        reason = playback.get("reason", "unknown")
+        if args.dry_run:
+            print(f"Dry run: {reason}")
+            return 0
+        print(f"Playback did not start: {reason}")
+        if reason == "no_supported_player":
+            print("Install FFmpeg for ffplay, or use Raspberry Pi OS audio tools.")
+        return 1
+
+    print(f"Playback started with {playback.get('player', 'unknown')}.")
+    print("Listen for low-volume audio from the selected output device.")
+    try:
+        time.sleep(args.seconds)
+    finally:
+        player.stop_all()
+    print("Preview finished.")
+    return 0
+
+
+def _select_soothe_step(
+    config: AppConfig,
+    requested_preset: str | None,
+) -> tuple[str, SootheStepConfig]:
+    preset = requested_preset or config.soothe.preset
+    if config.soothe.presets:
+        if preset not in config.soothe.presets:
+            options = ", ".join(sorted(config.soothe.presets))
+            raise SystemExit(
+                f"Unknown soothe preset '{preset}'. Choose one of: {options}"
+            )
+        return preset, config.soothe.presets[preset]
+    if config.soothe.steps and not requested_preset:
+        return preset, config.soothe.steps[0]
+    raise SystemExit("No soothe preset is configured")

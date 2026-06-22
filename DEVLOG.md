@@ -4,6 +4,16 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 22 June 2026 - Pi playback preview helper
+
+Added `lullaby preview-soothe` so the next Pi audio check can play the selected
+soothe preset briefly without starting cry detection or editing config. The
+command overrides the long 30-minute preset window for a short low-volume smoke
+test.
+
+**Next single outcome:** pair a Bluetooth speaker on the Pi and run
+`lullaby --config config/default.toml preview-soothe --seconds 5`.
+
 ## 21 June 2026 — Tier 1 started
 
 ### Laptop playback gate

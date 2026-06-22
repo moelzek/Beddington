@@ -48,15 +48,16 @@ low-volume Bluetooth speaker before any wired amplifier work.
 2. From the repo root on the Pi, run:
 
    ```bash
-   ffplay -nodisp -autoexit assets/soothe/white_noise.wav
+   lullaby --config config/default.toml preview-soothe --seconds 5
    ```
 
 3. Expected: the white-noise preset plays once through the Bluetooth speaker at
    low volume, with no errors in the terminal.
-4. If `ffplay` is missing, install FFmpeg or try:
+4. If Lullaby reports `no_supported_player`, install FFmpeg or try the direct
+   player fallback:
 
    ```bash
-   mpv assets/soothe/white_noise.wav
+   ffplay -nodisp -autoexit assets/soothe/white_noise.wav
    ```
 
 5. If audio comes from HDMI, the wrong output is selected; choose the Bluetooth

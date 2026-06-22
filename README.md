@@ -84,8 +84,15 @@ The files themselves are short, but Lullaby can loop the selected preset for
 the configured `play_seconds`. The default presets are set up for 30-minute
 play windows when real playback is enabled.
 
-To test real playback later, edit [config/default.toml](config/default.toml),
-set `soothe.player = "auto"`, keep the volume low, and run with `--soothe`.
+To test real playback without running cry detection, select the speaker output
+on the machine first, keep the volume low, then run:
+
+```bash
+lullaby --config config/default.toml preview-soothe --seconds 5
+```
+
+Expected: the selected `white_noise` preset plays briefly and then stops. This
+is the next Pi Bluetooth speaker smoke test before any MAX98357 wiring.
 
 To preview the generated sounds directly on your Mac:
 

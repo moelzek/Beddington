@@ -14,7 +14,7 @@
 
 - **Active tier:** Tier 1 — single-preset soothe before escalation, explicitly approved by Mo on 2026-06-21. The first slice is laptop-first dry-run soothing before parent notification.
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
-- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, local logs, morning digest, notifications, and optional LLM polish.
+- **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, short soothe playback preview, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks. The Raspberry Pi rig is not required for development.
 - **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; the hardware-free test suite passes.
 - **Next gate:** test Pi audio output with a Bluetooth speaker before wiring the MAX98357 speaker/amplifier.
@@ -161,6 +161,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-22** — Added a `preview-soothe` CLI command so Mo can run a short low-volume selected-preset playback test on the Pi without starting cry detection. The next gate remains confirming Bluetooth speaker output before MAX98357 wiring.
 - **2026-06-21** — Added `hardware-guide.md` with Mo’s servo, power, audio, microphone, distance-sensor, and OLED wiring notes, including install snippets, reference links, and a safer bench-test order.
 - **2026-06-21** — Confirmed short looped laptop playback worked for the selected white-noise soothe preset. Next gate is Pi audio output with a Bluetooth speaker before wiring the MAX98357 amplifier.
 - **2026-06-21** — Confirmed low-volume laptop preview playback worked for the generated Tier 1 soothe presets. Next gate is a short looped real playback test before Pi speaker/amplifier bench testing.

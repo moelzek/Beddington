@@ -108,7 +108,17 @@ audio once the loop works.
 ### Option A: Bluetooth speaker first
 
 Pair a Bluetooth speaker from Raspberry Pi OS, select it as the output device,
-then play a local file with a PipeWire-aware player:
+then run Lullaby's own short preview command:
+
+```bash
+lullaby --config config/default.toml preview-soothe --seconds 5
+```
+
+Expected: the selected `white_noise` preset plays through the Bluetooth speaker
+at low volume, then stops.
+
+If Lullaby reports `no_supported_player`, install FFmpeg or play a local file
+directly with a PipeWire-aware player:
 
 ```bash
 ffplay -nodisp -autoexit assets/soothe/white_noise.wav
