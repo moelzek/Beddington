@@ -4,6 +4,17 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Camera hardware smoke test passed
+
+Mo asked to put the MAX98357 wired-speaker bench test aside and move on. The
+attached Camera Module 3 is visible on the Pi as `imx708`, with listed modes up
+to 4608×2592. A no-preview `rpicam-still` capture produced a local 640×480
+JPEG, metadata was readable, and the test image was deleted without copying raw
+frames off the Pi.
+
+**Next single outcome:** run the Tier 2 video gate review: privacy, false
+alarms, cot-safe mounting/cable routing, and dark-room hardware decision.
+
 ## 23 June 2026 - Pi synced smoke gate passed
 
 Installed a dedicated SSH key for `lab@lab.powerhub` so the Mac can reach the

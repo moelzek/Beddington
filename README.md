@@ -11,6 +11,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Optional deterministic quiet-check windows during soothing.
 - Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
 - Pi USB microphone capture through Lullaby's microphone adapter.
+- Pi Camera Module 3 hardware smoke test; product video features remain gated.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
 - Console notification plus best-effort macOS/Linux desktop notification.
 - Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.

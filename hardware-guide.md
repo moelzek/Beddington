@@ -13,9 +13,10 @@ surface.
 - [x] Preview the generated soothe WAV files on the laptop at low volume.
 - [x] Short looped white-noise playback on the laptop.
 - [x] Test Pi audio with a Bluetooth speaker first.
-- [ ] Bench-test one MAX98357 amplifier with one 3W 4Ω speaker.
+- [ ] Bench-test one MAX98357 amplifier with one 3W 4Ω speaker. Deferred by Mo on 2026-06-23.
 - [x] Test USB microphone capture through ALSA and Lullaby's microphone adapter.
 - [x] Run a live cry-detection smoke test with the USB microphone.
+- [x] Test attached Camera Module 3 detection and local no-preview still capture.
 - [ ] Test one OLED display as a simple status screen.
 - [ ] Test one VL53L0X distance sensor for mount/enclosure experiments.
 - [ ] Test one SG90 or Miuzei 9g servo through the PCA9685 with separate 5V power.
@@ -180,6 +181,28 @@ Leave them until the core cry-detection and speaker-output loop works. They
 may also be a natural fit for an ESP32 / Seeed XIAO Sense style satellite later.
 
 Reference: [INMP441 datasheet](https://invensense.tdk.com/wp-content/uploads/2015/02/INMP441.pdf).
+
+## Camera
+
+One Camera Module 3 is attached to the Pi and was detected by `rpicam-hello` as
+`imx708`, with modes up to 4608×2592. A no-preview still-capture smoke test
+also passed locally on the Pi.
+
+```bash
+rpicam-hello --list-cameras
+rpicam-still -n --immediate --timeout 1s --width 640 --height 480 \
+  --output /tmp/lullaby-camera-smoke.jpg \
+  --metadata /tmp/lullaby-camera-smoke.json \
+  --metadata-format json
+```
+
+Expected: the list command shows an `imx708` camera, and the still command
+writes a local JPEG. Delete test images after checking them. Do not copy raw
+frames off-device or commit them.
+
+Camera Module 3 is useful for daylight bench tests. Dark-room video would need
+a separate Tier 2 hardware decision, likely NoIR plus safe IR illumination and
+a cot-safe mount/cable plan.
 
 ## Distance sensors
 

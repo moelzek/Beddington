@@ -30,7 +30,7 @@
 - [x] Short looped real playback test on laptop.
 - [x] Pi Bluetooth speaker playback test with Anker SoundCore.
 - [x] Pi USB microphone capture test through Lullaby's microphone adapter.
-- [ ] Pi MAX98357 speaker/amplifier bench test at low volume.
+- [ ] Pi MAX98357 speaker/amplifier bench test at low volume; deferred by Mo on 2026-06-23.
 - [x] Pi live cry-detection smoke test with USB microphone.
 - [x] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
 - [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.
@@ -40,16 +40,17 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: MAX98357 wired speaker bench test
+### Current task: Tier 2 video gate review
 
-Purpose: verify the simplest wired speaker path after Bluetooth output has
-passed. Start with the Pi powered off, wire one MAX98357 amplifier to one 3W
-4Ω speaker, then boot and run a low-volume playback check.
+Purpose: decide whether the value of local video observations justifies the
+privacy, false-alarm, mounting, and dark-room hardware complexity before any
+product video feature is implemented.
 
-1. Power the Pi off before wiring.
-2. Wire only one amplifier and one speaker for the first test.
-3. Keep volume low and stop if the amplifier, speaker, or Pi gets hot.
-4. Confirm the selected soothe preset plays briefly, then stop playback.
+1. Confirm the exact camera-only use case and wording boundaries.
+2. Write the privacy and false-alarm plan.
+3. Decide cot-safe mounting and cable routing.
+4. Decide whether daytime Camera Module 3 is enough, or whether dark-room work
+   requires NoIR plus IR illumination.
 
 ### Future cry-stopped verification while soothing
 
@@ -63,6 +64,11 @@ passed. Start with the Pi powered off, wire one MAX98357 amplifier to one 3W
 
 ## Tier 2 — local video observations
 
+- [x] Pi Camera Module 3 hardware smoke test: `imx708` detected and a local no-preview still capture succeeded.
+- [ ] Privacy review.
+- [ ] False-alarm plan.
+- [ ] Cot-safe mount and cable-routing plan.
+- [ ] Dark-room hardware decision.
 - File/OpenCV adapter for laptop development.
 - picamera2/Hailo adapter for Pi deployment.
 - Active/still and face-covered observations.

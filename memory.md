@@ -12,12 +12,12 @@
 
 ## Current status
 
-- **Active tier:** Tier 1 — single-preset soothe before escalation, explicitly approved by Mo on 2026-06-21. The first slice is laptop-first dry-run soothing before parent notification.
+- **Active tier:** Tier 1 — single-preset soothe before escalation, explicitly approved by Mo on 2026-06-21. Mo asked on 2026-06-23 to put the MAX98357 wired-speaker bench test aside and move on to camera bench verification; Tier 2 product video work still requires the privacy/false-alarm gate before implementation.
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
 - **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, deterministic quiet-check windows, short soothe playback preview, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks, with Pi bench tests only for gated hardware checks.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; deterministic quiet-check tests pass in hardware-free mode; Pi Bluetooth playback worked through an Anker SoundCore; USB microphone capture and live YAMNet listen smoke tests worked on the Pi; the synced Pi checkout passes the hardware-free suite and Tier 1 sample.
-- **Next gate:** with the Pi powered off, bench-test one MAX98357 amplifier with one 3W 4Ω speaker at low volume. Echo cancellation and parent-voice assets remain later Tier 1 software work.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; deterministic quiet-check tests pass in hardware-free mode; Pi Bluetooth playback worked through an Anker SoundCore; USB microphone capture and live YAMNet listen smoke tests worked on the Pi; the synced Pi checkout passes the hardware-free suite and Tier 1 sample; the attached Camera Module 3 is detected as `imx708` and passed a local no-preview still-capture smoke test.
+- **Next gate:** decide the Tier 2 video gate explicitly: privacy review, false-alarm plan, cot-safe mount/cable plan, and dark-room hardware decision before implementing video features. MAX98357 is deferred by Mo.
 
 ## Locked decisions
 
@@ -42,8 +42,8 @@ These facts were migrated from the retired Lab Witness inventory.
 | Raspberry Pi 5, 4GB | On hand | Deployment hub/orchestrator |
 | Active Cooler + official 27W USB-C PSU | On hand | Cooling and power for the vented base |
 | AI HAT+ 26 TOPS, Hailo-8 | On hand and previously fitted | Later video inference; not needed for Tier 0 audio |
-| Camera Module 3 ×2 | On hand | Later daytime video; standard modules are not suitable for dark-room IR work |
-| Pi 5 camera adapter cable | On hand; camera was previously detected | Later camera connection |
+| Camera Module 3 ×2 | On hand; one attached to the Pi, detected as `imx708`, and passed a local still-capture smoke test | Later daytime video; standard modules are not suitable for dark-room IR work |
+| Pi 5 camera adapter cable | On hand; current camera connection works | Later camera connection |
 | USB mini microphone | On hand | Tier 0 live audio input on the Pi; use before I²S mics |
 | MAX98357 I²S amplifier | On hand, quantity 2 | Tier 1 bench audio output |
 | 3W 4Ω speaker | On hand, quantity 4 | Wired to MAX98357 for Tier 1 soothe output tests |
@@ -161,6 +161,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-23** — Mo asked to put the MAX98357 wired-speaker bench test aside and move on. The attached Camera Module 3 is detected by `rpicam-hello --list-cameras` as `imx708` at up to 4608×2592. A no-preview `rpicam-still` smoke test captured a local 640×480 JPEG on the Pi, verified dimensions and metadata, and deleted the test image without copying raw frames off-device. Tier 2 product video work still needs the privacy/false-alarm gate before implementation.
 - **2026-06-23** — Trusted SSH access to the Pi is working from the Mac through a dedicated local key for `lab@lab.powerhub`. Synced the quiet-check code to `~/Labie` on the Pi, confirmed the Pi hardware-free suite passes, confirmed the Pi Tier 1 sample logs `SOOTHE` before `NOTIFIED`, and ran a 12-second live USB-microphone smoke test that analysed 17 local windows and detected no sustained crying, as expected for a non-cry test. The next hardware gate is the powered-off MAX98357 plus 3W speaker bench test.
 - **2026-06-23** — Implemented deterministic Tier 1 quiet-check windows. When enabled, Lullaby pauses playback, listens with the local audio detector, requires repeated quiet checks before logging “crying no longer detected”, and stops playback when escalating to a parent notification. Tests cover quiet confirmation, failed checks, unresolved recordings, playback pause/resume/stop, and wording guardrails.
 - **2026-06-23** — Confirmed the USB microphone appears on the Pi as `USB PnP Sound Device` / `PCM2902 Audio Codec`. Raw ALSA recording and playback worked, then Lullaby's microphone adapter captured live windows after adding a fallback that records at the mic's native rate and resamples internally to 16 kHz. A live `lullaby listen` smoke test downloaded YAMNet, analysed 12 microphone windows locally, wrote output logs, and did not detect sustained crying, as expected for a non-cry test.
