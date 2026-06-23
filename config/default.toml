@@ -18,6 +18,16 @@ player = "none"
 # Pick exactly one: white_noise, heartbeat, soothing_music, or uterine_whoosh.
 preset = "white_noise"
 
+[soothe.quiet_check]
+# Quiet checks are deterministic listen-only windows during soothing. Keep this
+# off until you are deliberately testing soothe verification.
+enabled = false
+check_interval_seconds = 120.0
+listen_seconds = 5.0
+required_checks = 2
+pause_during_check = true
+stop_on_notify = true
+
 [soothe.presets.white_noise]
 name = "white noise"
 sound_path = "../assets/soothe/white_noise.wav"

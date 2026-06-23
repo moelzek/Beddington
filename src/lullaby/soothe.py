@@ -21,6 +21,10 @@ class SootheResult:
 class SoothePlayer(Protocol):
     def play(self, step: SootheStepConfig) -> dict[str, Any]: ...
 
+    def pause_for_listen(self) -> dict[str, Any]: ...
+
+    def resume(self, step: SootheStepConfig) -> dict[str, Any]: ...
+
     def stop_all(self) -> None: ...
 
 
@@ -36,6 +40,18 @@ class DryRunSoothePlayer:
 
     def stop_all(self) -> None:
         return None
+
+    def pause_for_listen(self) -> dict[str, Any]:
+        return {"paused": False, "player": "none", "reason": "dry_run"}
+
+    def resume(self, step: SootheStepConfig) -> dict[str, Any]:
+        return {
+            "resumed": False,
+            "player": "none",
+            "reason": "dry_run",
+            "play_seconds": _play_seconds(step),
+            "sound_path": str(step.sound_path) if step.sound_path else "",
+        }
 
 
 class SubprocessSoothePlayer:
@@ -91,6 +107,14 @@ class SubprocessSoothePlayer:
             process for process in self._processes if process.poll() is None
         ]
 
+    def pause_for_listen(self) -> dict[str, Any]:
+        self.stop_all()
+        return {"paused": True, "player": "auto"}
+
+    def resume(self, step: SootheStepConfig) -> dict[str, Any]:
+        playback = self.play(step)
+        return {"resumed": bool(playback.get("played")), "playback": playback}
+
 
 class SootheController:
     def __init__(
@@ -98,14 +122,21 @@ class SootheController:
         config: SootheConfig,
         started_at: datetime,
         player: SoothePlayer,
+        quiet_threshold: float,
     ):
         self.config = config
         self.started_at = started_at
         self.player = player
+        self.quiet_threshold = quiet_threshold
         self._active = False
         self._step_index = 0
+        self._current_step: SootheStepConfig | None = None
         self._next_step_offset: float | None = None
         self._notify_due_offset: float | None = None
+        self._next_quiet_check_offset: float | None = None
+        self._quiet_check_started_offset: float | None = None
+        self._quiet_check_failed = False
+        self._quiet_checks_passed = 0
 
     def observe(
         self,
@@ -116,8 +147,9 @@ class SootheController:
     ) -> SootheResult:
         events: list[Event] = []
         if any(event.kind == "cry_ended" for event in tracker_events):
-            events.extend(self._settle_from(tracker_events))
-            return SootheResult(tuple(events), notify=False)
+            if not self._quiet_check_enabled:
+                events.extend(self._settle_from(tracker_events))
+                return SootheResult(tuple(events), notify=False)
 
         if escalation_due and not self._active:
             self._active = True
@@ -127,6 +159,10 @@ class SootheController:
             return SootheResult(tuple(events), notify=notify)
 
         if self._active:
+            quiet_result = self._observe_quiet_check(offset_seconds, score)
+            events.extend(quiet_result.events)
+            if quiet_result.resolved:
+                return SootheResult(tuple(events), notify=False)
             events.extend(self._attempt_due_steps(offset_seconds, score))
             notify = self._notification_due(offset_seconds)
             return SootheResult(tuple(events), notify=notify)
@@ -159,6 +195,7 @@ class SootheController:
             self._next_step_offset is None or offset_seconds >= self._next_step_offset
         ):
             step = self.config.steps[self._step_index]
+            self._current_step = step
             playback = self.player.play(step)
             events.append(
                 Event(
@@ -183,6 +220,7 @@ class SootheController:
             else:
                 self._next_step_offset = None
                 self._notify_due_offset = due_offset
+                self._schedule_next_quiet_check(offset_seconds)
                 break
         return tuple(events)
 
@@ -190,12 +228,15 @@ class SootheController:
         if self._notify_due_offset is None or offset_seconds < self._notify_due_offset:
             return False
         self._reset()
+        if self.config.quiet_check.stop_on_notify:
+            self.player.stop_all()
         return True
 
     def _settle_from(self, tracker_events: tuple[Event, ...]) -> tuple[Event, ...]:
         if not self._active:
             return ()
         cry_ended = next(event for event in tracker_events if event.kind == "cry_ended")
+        self.player.stop_all()
         self._reset()
         return (
             Event(
@@ -208,14 +249,149 @@ class SootheController:
             ),
         )
 
+    @property
+    def _quiet_check_enabled(self) -> bool:
+        return self.config.quiet_check.enabled
+
+    def _observe_quiet_check(
+        self,
+        offset_seconds: float,
+        score: float,
+    ) -> "_QuietCheckResult":
+        if not self._quiet_check_enabled or self._current_step is None:
+            return _QuietCheckResult()
+
+        if self._quiet_check_started_offset is not None:
+            return self._continue_quiet_check(offset_seconds, score)
+
+        if (
+            self._next_quiet_check_offset is None
+            or offset_seconds < self._next_quiet_check_offset
+        ):
+            return _QuietCheckResult()
+
+        return self._start_quiet_check(offset_seconds, score)
+
+    def _start_quiet_check(
+        self,
+        offset_seconds: float,
+        score: float,
+    ) -> "_QuietCheckResult":
+        self._quiet_check_started_offset = offset_seconds
+        self._quiet_check_failed = False
+        pause = (
+            self.player.pause_for_listen()
+            if self.config.quiet_check.pause_during_check
+            else {"paused": False, "reason": "pause_disabled"}
+        )
+        event = Event(
+            kind="soothe_quiet_check_started",
+            occurred_at=self._at(offset_seconds),
+            offset_seconds=offset_seconds,
+            score=score,
+            details={
+                "listen_seconds": self.config.quiet_check.listen_seconds,
+                "required_checks": self.config.quiet_check.required_checks,
+                "consecutive_quiet": self._quiet_checks_passed,
+                "paused": pause,
+            },
+        )
+        return _QuietCheckResult(events=(event,))
+
+    def _continue_quiet_check(
+        self,
+        offset_seconds: float,
+        score: float,
+    ) -> "_QuietCheckResult":
+        assert self._quiet_check_started_offset is not None
+        if score >= self.quiet_threshold:
+            self._quiet_check_failed = True
+
+        listen_finished = (
+            offset_seconds
+            >= self._quiet_check_started_offset
+            + self.config.quiet_check.listen_seconds
+        )
+        if not listen_finished:
+            return _QuietCheckResult()
+
+        quiet = not self._quiet_check_failed
+        if quiet:
+            self._quiet_checks_passed += 1
+        else:
+            self._quiet_checks_passed = 0
+
+        events: list[Event] = [
+            Event(
+                kind="soothe_quiet_check",
+                occurred_at=self._at(offset_seconds),
+                offset_seconds=offset_seconds,
+                score=score,
+                details={
+                    "result": "quiet" if quiet else "crying_detected",
+                    "consecutive_quiet": self._quiet_checks_passed,
+                    "required_checks": self.config.quiet_check.required_checks,
+                    "listen_seconds": self.config.quiet_check.listen_seconds,
+                },
+            )
+        ]
+
+        self._quiet_check_started_offset = None
+        self._quiet_check_failed = False
+
+        if self._quiet_checks_passed >= self.config.quiet_check.required_checks:
+            events.append(
+                Event(
+                    kind="soothe_quiet_confirmed",
+                    occurred_at=self._at(offset_seconds),
+                    offset_seconds=offset_seconds,
+                    score=score,
+                    details={
+                        "reason": "quiet_checks_passed",
+                        "quiet_checks": self._quiet_checks_passed,
+                    },
+                )
+            )
+            self.player.stop_all()
+            self._reset()
+            return _QuietCheckResult(events=tuple(events), resolved=True)
+
+        resume = (
+            self.player.resume(self._current_step)
+            if self.config.quiet_check.pause_during_check and self._current_step
+            else {"resumed": False, "reason": "pause_disabled"}
+        )
+        events[-1].details["resume"] = resume
+        self._schedule_next_quiet_check(offset_seconds)
+        return _QuietCheckResult(events=tuple(events))
+
+    def _schedule_next_quiet_check(self, offset_seconds: float) -> None:
+        if not self._quiet_check_enabled:
+            self._next_quiet_check_offset = None
+            return
+        self._next_quiet_check_offset = (
+            offset_seconds + self.config.quiet_check.check_interval_seconds
+        )
+
     def _at(self, offset_seconds: float) -> datetime:
         return self.started_at + timedelta(seconds=offset_seconds)
 
     def _reset(self) -> None:
         self._active = False
         self._step_index = 0
+        self._current_step = None
         self._next_step_offset = None
         self._notify_due_offset = None
+        self._next_quiet_check_offset = None
+        self._quiet_check_started_offset = None
+        self._quiet_check_failed = False
+        self._quiet_checks_passed = 0
+
+
+@dataclass(frozen=True)
+class _QuietCheckResult:
+    events: tuple[Event, ...] = ()
+    resolved: bool = False
 
 
 def build_soothe_player(config: SootheConfig) -> SoothePlayer:

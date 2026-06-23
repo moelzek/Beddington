@@ -4,6 +4,16 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Quiet-check loop implemented
+
+Added deterministic Tier 1 quiet-check windows. While soothing is active,
+Lullaby can pause playback, listen through the audio detector, require repeated
+quiet checks, and only then log that crying is no longer detected. Parent
+notification now stops playback when soothing escalates.
+
+**Next single outcome:** run the hardware-free suite and a short Tier 1 sample,
+then re-run Claude's review on the quiet-check diff.
+
 ## 23 June 2026 - Pi Bluetooth playback gate passed
 
 Re-imaged the Pi, logged in as `lab`, copied Lullaby to `~/Labie`, installed a

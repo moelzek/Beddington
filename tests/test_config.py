@@ -23,6 +23,15 @@ enabled = true
 player = "none"
 preset = "white_noise"
 
+[soothe.quiet_check]
+enabled = true
+check_interval_seconds = 5.0
+listen_seconds = 1.0
+required_checks = 2
+quiet_threshold = 0.3
+pause_during_check = true
+stop_on_notify = true
+
 [soothe.presets.white_noise]
 name = "white noise"
 sound_path = "white-noise.wav"
@@ -43,6 +52,11 @@ play_seconds = 1800
     assert config.soothe.steps[0].sound_path == tmp_path / "white-noise.wav"
     assert config.soothe.steps[0].wait_seconds == 2.5
     assert config.soothe.steps[0].play_seconds == 1800.0
+    assert config.soothe.quiet_check.enabled is True
+    assert config.soothe.quiet_check.check_interval_seconds == 5.0
+    assert config.soothe.quiet_check.listen_seconds == 1.0
+    assert config.soothe.quiet_check.required_checks == 2
+    assert config.soothe.quiet_check.quiet_threshold == 0.3
 
 
 def test_default_config_points_at_generated_soothe_assets() -> None:
@@ -92,4 +106,39 @@ name = "white noise"
     )
 
     with pytest.raises(ValueError, match="soothe.preset"):
+        load_config(path)
+
+
+def test_quiet_check_requires_repeated_checks(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[soothe.quiet_check]
+enabled = true
+required_checks = 1
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="required_checks"):
+        load_config(path)
+
+
+def test_quiet_check_threshold_must_not_exceed_detection_threshold(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[detection]
+threshold = 0.4
+
+[soothe.quiet_check]
+enabled = true
+quiet_threshold = 0.5
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="quiet_threshold"):
         load_config(path)

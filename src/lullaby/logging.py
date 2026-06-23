@@ -70,6 +70,30 @@ def _readable_log(report: NightReport) -> str:
             )
         elif event.kind == "soothe_settled":
             lines.append(f"{at}  SETTLED     crying ended before parent notification")
+        elif event.kind == "soothe_quiet_check_started":
+            listen = float(event.details.get("listen_seconds", 0.0))
+            lines.append(
+                f"{at}  QUIET CHECK paused playback to listen for {listen:.1f}s"
+            )
+        elif event.kind == "soothe_quiet_check":
+            result = event.details.get("result")
+            consecutive = int(event.details.get("consecutive_quiet", 0))
+            required = int(event.details.get("required_checks", 0))
+            if result == "quiet":
+                lines.append(
+                    f"{at}  QUIET CHECK no crying detected in this listen window "
+                    f"(check {consecutive}/{required})"
+                )
+            else:
+                lines.append(
+                    f"{at}  QUIET CHECK crying still detected; continuing soothe"
+                )
+        elif event.kind == "soothe_quiet_confirmed":
+            checks = int(event.details.get("quiet_checks", 0))
+            lines.append(
+                f"{at}  RESOLVED    crying no longer detected after "
+                f"{checks} quiet checks"
+            )
         elif event.kind == "soothe_unresolved":
             lines.append(f"{at}  UNRESOLVED  recording ended before soothe preset finished")
     lines.extend(

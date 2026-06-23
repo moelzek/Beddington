@@ -8,6 +8,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Official YAMNet TFLite `Baby cry, infant cry` model score.
 - Deterministic confidence threshold, sustained-duration debounce, release delay, and notification cooldown.
 - Optional Tier 1 dry-run soothe preset before parent notification.
+- Optional deterministic quiet-check windows during soothing.
 - Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
 - Pi USB microphone capture through Lullaby's microphone adapter.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
@@ -160,6 +161,16 @@ Edit [config/default.toml](config/default.toml):
 - `soothe.presets.<name>.sound_path`: local audio file to play when `player = "auto"`.
 - `soothe.presets.<name>.play_seconds`: how long that preset may loop.
 - `soothe.presets.<name>.wait_seconds`: how long Lullaby waits before parent notification.
+- `soothe.quiet_check.enabled`: briefly pause or lower playback, listen, and
+  require repeated quiet checks before logging that crying is no longer
+  detected.
+- `soothe.quiet_check.check_interval_seconds`: how often to run a quiet check
+  while soothing is active.
+- `soothe.quiet_check.listen_seconds`: how long each listen-only check lasts.
+- `soothe.quiet_check.required_checks`: how many consecutive quiet checks are
+  required. This must be at least `2`.
+- `soothe.quiet_check.stop_on_notify`: stop playback when Lullaby escalates to a
+  parent notification.
 
 The included generated sounds are synthetic placeholders for testing the preset.
 The uterine-style file is a generated womb-like rumble/whoosh, not a recording

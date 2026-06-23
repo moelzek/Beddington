@@ -32,7 +32,7 @@
 - [x] Pi USB microphone capture test through Lullaby's microphone adapter.
 - [ ] Pi MAX98357 speaker/amplifier bench test at low volume.
 - [x] Pi live cry-detection smoke test with USB microphone.
-- [ ] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
+- [x] Quiet-check loop: briefly lower or pause the selected preset, listen, and require repeated quiet checks before saying crying is no longer detected.
 - [ ] Echo-cancellation experiment: use the known selected preset as a reference signal so the microphone can better ignore Lullaby’s own speaker.
 - [ ] Recorded parent voice asset.
 - [ ] Optional “likely hungry — best guess” from crying plus time since feed.

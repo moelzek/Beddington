@@ -36,6 +36,17 @@ class SootheStepConfig:
 
 
 @dataclass(frozen=True)
+class QuietCheckConfig:
+    enabled: bool = False
+    check_interval_seconds: float = 120.0
+    listen_seconds: float = 5.0
+    required_checks: int = 2
+    quiet_threshold: float | None = None
+    pause_during_check: bool = True
+    stop_on_notify: bool = True
+
+
+@dataclass(frozen=True)
 class SootheConfig:
     enabled: bool = False
     player: str = "none"
@@ -44,6 +55,7 @@ class SootheConfig:
     steps: tuple[SootheStepConfig, ...] = (
         SootheStepConfig(name="white noise dry run", wait_seconds=30.0),
     )
+    quiet_check: QuietCheckConfig = QuietCheckConfig()
 
 
 @dataclass(frozen=True)
@@ -74,6 +86,10 @@ def load_config(path: Path | None = None) -> AppConfig:
         raw_soothe_steps = soothe.get("steps")
         soothe_preset = str(soothe.get("preset", config.soothe.preset))
         soothe_presets = _load_soothe_presets(raw_soothe_presets, path.parent)
+        quiet_check = _load_quiet_check(
+            soothe.get("quiet_check", {}),
+            config.soothe.quiet_check,
+        )
         soothe_steps = (
             (soothe_presets[soothe_preset],)
             if soothe_presets and soothe_preset in soothe_presets
@@ -113,6 +129,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 preset=soothe_preset,
                 presets=soothe_presets,
                 steps=soothe_steps,
+                quiet_check=quiet_check,
             ),
         )
 
@@ -198,6 +215,41 @@ def _load_soothe_step(
     )
 
 
+def _load_quiet_check(
+    raw_quiet_check: object,
+    default: QuietCheckConfig,
+) -> QuietCheckConfig:
+    if not isinstance(raw_quiet_check, dict):
+        return default
+    quiet_threshold = (
+        float(raw_quiet_check["quiet_threshold"])
+        if "quiet_threshold" in raw_quiet_check
+        else default.quiet_threshold
+    )
+    return QuietCheckConfig(
+        enabled=bool(raw_quiet_check.get("enabled", default.enabled)),
+        check_interval_seconds=float(
+            raw_quiet_check.get(
+                "check_interval_seconds",
+                default.check_interval_seconds,
+            )
+        ),
+        listen_seconds=float(
+            raw_quiet_check.get("listen_seconds", default.listen_seconds)
+        ),
+        required_checks=int(
+            raw_quiet_check.get("required_checks", default.required_checks)
+        ),
+        quiet_threshold=quiet_threshold,
+        pause_during_check=bool(
+            raw_quiet_check.get("pause_during_check", default.pause_during_check)
+        ),
+        stop_on_notify=bool(
+            raw_quiet_check.get("stop_on_notify", default.stop_on_notify)
+        ),
+    )
+
+
 def _validate(config: AppConfig) -> None:
     if not 0.0 <= config.detection.threshold <= 1.0:
         raise ValueError("detection.threshold must be between 0 and 1")
@@ -229,3 +281,18 @@ def _validate(config: AppConfig) -> None:
             raise ValueError(f"soothe.steps[{index}].wait_seconds must be non-negative")
         if step.play_seconds is not None and step.play_seconds < 0:
             raise ValueError(f"soothe.steps[{index}].play_seconds must be non-negative")
+    quiet_check = config.soothe.quiet_check
+    if quiet_check.check_interval_seconds <= 0:
+        raise ValueError("soothe.quiet_check.check_interval_seconds must be positive")
+    if quiet_check.listen_seconds <= 0:
+        raise ValueError("soothe.quiet_check.listen_seconds must be positive")
+    if quiet_check.required_checks < 2:
+        raise ValueError("soothe.quiet_check.required_checks must be at least 2")
+    if quiet_check.quiet_threshold is not None:
+        if not 0.0 <= quiet_check.quiet_threshold <= 1.0:
+            raise ValueError("soothe.quiet_check.quiet_threshold must be between 0 and 1")
+        if quiet_check.quiet_threshold > config.detection.threshold:
+            raise ValueError(
+                "soothe.quiet_check.quiet_threshold must be less than or equal "
+                "to detection.threshold"
+            )

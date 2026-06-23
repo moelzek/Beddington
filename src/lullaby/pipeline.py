@@ -47,6 +47,11 @@ def run_pipeline(
             config.soothe,
             started_at,
             soothe_player or build_soothe_player(config.soothe),
+            quiet_threshold=(
+                config.soothe.quiet_check.quiet_threshold
+                if config.soothe.quiet_check.quiet_threshold is not None
+                else config.detection.threshold
+            ),
         )
 
     for window in source.windows():
