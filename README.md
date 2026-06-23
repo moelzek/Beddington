@@ -12,6 +12,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
 - Pi USB microphone capture through Lullaby's microphone adapter.
 - Pi Camera Module 3 hardware smoke test and Tier 2A bench-only camera metadata command.
+- Tier 2A local visual-change and camera-linked visual-change smoke tests, with raw frames deleted by default.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
 - Console notification plus best-effort macOS/Linux desktop notification.
 - Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.
@@ -164,7 +165,9 @@ lullaby camera-smoke --image path/to/local-test-image.jpg --output output/camera
 ```
 
 Raw frames must stay local and must not be committed. The Tier 2 video boundary
-is captured in [tier2-video-gate.md](tier2-video-gate.md).
+is captured in [tier2-video-gate.md](tier2-video-gate.md), and nursery use
+remains blocked until the physical checks in
+[camera-mount-plan.md](camera-mount-plan.md) pass.
 
 ## Compare local test frames
 

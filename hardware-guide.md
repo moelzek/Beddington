@@ -6,7 +6,8 @@
 Use this as a bench guide, not as cot-deployment approval. Keep the Pi, Hailo,
 amplifiers, power boards, and any warm electronics in a vented base. Anything
 that moves, heats, has cables, or has small parts stays away from the sleep
-surface.
+surface. The nursery camera physical gate lives in
+[camera-mount-plan.md](camera-mount-plan.md).
 
 ## Bench-test order
 
@@ -17,6 +18,8 @@ surface.
 - [x] Test USB microphone capture through ALSA and Lullaby's microphone adapter.
 - [x] Run a live cry-detection smoke test with the USB microphone.
 - [x] Test attached Camera Module 3 detection and local no-preview still capture.
+- [x] Document the cot-safe camera mount and cable-routing plan.
+- [ ] Choose and mock up the actual nursery camera location before any nursery video use.
 - [ ] Test one OLED display as a simple status screen.
 - [ ] Test one VL53L0X distance sensor for mount/enclosure experiments.
 - [ ] Test one SG90 or Miuzei 9g servo through the PCA9685 with separate 5V power.
@@ -224,7 +227,7 @@ frames off-device or commit them.
 
 Camera Module 3 is useful for daylight bench tests. Dark-room video would need
 a separate Tier 2 hardware decision, likely NoIR plus safe IR illumination and
-a cot-safe mount/cable plan.
+a physical mock-up that satisfies [camera-mount-plan.md](camera-mount-plan.md).
 
 ## Distance sensors
 

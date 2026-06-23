@@ -40,14 +40,18 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Tier 2A cot-side physical planning
+### Current task: Tier 2A physical mock-up check
 
-Purpose: plan the physical mount and cable route before any nursery camera use.
+Purpose: turn [camera-mount-plan.md](camera-mount-plan.md) into a real proposed
+location before any nursery camera use.
 
-1. Keep the Pi/Hailo in a vented base.
-2. Keep the camera stable and outside the cot.
-3. Keep all cables out of reach.
-4. Keep raw frames local and video supporting-only.
+1. Choose the actual mount type and location.
+2. Mark the 3-foot exclusion zone around the cot or sleep surface.
+3. Sketch or photograph the camera, Pi base, power, and cable route.
+4. Confirm there are no reachable cables, loops, loose parts, or cot-mounted
+   hardware.
+5. Run a bench thermal check before any long nursery run.
+6. Keep raw frames local and video supporting-only.
 
 ### Future cry-stopped verification while soothing
 
@@ -66,7 +70,9 @@ Purpose: plan the physical mount and cable route before any nursery camera use.
 - [x] `camera-smoke` command: file metadata path plus Pi no-preview capture path.
 - [x] `visual-change` command: deterministic local PGM/PPM frame-difference metrics.
 - [x] Camera-linked visual-change smoke test with raw frames deleted by default.
-- [ ] Cot-safe mount and cable-routing plan before nursery deployment.
+- [x] Cot-safe mount and cable-routing plan before nursery deployment.
+- [ ] Physical mock-up: selected mount location, marked 3-foot exclusion zone, cable route, and vented base check.
+- [ ] Baby-absent nursery smoke test that writes only derived JSON reports.
 - [ ] Dark-room hardware decision before night video.
 - File/OpenCV adapter for laptop development.
 - picamera2/Hailo adapter for Pi deployment.

@@ -64,13 +64,16 @@ It must not say the baby is safe. Future video wording must stay in this style:
 ## Mount and cable plan
 
 Bench tests may run with the camera already attached to the Pi. Nursery use is
-not cleared until there is a physical mount plan that keeps:
+not cleared until the physical gate in
+[camera-mount-plan.md](camera-mount-plan.md) passes. That plan requires:
 
 1. the Pi and Hailo in a vented base;
-2. the camera stable and outside the cot;
-3. all cables out of reach;
+2. the camera stable, outside the cot, and outside the 3-foot exclusion zone;
+3. all cables, straps, tape tails, mounts, and power parts out of reach;
 4. all small parts away from the sleep surface;
-5. the companion beside the cot, never in the cot.
+5. the companion beside the cot only if it is outside reach, never in the cot;
+6. a chosen mount location, marked exclusion zone, cable route, bench thermal
+   check, and baby-absent nursery smoke test.
 
 ## Dark-room decision
 
@@ -113,5 +116,8 @@ test frames. It writes only derived change metrics and uses bounded wording:
 local BMP frames, writes derived visual-change metrics, and deletes the raw
 frames by default.
 
-Next: write the cot-safe mount and cable-routing plan before any nursery video
-use. Do not use video as a notification source or safety suppressor.
+The cot-safe mount and cable-routing plan is now documented in
+[camera-mount-plan.md](camera-mount-plan.md). Next: choose the actual physical
+location, mark the 3-foot exclusion zone, verify the cable route and vented
+base, and only then run baby-absent nursery smoke tests that write derived JSON
+only. Do not use video as a notification source or safety suppressor.

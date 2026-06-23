@@ -4,6 +4,23 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Cot-safe camera mount plan
+
+Added [camera-mount-plan.md](camera-mount-plan.md), the Tier 2A physical gate
+before any nursery camera use. It keeps all camera parts, Pi/Hailo hardware,
+power, mounts, straps, tape tails, and cables outside a strict 3-foot exclusion
+zone; keeps the Pi/Hailo in a vented base; blocks cot-rail clamps and dangling
+cables; and requires a chosen physical location, marked exclusion zone, bench
+thermal check, and baby-absent smoke test before nursery video.
+
+The plan cites CPSC cord guidance, AAP safe-sleep guidance, and Raspberry Pi
+camera-cable guidance. It does not approve overnight video, night vision,
+face-covered observations, Hailo inference, or any safety/asleep/breathing
+claim.
+
+**Next single outcome:** choose the real mount location and make a quick
+physical mock-up or sketch showing the 3-foot exclusion zone and cable route.
+
 ## 23 June 2026 - Tier 2A camera-linked visual change
 
 Added `lullaby camera-change`. It captures two short local BMP frames from the

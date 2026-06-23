@@ -16,8 +16,8 @@
 - **Repository state:** Lab Witness has been retired and preserved under `Archive/`.
 - **Code state:** Python package under `src/lullaby/` with WAV/microphone adapters, YAMNet TFLite detection, deterministic cry-event tracking, Tier 1 dry-run soothe preset, deterministic quiet-check windows, short soothe playback preview, Tier 2A camera-smoke metadata checks, deterministic local visual-change metrics, Pi camera-linked visual-change smoke tests, local logs, morning digest, notifications, and optional LLM polish.
 - **Development mode:** laptop-first using sample `.wav` files and mocks, with Pi bench tests only for gated hardware checks.
-- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; deterministic quiet-check tests pass in hardware-free mode; Pi Bluetooth playback worked through an Anker SoundCore; USB microphone capture and live YAMNet listen smoke tests worked on the Pi; the synced Pi checkout passes the hardware-free suite and Tier 1 sample; the attached Camera Module 3 is detected as `imx708`; `lullaby camera-smoke` passes on the Pi and leaves only a derived JSON report by default; `lullaby visual-change` passes locally and on the Pi using generated local PGM frames; `lullaby camera-change` passes on the Pi and leaves only derived `visual-change.json` by default.
-- **Next gate:** create the cot-safe camera mount and cable-routing plan before any nursery video use. Nursery deployment, active safety claims, face-covered claims, Hailo, and night-vision work remain gated. MAX98357 is deferred by Mo.
+- **Acceptance result:** the included CC0 sample still produces Tier 0 outputs; the Tier 1 demo config records one dry-run soothe preset before escalation; generated uterine-style whoosh, white-noise, heartbeat-style, and soothing-music WAV assets exist; low-volume laptop preview and short looped playback worked for the main generated presets; soothe playback can loop short files for long configured windows; deterministic quiet-check tests pass in hardware-free mode; Pi Bluetooth playback worked through an Anker SoundCore; USB microphone capture and live YAMNet listen smoke tests worked on the Pi; the synced Pi checkout passes the hardware-free suite and Tier 1 sample; the attached Camera Module 3 is detected as `imx708`; `lullaby camera-smoke` passes on the Pi and leaves only a derived JSON report by default; `lullaby visual-change` passes locally and on the Pi using generated local PGM frames; `lullaby camera-change` passes on the Pi and leaves only derived `visual-change.json` by default; `camera-mount-plan.md` documents the cot-safe physical gate for future nursery camera use.
+- **Next gate:** choose the actual nursery camera mount location, mark the 3-foot exclusion zone, sketch or photograph the cable route and vented Pi base, run a bench thermal check, and then run baby-absent nursery smoke tests that write only derived JSON. Nursery deployment, active safety claims, face-covered claims, Hailo, and night-vision work remain gated. MAX98357 is deferred by Mo.
 
 ## Locked decisions
 
@@ -31,7 +31,7 @@
 | Core logic | Detection, thresholds, timers, debounce, and event generation are deterministic. |
 | LLM | Optional, provider-agnostic, environment-configured, and behind a flag. The complete app works with it off. |
 | Development | Hardware-free first. Audio/video files and mock sensors use the same adapter interfaces as real Pi hardware. |
-| Scope | Build Tier 1 only. Tiers 2–5 still require Mo’s explicit approval and their safety gates. |
+| Scope | Build only the active approved tier. Future tier expansions still require Mo's explicit approval and their safety gates. |
 
 ## Hardware on hand
 
@@ -67,7 +67,7 @@ These facts were migrated from the retired Lab Witness inventory.
 
 - **Tier 0:** no purchase is required for laptop development. Verify microphone quality and placement before Pi deployment.
 - **Tier 1:** verify whether the BS-16 speaker needs a small amplifier.
-- **Tier 2:** NoIR Camera Module 3 plus an 850nm IR illuminator if dark-room video is required; cot-safe mount with cables out of reach.
+- **Tier 2:** NoIR Camera Module 3 plus an 850nm IR illuminator if dark-room video is required; actual cot-safe mount choice, physical mock-up, and cable route with all parts out of reach.
 - **All Pi deployment:** vented base/enclosure and an overnight thermal check.
 - **Audio hardware:** use USB/Bluetooth microphones first; INMP441 I²S microphones are advanced and should wait until the basic Pi audio loop works.
 - **Servo hardware:** servos must be driven through PCA9685 and separate power; do not power servos from Pi GPIO pins.
@@ -161,6 +161,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-23** — Added `camera-mount-plan.md`, the Tier 2A physical gate before any nursery camera use. The plan uses CPSC baby-monitor cord guidance, AAP safe-sleep guidance, and Raspberry Pi camera-cable guidance; requires all hardware, mounts, power, straps, tape tails, and cables to stay outside a strict 3-foot exclusion zone; keeps Pi/Hailo compute in a vented base; blocks cot-mounted parts and dangling cables; and still requires a chosen physical location, marked exclusion zone, cable route, bench thermal check, and baby-absent derived-JSON smoke test before nursery video.
 - **2026-06-23** — Added `lullaby camera-change`, a Tier 2A bench command that captures two short local BMP frames through the Pi Camera Module 3, runs the deterministic visual-change metric, writes derived `visual-change.json`, and deletes raw frames by default. Tests pass locally and on the Pi with 46 tests. The Pi camera-linked smoke test used 160×120 captures, produced `visual_change_detected` with a changed-pixel ratio of about 0.64 in the live bench scene, and left only `output/pi-camera-change/visual-change.json`.
 - **2026-06-23** — Added `lullaby visual-change`, a deterministic Tier 2A command that compares two local PGM/PPM frames and writes only derived metrics: mean absolute difference, changed-pixel ratio, thresholds, and an observation of `visual_change_detected` or `little_visual_change_detected`. Wording states this is not a safety, sleep, breathing, or face-covering assessment. Tests pass locally and on the Pi with 43 tests; a Pi smoke test over generated local frames produced a 0.5 changed-pixel ratio and then removed the temporary raw test frames.
 - **2026-06-23** — Mo authorised moving directly to the next steps without waiting for another approval. Added `tier2-video-gate.md` and implemented `lullaby camera-smoke`, which inspects local JPEG/PNG files for hardware-free tests or captures one local Pi frame via `rpicam-still`, writes derived `camera-smoke.json` metadata, and deletes the raw test frame by default. Tests pass locally and on the Pi with 39 tests. The Pi command produced a 640×480 JPEG metadata report for the `imx708` camera and left only `camera-smoke.json` in the output directory.
