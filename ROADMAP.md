@@ -2,6 +2,25 @@
 
 > Forward sequence only. Live state and decisions are in [memory.md](memory.md). Build one tier at a time; later tiers require Mo’s explicit approval.
 
+## Feature placement from baby-monitor app screenshots
+
+Mo wants the common baby-monitor app capabilities represented in the roadmap.
+They are placed here, but still inherit Lullaby's privacy and safety rules.
+
+| Screenshot feature | Roadmap placement | Notes |
+|---|---|---|
+| Smart baby monitoring: sound plus video | Tier 0 for local cry/audio detection; Tier 2 for local video | The wording stays assistive. Lullaby must not promise complete safety or replace adult supervision. |
+| Smart noise and cry detection | Tier 0/Tier 1 audio pipeline, plus later audio refinements | Cry detection exists. Later important-sound classes can be added as local, tunable observations with false-alarm controls. |
+| Instant alerts for noise | Tier 0 now; parent-app push alerts later | Current alerts are console/desktop. Phone push alerts belong in the parent-app layer after auth/privacy design. |
+| Instant alerts for connection issues | Parent-app and reliability layer | Add Pi heartbeat, camera/microphone health checks, and "connection lost" alerts before any nursery reliance. |
+| Instant alerts for low battery | Parent-app and power-health layer | The Pi is mains-powered today. Later alerts should cover Pi under-voltage, UPS/power-bank battery, and parent-device app status where available. |
+| Advanced night vision | Tier 2 dark-room hardware decision | Requires NoIR camera plus safely mounted IR illumination. No night-video claim until the hardware and mount gate pass. |
+| Multiple parent devices | Parent-app and sharing layer | Start with household pairing and derived alerts/digests. Live video on phones needs a separate privacy-boundary decision. |
+| Share with family | Parent-app and sharing layer | Needs invite/revoke controls, roles, audit log, and encrypted transport. |
+| Unlimited video monitoring | Tier 2 plus parent-app layer | Treat as local live viewing only after thermal, privacy, and mount gates. No cloud recording by default. |
+| Premium subscription | Product/commercial layer | Optional convenience features only. Core local monitoring, alerts, logs, and soothe flow must work without a subscription or API key. |
+| No ads | Product/commercial layer | Keep the core parent app ad-free; do not add ad SDKs to the monitoring path. |
+
 ## Tier 0 — audio spine
 
 **Outcome:** a complete hardware-free nightly loop.
@@ -16,6 +35,10 @@
 - Included sample audio and tests.
 
 **Done when:** the README’s sample command produces detections, one sustained-cry notification, a night log, and a morning digest on a laptop with no hardware or cloud key.
+
+Future audio refinements belong here only if they remain local and testable:
+important-sound categories beyond crying, per-room calibration, better false
+alarm review, and user-tunable alert thresholds.
 
 ## Tier 1 — soothe before escalation
 
@@ -74,6 +97,9 @@ location before any nursery camera use.
 - [ ] Physical mock-up: selected mount location, marked 3-foot exclusion zone, cable route, and vented base check.
 - [ ] Baby-absent nursery smoke test that writes only derived JSON reports.
 - [ ] Dark-room hardware decision before night video.
+- [ ] NoIR plus IR-illumination bench test before any "night vision" wording.
+- [ ] Local live video viewer prototype after physical, privacy, and thermal gates.
+- [ ] Long-running local video thermal soak before any continuous-monitoring claim.
 - File/OpenCV adapter for laptop development.
 - picamera2/Hailo adapter for Pi deployment.
 - Active/still and face-covered observations.
@@ -104,6 +130,26 @@ location before any nursery camera use.
 - Never described as body temperature or fever detection.
 
 **Gate:** explicit decision that the value justifies the risk and complexity. Default is to cut.
+
+## Parent app and product layer
+
+This is not a sensor tier. It starts only after the local core and the relevant
+hardware gates are stable.
+
+- [ ] Parent app shell with current status, recent events, night log, and digest.
+- [ ] Household pairing for more than one trusted parent device.
+- [ ] Family sharing with roles, invite/revoke controls, and an audit trail.
+- [ ] Push notifications for sustained crying/noise events after the local debounce rules fire.
+- [ ] Connection-health alerts: Pi heartbeat, camera/microphone unavailable, and parent app disconnected.
+- [ ] Power-health alerts: Pi under-voltage, thermal throttling, and later UPS/power-bank battery where available.
+- [ ] Local-network live video view only after the Tier 2 mount, privacy, dark-room, and thermal gates pass.
+- [ ] Remote access decision: derived alerts and digests first; raw live audio/video off-device requires a separate explicit privacy decision.
+- [ ] Ad-free core app. No ad SDKs in the monitoring path.
+- [ ] Optional subscription model for convenience features only; core local monitoring must keep working without payment, cloud access, or API keys.
+
+**Gate:** authentication, encryption, local pairing, permission revocation,
+privacy review, and no weakening of the raw-audio/video boundary without an
+explicit future decision.
 
 ## Cut order
 

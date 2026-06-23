@@ -4,6 +4,22 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - App-feature roadmap mapping
+
+Mapped the baby-monitor app screenshot features into the Lullaby roadmap:
+smart audio/video monitoring, smart noise and cry detection, instant alerts,
+advanced night vision, multiple parent devices, family sharing, continuous
+viewing, optional subscription, and no-ads policy.
+
+Placed them by dependency instead of copying the competitor flow directly.
+Audio detection stays in Tier 0/Tier 1, night vision stays Tier 2-gated, and
+multiple parent devices plus family sharing move into a later parent-app layer.
+Remote raw live video is explicitly not cleared under the current privacy
+boundary; derived alerts, logs, and digests come first.
+
+**Next single outcome:** continue with the physical camera mock-up gate before
+any nursery video work.
+
 ## 23 June 2026 - Cot-safe camera mount plan
 
 Added [camera-mount-plan.md](camera-mount-plan.md), the Tier 2A physical gate

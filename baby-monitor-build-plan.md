@@ -69,6 +69,24 @@ Add BME688 room temperature/humidity and a calibrated nappy-VOC best guess. Do n
 
 Add MLX90640 relative warmth trend only. Never describe it as fever detection or a thermometer. Default: cut this tier.
 
+## Product/app layer — after the local core
+
+Mo wants the parent-facing app capabilities seen in mainstream baby-monitor
+apps, but they must be sequenced after the local privacy-first core:
+
+1. Multiple trusted parent devices through household pairing.
+2. Family sharing with roles, invite/revoke controls, and an audit trail.
+3. Push alerts for sustained crying/noise after the deterministic debounce
+   rules fire.
+4. Connection and power-health alerts for Pi heartbeat, camera/microphone
+   availability, under-voltage, thermal throttling, and any future UPS/battery.
+5. Night vision only after NoIR/IR hardware, physical mounting, and thermal
+   checks pass.
+6. Local live video only after the Tier 2 gates. Remote raw video is not part
+   of the current privacy boundary and would need a separate explicit decision.
+7. No ads in the core monitoring app. Any subscription must be optional and
+   must not be required for local monitoring, logging, alerts, or soothing.
+
 ## Hardware on hand
 
 Pi 5 4GB; Active Cooler; official 27W PSU; AI HAT+ 26 TOPS/Hailo-8; Camera Module 3 ×2; Pi 5 camera cable; USB microphone; MAX98357 I²S amplifier ×2; 3W 4Ω speaker ×4; INMP441 MEMS mic ×4; BS-16 speaker; 0.96-inch I²C OLED ×4; 0.91-inch I²C OLED ×2; PCA9685 16-channel servo driver ×3; MG996R servo ×4; Miuzei 9g micro servo ×10; SG90 9g micro servo ×10; USB-C PD trigger board ×5; Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6; Pimoroni BME688 4-in-1 air quality breakout; HC-SR04 ultrasonic distance sensor ×5; VL53L0X laser distance/ToF sensor ×5; 32GB microSD; breadboards, jumpers, wire, screws, and electronics tools.
