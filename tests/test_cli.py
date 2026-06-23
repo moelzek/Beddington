@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import struct
+from datetime import UTC, datetime
 
 import pytest
 
 from lullaby.cli import main
+from lullaby.video import ImageInfo, VisualChangeReport
 
 
 def test_preview_soothe_dry_run_uses_selected_preset(
@@ -133,3 +135,52 @@ def test_visual_change_writes_derived_report(tmp_path, capsys) -> None:
     assert report["changed_pixel_ratio"] == 0.5
     assert report["observation"] == "visual_change_detected"
     assert "not a safety" in report["wording_note"]
+
+
+def test_camera_change_writes_derived_report(tmp_path, capsys, monkeypatch) -> None:
+    def fake_capture(output_dir, **kwargs):
+        assert output_dir == tmp_path / "camera-change-output"
+        assert kwargs["keep_frames"] is False
+        return VisualChangeReport(
+            analysed_at=datetime(2026, 6, 23, tzinfo=UTC),
+            before=ImageInfo("deleted temporary before frame", "BMP", 2, 1, 62),
+            after=ImageInfo("deleted temporary after frame", "BMP", 2, 1, 62),
+            mean_absolute_difference=0.5,
+            changed_pixel_ratio=0.5,
+            pixel_threshold=0.5,
+            changed_ratio_threshold=0.25,
+            observation="visual_change_detected",
+            source="rpicam-still-pair",
+            raw_frames_retained=False,
+            camera_summary="0 : imx708 [4608x2592 10-bit RGGB]",
+        )
+
+    monkeypatch.setattr("lullaby.cli.capture_rpicam_visual_change", fake_capture)
+
+    result = main(
+        [
+            "--config",
+            "config/default.toml",
+            "camera-change",
+            "--output",
+            str(tmp_path / "camera-change-output"),
+            "--pixel-threshold",
+            "0.5",
+            "--changed-ratio-threshold",
+            "0.25",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    report = json.loads(
+        (tmp_path / "camera-change-output" / "visual-change.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result == 0
+    assert "Observation: visual_change_detected" in output
+    assert "Raw camera frames deleted" in output
+    assert report["source"] == "rpicam-still-pair"
+    assert report["raw_frames_retained"] is False
+    assert report["before"]["path"] == "deleted temporary before frame"

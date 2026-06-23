@@ -197,6 +197,17 @@ Expected: `output/pi-camera-smoke/camera-smoke.json` contains derived metadata
 such as dimensions, byte count, camera summary, and capture metadata keys. The
 raw test frame is deleted unless `--keep-frame` is passed deliberately.
 
+For the bench-only two-frame change check:
+
+```bash
+lullaby camera-change --output output/pi-camera-change
+```
+
+Expected: Lullaby captures two short local BMP frames, writes
+`output/pi-camera-change/visual-change.json`, and deletes the raw BMP frames by
+default. The result is only a visual-change metric; it is not a safety, sleep,
+breathing, or face-covering assessment.
+
 The underlying Raspberry Pi commands are:
 
 ```bash

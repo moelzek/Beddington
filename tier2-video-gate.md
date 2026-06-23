@@ -109,6 +109,9 @@ metadata, and left only `camera-smoke.json` in the output directory.
 test frames. It writes only derived change metrics and uses bounded wording:
 `visual_change_detected` or `little_visual_change_detected`.
 
-Next: connect the visual-change metric to two short Pi camera bench captures
-while deleting raw frames by default. Do not use video as a notification source
-or safety suppressor.
+`lullaby camera-change` passed locally and on the Pi. It captures two short
+local BMP frames, writes derived visual-change metrics, and deletes the raw
+frames by default.
+
+Next: write the cot-safe mount and cable-routing plan before any nursery video
+use. Do not use video as a notification source or safety suppressor.

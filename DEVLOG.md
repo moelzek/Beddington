@@ -4,6 +4,21 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Tier 2A camera-linked visual change
+
+Added `lullaby camera-change`. It captures two short local BMP frames from the
+Pi Camera Module 3, runs the deterministic visual-change metric, writes
+`visual-change.json`, and deletes the raw BMP frames by default.
+
+Verified locally and on the Pi: 46 tests pass. The Pi bench run used 160×120
+captures, detected visual change in the live scene with a changed-pixel ratio
+of about 0.64, and left only `output/pi-camera-change/visual-change.json`.
+That output remains a camera/scene-change metric only, not a baby-state
+assessment.
+
+**Next single outcome:** write the cot-safe camera mount and cable-routing plan
+before any nursery video use.
+
 ## 23 June 2026 - Tier 2A visual-change metrics
 
 Added `lullaby visual-change`, the first deterministic derived video

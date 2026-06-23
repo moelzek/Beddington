@@ -184,6 +184,21 @@ Expected: `output/visual-change/visual-change.json` contains
 visual-change metric only, not a safety, sleep, breathing, or face-covering
 assessment.
 
+## Compare two Pi camera frames
+
+Use `camera-change` for a bench-only camera-linked smoke test:
+
+```bash
+lullaby camera-change --output output/pi-camera-change
+```
+
+Expected: Lullaby captures two short local BMP test frames from the Pi camera,
+compares them, writes `output/pi-camera-change/visual-change.json`, and deletes
+the raw BMP frames by default. The result may say `visual_change_detected` or
+`little_visual_change_detected` depending on camera noise, exposure, and scene
+change. It is still only a local visual-change metric, not a baby-state
+assessment.
+
 ## Tune false alarms
 
 Edit [config/default.toml](config/default.toml):

@@ -19,6 +19,7 @@ from .pipeline import run_pipeline
 from .soothe import build_soothe_player
 from .video import (
     capture_rpicam_still,
+    capture_rpicam_visual_change,
     compare_frames,
     inspect_image_file,
     write_camera_smoke_report,
@@ -92,6 +93,22 @@ def build_parser() -> argparse.ArgumentParser:
     change.add_argument("--output", type=Path, default=Path("output/visual-change"))
     change.add_argument("--pixel-threshold", type=float, default=0.08)
     change.add_argument("--changed-ratio-threshold", type=float, default=0.02)
+    camera_change = subparsers.add_parser(
+        "camera-change",
+        help="Capture two local Pi camera frames and write derived change metrics",
+    )
+    camera_change.add_argument("--output", type=Path, default=Path("output/camera-change"))
+    camera_change.add_argument("--width", type=int, default=160)
+    camera_change.add_argument("--height", type=int, default=120)
+    camera_change.add_argument("--timeout", type=float, default=1.0)
+    camera_change.add_argument("--interval", type=float, default=0.5)
+    camera_change.add_argument("--pixel-threshold", type=float, default=0.08)
+    camera_change.add_argument("--changed-ratio-threshold", type=float, default=0.02)
+    camera_change.add_argument(
+        "--keep-frames",
+        action="store_true",
+        help="Keep the two raw BMP test frames locally in the output directory",
+    )
     return parser
 
 
@@ -127,6 +144,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _camera_smoke_command(args)
     if args.command == "visual-change":
         return _visual_change_command(args)
+    if args.command == "camera-change":
+        return _camera_change_command(args)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -305,6 +324,49 @@ def _visual_change_command(args: argparse.Namespace) -> int:
     print(f"Observation: {report.observation}")
     print(f"Mean absolute difference: {report.mean_absolute_difference:.4f}")
     print(f"Changed pixel ratio: {report.changed_pixel_ratio:.4f}")
+    print("This is a local visual-change metric only, not a safety assessment.")
+    print(f"Report: {report_path}")
+    return 0
+
+
+def _camera_change_command(args: argparse.Namespace) -> int:
+    if args.width <= 0 or args.height <= 0:
+        raise SystemExit("--width and --height must be positive")
+    if args.timeout <= 0:
+        raise SystemExit("--timeout must be positive")
+    if args.interval < 0:
+        raise SystemExit("--interval must be non-negative")
+    if not 0.0 <= args.pixel_threshold <= 1.0:
+        raise SystemExit("--pixel-threshold must be between 0 and 1")
+    if not 0.0 <= args.changed_ratio_threshold <= 1.0:
+        raise SystemExit("--changed-ratio-threshold must be between 0 and 1")
+
+    report = capture_rpicam_visual_change(
+        args.output,
+        width=args.width,
+        height=args.height,
+        timeout_seconds=args.timeout,
+        interval_seconds=args.interval,
+        pixel_threshold=args.pixel_threshold,
+        changed_ratio_threshold=args.changed_ratio_threshold,
+        keep_frames=args.keep_frames,
+    )
+    report_path = write_visual_change_report(args.output, report)
+
+    print(f"Observation: {report.observation}")
+    print(f"Mean absolute difference: {report.mean_absolute_difference:.4f}")
+    print(f"Changed pixel ratio: {report.changed_pixel_ratio:.4f}")
+    if report.camera_summary:
+        print(f"Camera: {report.camera_summary}")
+    if report.raw_frames_retained:
+        print("Raw camera frames retained locally:")
+        for path in report.retained_frame_paths:
+            print(f"- {path}")
+        print("Do not commit or copy raw nursery frames off-device.")
+    else:
+        print("Raw camera frames deleted after metadata check.")
+    if report.warnings:
+        print(f"Warnings: {' | '.join(report.warnings[:2])}")
     print("This is a local visual-change metric only, not a safety assessment.")
     print(f"Report: {report_path}")
     return 0

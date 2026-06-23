@@ -65,6 +65,11 @@ class VisualChangeReport:
     pixel_threshold: float
     changed_ratio_threshold: float
     observation: str
+    source: str = "local-files"
+    raw_frames_retained: bool = True
+    retained_frame_paths: tuple[str, ...] = ()
+    camera_summary: str | None = None
+    warnings: tuple[str, ...] = ()
     wording_note: str = (
         "This is a local visual-change metric only, not a safety, sleep, "
         "breathing, or face-covering assessment."
@@ -94,6 +99,10 @@ def inspect_image(path: Path) -> ImageInfo:
         header, _ = _read_pnm_header(data)
         width, height = int(header[1]), int(header[2])
         format_name = "PGM" if header[0] in {"P2", "P5"} else "PPM"
+    elif data.startswith(b"BM"):
+        width, height, _ = _bmp_header(data)
+        height = abs(height)
+        format_name = "BMP"
     else:
         raise ValueError(f"Unsupported image format: {path}")
     return ImageInfo(
@@ -128,8 +137,8 @@ def compare_frames(
     if not 0.0 <= changed_ratio_threshold <= 1.0:
         raise ValueError("changed_ratio_threshold must be between 0 and 1")
 
-    before = read_portable_anymap(before_path)
-    after = read_portable_anymap(after_path)
+    before = read_frame_pixels(before_path)
+    after = read_frame_pixels(after_path)
     if before.width != after.width or before.height != after.height:
         raise ValueError(
             "Frame dimensions must match for visual-change comparison: "
@@ -153,7 +162,78 @@ def compare_frames(
         pixel_threshold=pixel_threshold,
         changed_ratio_threshold=changed_ratio_threshold,
         observation=observation,
+        retained_frame_paths=(str(before_path), str(after_path)),
     )
+
+
+def capture_rpicam_visual_change(
+    output_dir: Path,
+    *,
+    width: int = 160,
+    height: int = 120,
+    timeout_seconds: float = 1.0,
+    interval_seconds: float = 0.5,
+    pixel_threshold: float = 0.08,
+    changed_ratio_threshold: float = 0.02,
+    keep_frames: bool = False,
+    rpicam_still: str = "rpicam-still",
+    rpicam_hello: str = "rpicam-hello",
+) -> VisualChangeReport:
+    if width <= 0 or height <= 0:
+        raise ValueError("Camera change width and height must be positive")
+    if timeout_seconds <= 0:
+        raise ValueError("Camera change timeout must be positive")
+    if interval_seconds < 0:
+        raise ValueError("Camera change interval must be non-negative")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    camera_summary = _list_rpicam_camera(rpicam_hello)
+
+    if keep_frames:
+        before_path = output_dir / "camera-change-before.bmp"
+        after_path = output_dir / "camera-change-after.bmp"
+        report = _capture_rpicam_pair_to_paths(
+            before_path,
+            after_path,
+            width=width,
+            height=height,
+            timeout_seconds=timeout_seconds,
+            interval_seconds=interval_seconds,
+            pixel_threshold=pixel_threshold,
+            changed_ratio_threshold=changed_ratio_threshold,
+            rpicam_still=rpicam_still,
+            camera_summary=camera_summary,
+            raw_frames_retained=True,
+        )
+        return report
+
+    with tempfile.TemporaryDirectory(prefix="lullaby-camera-change-") as temp_dir:
+        before_path = Path(temp_dir) / "camera-change-before.bmp"
+        after_path = Path(temp_dir) / "camera-change-after.bmp"
+        return _capture_rpicam_pair_to_paths(
+            before_path,
+            after_path,
+            width=width,
+            height=height,
+            timeout_seconds=timeout_seconds,
+            interval_seconds=interval_seconds,
+            pixel_threshold=pixel_threshold,
+            changed_ratio_threshold=changed_ratio_threshold,
+            rpicam_still=rpicam_still,
+            camera_summary=camera_summary,
+            raw_frames_retained=False,
+        )
+
+
+def read_frame_pixels(path: Path) -> FramePixels:
+    data = path.read_bytes()
+    if not data:
+        raise ValueError(f"Empty frame file: {path}")
+    if _looks_like_pnm(data):
+        return read_portable_anymap(path)
+    if data.startswith(b"BM"):
+        return read_bmp(path)
+    raise ValueError("Visual-change comparison supports PGM, PPM, and BMP files only")
 
 
 def read_portable_anymap(path: Path) -> FramePixels:
@@ -178,6 +258,34 @@ def read_portable_anymap(path: Path) -> FramePixels:
         raise ValueError("Visual-change comparison supports PGM/PPM files only")
 
     return FramePixels(path=str(path), width=width, height=height, grayscale=pixels)
+
+
+def read_bmp(path: Path) -> FramePixels:
+    data = path.read_bytes()
+    width, signed_height, bits_per_pixel = _bmp_header(data)
+    if bits_per_pixel not in {24, 32}:
+        raise ValueError("BMP visual-change comparison supports 24-bit and 32-bit files")
+    height = abs(signed_height)
+    top_down = signed_height < 0
+    pixel_offset = int.from_bytes(data[10:14], "little")
+    channels = bits_per_pixel // 8
+    row_stride = ((width * bits_per_pixel + 31) // 32) * 4
+    needed = pixel_offset + row_stride * height
+    if len(data) < needed:
+        raise ValueError("BMP file is shorter than its header declares")
+
+    rows: list[np.ndarray] = []
+    for row_index in range(height):
+        source_row = row_index if top_down else height - 1 - row_index
+        start = pixel_offset + source_row * row_stride
+        raw_row = np.frombuffer(
+            data[start : start + width * channels],
+            dtype=np.uint8,
+        ).reshape(width, channels)
+        bgr = raw_row[:, :3].astype(np.float32)
+        rows.append(bgr.mean(axis=1) / 255.0)
+    grayscale = np.vstack(rows).astype(np.float32, copy=False)
+    return FramePixels(path=str(path), width=width, height=height, grayscale=grayscale)
 
 
 def write_visual_change_report(output_dir: Path, report: VisualChangeReport) -> Path:
@@ -306,6 +414,116 @@ def _capture_to_paths(
     )
 
 
+def _capture_rpicam_pair_to_paths(
+    before_path: Path,
+    after_path: Path,
+    *,
+    width: int,
+    height: int,
+    timeout_seconds: float,
+    interval_seconds: float,
+    pixel_threshold: float,
+    changed_ratio_threshold: float,
+    rpicam_still: str,
+    camera_summary: str | None,
+    raw_frames_retained: bool,
+) -> VisualChangeReport:
+    warnings: list[str] = []
+    _capture_rpicam_bmp(
+        before_path,
+        width=width,
+        height=height,
+        timeout_seconds=timeout_seconds,
+        rpicam_still=rpicam_still,
+        warnings=warnings,
+    )
+    if interval_seconds:
+        import time
+
+        time.sleep(interval_seconds)
+    _capture_rpicam_bmp(
+        after_path,
+        width=width,
+        height=height,
+        timeout_seconds=timeout_seconds,
+        rpicam_still=rpicam_still,
+        warnings=warnings,
+    )
+    report = compare_frames(
+        before_path,
+        after_path,
+        pixel_threshold=pixel_threshold,
+        changed_ratio_threshold=changed_ratio_threshold,
+    )
+    if raw_frames_retained:
+        before_info = report.before
+        after_info = report.after
+        retained_paths = (str(before_path), str(after_path))
+    else:
+        before_info = ImageInfo(
+            path="deleted temporary before frame",
+            format=report.before.format,
+            width=report.before.width,
+            height=report.before.height,
+            byte_count=report.before.byte_count,
+        )
+        after_info = ImageInfo(
+            path="deleted temporary after frame",
+            format=report.after.format,
+            width=report.after.width,
+            height=report.after.height,
+            byte_count=report.after.byte_count,
+        )
+        retained_paths = ()
+    return VisualChangeReport(
+        analysed_at=report.analysed_at,
+        before=before_info,
+        after=after_info,
+        mean_absolute_difference=report.mean_absolute_difference,
+        changed_pixel_ratio=report.changed_pixel_ratio,
+        pixel_threshold=report.pixel_threshold,
+        changed_ratio_threshold=report.changed_ratio_threshold,
+        observation=report.observation,
+        source="rpicam-still-pair",
+        raw_frames_retained=raw_frames_retained,
+        retained_frame_paths=retained_paths,
+        camera_summary=camera_summary,
+        warnings=tuple(warnings),
+    )
+
+
+def _capture_rpicam_bmp(
+    path: Path,
+    *,
+    width: int,
+    height: int,
+    timeout_seconds: float,
+    rpicam_still: str,
+    warnings: list[str],
+) -> None:
+    command = [
+        rpicam_still,
+        "-n",
+        "--immediate",
+        "--timeout",
+        f"{timeout_seconds:g}s",
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--encoding",
+        "bmp",
+        "--output",
+        str(path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode:
+        message = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        raise RuntimeError(f"rpicam-still failed: {message}")
+    if result.stderr.strip():
+        warnings.append(_summarise_stderr(result.stderr))
+
+
 def _list_rpicam_camera(command: str) -> str | None:
     result = subprocess.run(
         [command, "--list-cameras"],
@@ -407,6 +625,22 @@ def _looks_like_pnm(data: bytes) -> bool:
     return len(data) >= 3 and data[:2] in {b"P2", b"P3", b"P5", b"P6"} and chr(
         data[2]
     ).isspace()
+
+
+def _bmp_header(data: bytes) -> tuple[int, int, int]:
+    if len(data) < 54 or not data.startswith(b"BM"):
+        raise ValueError("BMP file is too short")
+    dib_header_size = int.from_bytes(data[14:18], "little")
+    if dib_header_size < 40:
+        raise ValueError("Unsupported BMP DIB header")
+    width = int.from_bytes(data[18:22], "little", signed=True)
+    height = int.from_bytes(data[22:26], "little", signed=True)
+    planes = int.from_bytes(data[26:28], "little")
+    bits_per_pixel = int.from_bytes(data[28:30], "little")
+    compression = int.from_bytes(data[30:34], "little")
+    if width <= 0 or height == 0 or planes != 1 or compression != 0:
+        raise ValueError("Unsupported BMP layout")
+    return width, height, bits_per_pixel
 
 
 def _read_pnm_header(data: bytes) -> tuple[tuple[str, str, str, str], int]:

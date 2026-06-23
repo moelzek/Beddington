@@ -40,15 +40,14 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Tier 2A camera-linked visual-change smoke
+### Current task: Tier 2A cot-side physical planning
 
-Purpose: apply the deterministic visual-change metric to two short, local Pi
-camera bench captures while still deleting raw frames by default.
+Purpose: plan the physical mount and cable route before any nursery camera use.
 
-1. Capture two local bench frames on the Pi.
-2. Run the existing visual-change metric over them.
-3. Write only derived change metrics.
-4. Delete raw frames by default.
+1. Keep the Pi/Hailo in a vented base.
+2. Keep the camera stable and outside the cot.
+3. Keep all cables out of reach.
+4. Keep raw frames local and video supporting-only.
 
 ### Future cry-stopped verification while soothing
 
@@ -66,7 +65,7 @@ camera bench captures while still deleting raw frames by default.
 - [x] Tier 2A bench-only video gate: privacy, false-alarm, mount, and dark-room boundaries documented.
 - [x] `camera-smoke` command: file metadata path plus Pi no-preview capture path.
 - [x] `visual-change` command: deterministic local PGM/PPM frame-difference metrics.
-- [ ] Camera-linked visual-change smoke test with raw frames deleted by default.
+- [x] Camera-linked visual-change smoke test with raw frames deleted by default.
 - [ ] Cot-safe mount and cable-routing plan before nursery deployment.
 - [ ] Dark-room hardware decision before night video.
 - File/OpenCV adapter for laptop development.
