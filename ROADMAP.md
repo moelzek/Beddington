@@ -40,17 +40,15 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Tier 2 video gate review
+### Current task: Tier 2A derived video observation slice
 
-Purpose: decide whether the value of local video observations justifies the
-privacy, false-alarm, mounting, and dark-room hardware complexity before any
-product video feature is implemented.
+Purpose: add a deterministic, hardware-free derived observation over local
+test frames before attempting any nursery video behaviour.
 
-1. Confirm the exact camera-only use case and wording boundaries.
-2. Write the privacy and false-alarm plan.
-3. Decide cot-safe mounting and cable routing.
-4. Decide whether daytime Camera Module 3 is enough, or whether dark-room work
-   requires NoIR plus IR illumination.
+1. Use local files or generated test images first.
+2. Record only derived features, not raw frames.
+3. Keep video as supporting context only.
+4. Avoid active safety, asleep, breathing, or face-covered claims.
 
 ### Future cry-stopped verification while soothing
 
@@ -65,10 +63,10 @@ product video feature is implemented.
 ## Tier 2 — local video observations
 
 - [x] Pi Camera Module 3 hardware smoke test: `imx708` detected and a local no-preview still capture succeeded.
-- [ ] Privacy review.
-- [ ] False-alarm plan.
-- [ ] Cot-safe mount and cable-routing plan.
-- [ ] Dark-room hardware decision.
+- [x] Tier 2A bench-only video gate: privacy, false-alarm, mount, and dark-room boundaries documented.
+- [x] `camera-smoke` command: file metadata path plus Pi no-preview capture path.
+- [ ] Cot-safe mount and cable-routing plan before nursery deployment.
+- [ ] Dark-room hardware decision before night video.
 - File/OpenCV adapter for laptop development.
 - picamera2/Hailo adapter for Pi deployment.
 - Active/still and face-covered observations.

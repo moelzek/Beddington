@@ -186,7 +186,18 @@ Reference: [INMP441 datasheet](https://invensense.tdk.com/wp-content/uploads/201
 
 One Camera Module 3 is attached to the Pi and was detected by `rpicam-hello` as
 `imx708`, with modes up to 4608×2592. A no-preview still-capture smoke test
-also passed locally on the Pi.
+also passed locally on the Pi. Use Lullaby's smoke command for repeat checks so
+the raw test frame is deleted by default:
+
+```bash
+lullaby camera-smoke --output output/pi-camera-smoke
+```
+
+Expected: `output/pi-camera-smoke/camera-smoke.json` contains derived metadata
+such as dimensions, byte count, camera summary, and capture metadata keys. The
+raw test frame is deleted unless `--keep-frame` is passed deliberately.
+
+The underlying Raspberry Pi commands are:
 
 ```bash
 rpicam-hello --list-cameras

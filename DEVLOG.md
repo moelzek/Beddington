@@ -4,6 +4,26 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Tier 2A camera-smoke command
+
+Mo asked to move to the next steps directly without waiting for another
+approval. Captured the Tier 2A boundary in `tier2-video-gate.md`: bench-only
+local video plumbing is allowed, while nursery deployment, face-covered
+claims, Hailo, night vision, and any safety/asleep/breathing wording remain
+gated.
+
+Added `lullaby camera-smoke`. It can inspect an existing local JPEG/PNG for
+hardware-free tests, or capture one no-preview Pi frame through `rpicam-still`.
+The command writes only derived metadata to `camera-smoke.json` and deletes the
+raw test frame by default.
+
+Verified locally and on the Pi: 39 tests pass. On the Pi, `camera-smoke`
+detected the `imx708` camera, produced a 640×480 JPEG metadata report, and left
+only `output/pi-camera-smoke/camera-smoke.json`.
+
+**Next single outcome:** add the first deterministic derived video observation
+using local files/mocks before using the camera for any nursery context.
+
 ## 23 June 2026 - Camera hardware smoke test passed
 
 Mo asked to put the MAX98357 wired-speaker bench test aside and move on. The

@@ -17,6 +17,7 @@ from .models import Event, NightReport
 from .notifications import LocalNotifier
 from .pipeline import run_pipeline
 from .soothe import build_soothe_player
+from .video import capture_rpicam_still, inspect_image_file, write_camera_smoke_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +59,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the selected preset without playing audio",
     )
+    camera = subparsers.add_parser(
+        "camera-smoke",
+        help="Run a local camera or image metadata smoke test",
+    )
+    camera.add_argument(
+        "--image",
+        type=Path,
+        help="Inspect an existing local JPEG/PNG instead of capturing from rpicam",
+    )
+    camera.add_argument("--output", type=Path, default=Path("output/camera-smoke"))
+    camera.add_argument("--width", type=int, default=640)
+    camera.add_argument("--height", type=int, default=480)
+    camera.add_argument("--timeout", type=float, default=1.0)
+    camera.add_argument(
+        "--keep-frame",
+        action="store_true",
+        help="Keep the raw test frame locally in the output directory",
+    )
     return parser
 
 
@@ -89,6 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _digest_command(args, config)
     if args.command == "preview-soothe":
         return _preview_soothe_command(args, config)
+    if args.command == "camera-smoke":
+        return _camera_smoke_command(args)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -203,6 +224,46 @@ def _preview_soothe_command(args: argparse.Namespace, config: AppConfig) -> int:
     finally:
         player.stop_all()
     print("Preview finished.")
+    return 0
+
+
+def _camera_smoke_command(args: argparse.Namespace) -> int:
+    if args.width <= 0 or args.height <= 0:
+        raise SystemExit("--width and --height must be positive")
+    if args.timeout <= 0:
+        raise SystemExit("--timeout must be positive")
+    if args.image and args.keep_frame:
+        raise SystemExit("--keep-frame is only used when capturing from rpicam")
+
+    if args.image:
+        report = inspect_image_file(args.image)
+    else:
+        report = capture_rpicam_still(
+            args.output,
+            width=args.width,
+            height=args.height,
+            timeout_seconds=args.timeout,
+            keep_frame=args.keep_frame,
+        )
+    report_path = write_camera_smoke_report(args.output, report)
+
+    print(f"Camera smoke source: {report.source}")
+    print(
+        f"Image metadata: {report.image.format} "
+        f"{report.image.width}x{report.image.height}, {report.image.byte_count} bytes"
+    )
+    if report.camera_summary:
+        print(f"Camera: {report.camera_summary}")
+    if report.metadata_keys:
+        print(f"Metadata keys: {', '.join(report.metadata_keys[:8])}")
+    if report.raw_frame_retained:
+        print(f"Raw test frame retained locally: {report.retained_frame_path}")
+        print("Do not commit or copy raw nursery frames off-device.")
+    else:
+        print("Raw test frame deleted after metadata check.")
+    if report.warnings:
+        print(f"Warnings: {' | '.join(report.warnings)}")
+    print(f"Report: {report_path}")
     return 0
 
 

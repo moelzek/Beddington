@@ -11,7 +11,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Optional deterministic quiet-check windows during soothing.
 - Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
 - Pi USB microphone capture through Lullaby's microphone adapter.
-- Pi Camera Module 3 hardware smoke test; product video features remain gated.
+- Pi Camera Module 3 hardware smoke test and Tier 2A bench-only camera metadata command.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
 - Console notification plus best-effort macOS/Linux desktop notification.
 - Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.
@@ -97,8 +97,8 @@ lullaby --config config/default.toml preview-soothe --seconds 5
 
 Expected: the selected `white_noise` preset plays briefly and then stops. This
 has already passed on the Pi through a Bluetooth speaker. The quiet-check
-software gate has also passed; the next hardware gate is the MAX98357 wired
-speaker bench test, which must start with the Pi powered off.
+software gate has also passed. The MAX98357 wired speaker test is deferred;
+the active bench path is now Tier 2A camera metadata plumbing.
 
 To preview the generated sounds directly on your Mac:
 
@@ -140,6 +140,31 @@ lullaby --config config/default.toml listen \
 ```
 
 The microphone adapter records 16 kHz mono windows and runs the same detector and state machine as the WAV workflow.
+
+## Use the camera smoke test
+
+Tier 2A is bench-only local video plumbing. It does not run nursery video
+features and does not use video to trigger or suppress notifications.
+
+On the Pi, run:
+
+```bash
+lullaby camera-smoke --output output/pi-camera-smoke
+```
+
+Expected: Lullaby captures one local no-preview test frame, writes
+`output/pi-camera-smoke/camera-smoke.json`, and deletes the raw test frame by
+default. The report contains derived metadata such as image size and camera
+summary, not raw image data.
+
+For hardware-free tests on a laptop, inspect an existing local JPEG or PNG:
+
+```bash
+lullaby camera-smoke --image path/to/local-test-image.jpg --output output/camera-smoke
+```
+
+Raw frames must stay local and must not be committed. The Tier 2 video boundary
+is captured in [tier2-video-gate.md](tier2-video-gate.md).
 
 ## Tune false alarms
 
@@ -216,6 +241,7 @@ Archive/           retired Lab Witness material
 - [baby-monitor-evaluation.md](baby-monitor-evaluation.md) — evaluation and safety gate
 - [hardware-guide.md](hardware-guide.md) — wiring notes and bench-test order for owned parts
 - [ROADMAP.md](ROADMAP.md) — Tier 0–5 sequence
+- [tier2-video-gate.md](tier2-video-gate.md) — Tier 2A privacy, false-alarm, mount, and dark-room boundaries
 
 ## Safety and privacy
 
