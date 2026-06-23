@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import struct
 import subprocess
 import tempfile
@@ -8,6 +9,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 
 PRIVACY_NOTE = (
@@ -44,6 +47,37 @@ class CameraSmokeReport:
         return value
 
 
+@dataclass(frozen=True)
+class FramePixels:
+    path: str
+    width: int
+    height: int
+    grayscale: np.ndarray
+
+
+@dataclass(frozen=True)
+class VisualChangeReport:
+    analysed_at: datetime
+    before: ImageInfo
+    after: ImageInfo
+    mean_absolute_difference: float
+    changed_pixel_ratio: float
+    pixel_threshold: float
+    changed_ratio_threshold: float
+    observation: str
+    wording_note: str = (
+        "This is a local visual-change metric only, not a safety, sleep, "
+        "breathing, or face-covering assessment."
+    )
+    privacy_note: str = "Raw frames stay local; only derived change metrics are written."
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["schema_version"] = 1
+        value["analysed_at"] = self.analysed_at.isoformat()
+        return value
+
+
 def inspect_image(path: Path) -> ImageInfo:
     """Return derived image metadata without decoding or storing raw pixels."""
 
@@ -56,6 +90,10 @@ def inspect_image(path: Path) -> ImageInfo:
     elif data.startswith(b"\xff\xd8"):
         width, height = _jpeg_dimensions(data)
         format_name = "JPEG"
+    elif _looks_like_pnm(data):
+        header, _ = _read_pnm_header(data)
+        width, height = int(header[1]), int(header[2])
+        format_name = "PGM" if header[0] in {"P2", "P5"} else "PPM"
     else:
         raise ValueError(f"Unsupported image format: {path}")
     return ImageInfo(
@@ -76,6 +114,77 @@ def inspect_image_file(path: Path) -> CameraSmokeReport:
         raw_frame_retained=True,
         retained_frame_path=str(path),
     )
+
+
+def compare_frames(
+    before_path: Path,
+    after_path: Path,
+    *,
+    pixel_threshold: float = 0.08,
+    changed_ratio_threshold: float = 0.02,
+) -> VisualChangeReport:
+    if not 0.0 <= pixel_threshold <= 1.0:
+        raise ValueError("pixel_threshold must be between 0 and 1")
+    if not 0.0 <= changed_ratio_threshold <= 1.0:
+        raise ValueError("changed_ratio_threshold must be between 0 and 1")
+
+    before = read_portable_anymap(before_path)
+    after = read_portable_anymap(after_path)
+    if before.width != after.width or before.height != after.height:
+        raise ValueError(
+            "Frame dimensions must match for visual-change comparison: "
+            f"{before.width}x{before.height} vs {after.width}x{after.height}"
+        )
+
+    difference = np.abs(after.grayscale - before.grayscale)
+    mean_absolute_difference = float(np.mean(difference))
+    changed_pixel_ratio = float(np.mean(difference >= pixel_threshold))
+    observation = (
+        "visual_change_detected"
+        if changed_pixel_ratio >= changed_ratio_threshold
+        else "little_visual_change_detected"
+    )
+    return VisualChangeReport(
+        analysed_at=datetime.now(UTC),
+        before=inspect_image(before_path),
+        after=inspect_image(after_path),
+        mean_absolute_difference=mean_absolute_difference,
+        changed_pixel_ratio=changed_pixel_ratio,
+        pixel_threshold=pixel_threshold,
+        changed_ratio_threshold=changed_ratio_threshold,
+        observation=observation,
+    )
+
+
+def read_portable_anymap(path: Path) -> FramePixels:
+    data = path.read_bytes()
+    if not data:
+        raise ValueError(f"Empty frame file: {path}")
+    header, offset = _read_pnm_header(data)
+    magic = header[0]
+    width = int(header[1])
+    height = int(header[2])
+    max_value = int(header[3])
+    if width <= 0 or height <= 0:
+        raise ValueError("Frame width and height must be positive")
+    if not 0 < max_value <= 65535:
+        raise ValueError("Frame max value must be between 1 and 65535")
+
+    if magic in {"P2", "P3"}:
+        pixels = _read_ascii_pnm(data[offset:], magic, width, height, max_value)
+    elif magic in {"P5", "P6"}:
+        pixels = _read_binary_pnm(data[offset:], magic, width, height, max_value)
+    else:
+        raise ValueError("Visual-change comparison supports PGM/PPM files only")
+
+    return FramePixels(path=str(path), width=width, height=height, grayscale=pixels)
+
+
+def write_visual_change_report(output_dir: Path, report: VisualChangeReport) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "visual-change.json"
+    path.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def capture_rpicam_still(
@@ -292,3 +401,74 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
             return width, height
         index = segment_end
     raise ValueError("Could not find JPEG dimensions")
+
+
+def _looks_like_pnm(data: bytes) -> bool:
+    return len(data) >= 3 and data[:2] in {b"P2", b"P3", b"P5", b"P6"} and chr(
+        data[2]
+    ).isspace()
+
+
+def _read_pnm_header(data: bytes) -> tuple[tuple[str, str, str, str], int]:
+    tokens: list[str] = []
+    index = 0
+    while len(tokens) < 4:
+        while index < len(data) and chr(data[index]).isspace():
+            index += 1
+        if index >= len(data):
+            break
+        if data[index] == ord("#"):
+            while index < len(data) and data[index] not in b"\r\n":
+                index += 1
+            continue
+        start = index
+        while index < len(data) and not chr(data[index]).isspace():
+            index += 1
+        tokens.append(data[start:index].decode("ascii"))
+    if len(tokens) != 4:
+        raise ValueError("PNM header must include magic, width, height, and max value")
+    if index < len(data) and chr(data[index]).isspace():
+        index += 1
+    return (tokens[0], tokens[1], tokens[2], tokens[3]), index
+
+
+def _read_ascii_pnm(
+    payload: bytes,
+    magic: str,
+    width: int,
+    height: int,
+    max_value: int,
+) -> np.ndarray:
+    text = re.sub(rb"#.*", b"", payload).decode("ascii")
+    values = np.fromstring(text, dtype=np.float32, sep=" ")
+    channels = 1 if magic == "P2" else 3
+    expected = width * height * channels
+    if values.size != expected:
+        raise ValueError(f"PNM pixel count mismatch: expected {expected}, got {values.size}")
+    values = values / float(max_value)
+    if channels == 3:
+        values = values.reshape(height, width, 3).mean(axis=2)
+    else:
+        values = values.reshape(height, width)
+    return np.clip(values.astype(np.float32, copy=False), 0.0, 1.0)
+
+
+def _read_binary_pnm(
+    payload: bytes,
+    magic: str,
+    width: int,
+    height: int,
+    max_value: int,
+) -> np.ndarray:
+    channels = 1 if magic == "P5" else 3
+    dtype = np.uint8 if max_value <= 255 else ">u2"
+    expected = width * height * channels
+    values = np.frombuffer(payload, dtype=dtype, count=expected).astype(np.float32)
+    if values.size != expected:
+        raise ValueError(f"PNM pixel count mismatch: expected {expected}, got {values.size}")
+    values = values / float(max_value)
+    if channels == 3:
+        values = values.reshape(height, width, 3).mean(axis=2)
+    else:
+        values = values.reshape(height, width)
+    return np.clip(values.astype(np.float32, copy=False), 0.0, 1.0)

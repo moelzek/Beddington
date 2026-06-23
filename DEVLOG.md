@@ -4,6 +4,24 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Tier 2A visual-change metrics
+
+Added `lullaby visual-change`, the first deterministic derived video
+observation. It compares two local PGM/PPM frames, writes
+`visual-change.json`, and records only derived metrics: mean absolute
+difference, changed-pixel ratio, thresholds, and a bounded observation string.
+
+The wording is deliberately narrow: `visual_change_detected` or
+`little_visual_change_detected`. It does not claim motion by a baby, safety,
+sleep, breathing, or face covering.
+
+Verified locally and on the Pi: 43 tests pass. A Pi smoke test over generated
+local 2×2 PGM frames produced a 0.5 changed-pixel ratio, then the temporary raw
+test frames were removed.
+
+**Next single outcome:** connect the metric to two short Pi camera bench
+captures while still deleting raw frames by default.
+
 ## 23 June 2026 - Tier 2A camera-smoke command
 
 Mo asked to move to the next steps directly without waiting for another

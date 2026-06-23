@@ -5,6 +5,8 @@ import struct
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from lullaby import video
 
 
@@ -26,6 +28,11 @@ def minimal_jpeg(width: int, height: int) -> bytes:
             b"\xff\xd9",
         )
     )
+
+
+def binary_pgm(width: int, height: int, values: bytes) -> bytes:
+    assert len(values) == width * height
+    return f"P5\n{width} {height}\n255\n".encode("ascii") + values
 
 
 def test_inspect_png_metadata_without_raw_pixels(tmp_path: Path) -> None:
@@ -92,3 +99,47 @@ def test_rpicam_capture_deletes_default_test_frame(
     assert report.raw_frame_retained is False
     assert "SensorTimestamp" in report.metadata_keys
     assert report.warnings
+
+
+def test_compare_frames_reports_little_visual_change(tmp_path: Path) -> None:
+    before = tmp_path / "before.pgm"
+    after = tmp_path / "after.pgm"
+    before.write_bytes(binary_pgm(2, 2, bytes([10, 10, 10, 10])))
+    after.write_bytes(binary_pgm(2, 2, bytes([10, 10, 10, 10])))
+
+    report = video.compare_frames(before, after)
+
+    assert report.observation == "little_visual_change_detected"
+    assert report.changed_pixel_ratio == 0.0
+    assert report.mean_absolute_difference == 0.0
+    assert "not a safety" in report.wording_note
+
+
+def test_compare_frames_reports_visual_change(tmp_path: Path) -> None:
+    before = tmp_path / "before.pgm"
+    after = tmp_path / "after.pgm"
+    before.write_bytes(binary_pgm(2, 2, bytes([0, 0, 0, 0])))
+    after.write_bytes(binary_pgm(2, 2, bytes([255, 0, 255, 0])))
+
+    report = video.compare_frames(
+        before,
+        after,
+        pixel_threshold=0.5,
+        changed_ratio_threshold=0.25,
+    )
+
+    assert report.observation == "visual_change_detected"
+    assert report.changed_pixel_ratio == 0.5
+    assert report.mean_absolute_difference == 0.5
+    assert report.before.format == "PGM"
+    assert report.after.format == "PGM"
+
+
+def test_compare_frames_rejects_mismatched_dimensions(tmp_path: Path) -> None:
+    before = tmp_path / "before.pgm"
+    after = tmp_path / "after.pgm"
+    before.write_bytes(binary_pgm(2, 2, bytes([0, 0, 0, 0])))
+    after.write_bytes(binary_pgm(1, 2, bytes([0, 0])))
+
+    with pytest.raises(ValueError, match="Frame dimensions must match"):
+        video.compare_frames(before, after)

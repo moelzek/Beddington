@@ -166,6 +166,24 @@ lullaby camera-smoke --image path/to/local-test-image.jpg --output output/camera
 Raw frames must stay local and must not be committed. The Tier 2 video boundary
 is captured in [tier2-video-gate.md](tier2-video-gate.md).
 
+## Compare local test frames
+
+Use `visual-change` for the first deterministic derived video observation. It
+compares two local PGM/PPM test frames and writes only change metrics:
+
+```bash
+lullaby visual-change \
+  --before path/to/before.pgm \
+  --after path/to/after.pgm \
+  --output output/visual-change
+```
+
+Expected: `output/visual-change/visual-change.json` contains
+`mean_absolute_difference`, `changed_pixel_ratio`, and either
+`visual_change_detected` or `little_visual_change_detected`. This is a local
+visual-change metric only, not a safety, sleep, breathing, or face-covering
+assessment.
+
 ## Tune false alarms
 
 Edit [config/default.toml](config/default.toml):

@@ -17,7 +17,13 @@ from .models import Event, NightReport
 from .notifications import LocalNotifier
 from .pipeline import run_pipeline
 from .soothe import build_soothe_player
-from .video import capture_rpicam_still, inspect_image_file, write_camera_smoke_report
+from .video import (
+    capture_rpicam_still,
+    compare_frames,
+    inspect_image_file,
+    write_camera_smoke_report,
+    write_visual_change_report,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,6 +83,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep the raw test frame locally in the output directory",
     )
+    change = subparsers.add_parser(
+        "visual-change",
+        help="Compare two local PGM/PPM frames and write derived change metrics",
+    )
+    change.add_argument("--before", type=Path, required=True)
+    change.add_argument("--after", type=Path, required=True)
+    change.add_argument("--output", type=Path, default=Path("output/visual-change"))
+    change.add_argument("--pixel-threshold", type=float, default=0.08)
+    change.add_argument("--changed-ratio-threshold", type=float, default=0.02)
     return parser
 
 
@@ -110,6 +125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _preview_soothe_command(args, config)
     if args.command == "camera-smoke":
         return _camera_smoke_command(args)
+    if args.command == "visual-change":
+        return _visual_change_command(args)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -263,6 +280,32 @@ def _camera_smoke_command(args: argparse.Namespace) -> int:
         print("Raw test frame deleted after metadata check.")
     if report.warnings:
         print(f"Warnings: {' | '.join(report.warnings)}")
+    print(f"Report: {report_path}")
+    return 0
+
+
+def _visual_change_command(args: argparse.Namespace) -> int:
+    if not args.before.exists():
+        raise SystemExit(f"Before frame not found: {args.before}")
+    if not args.after.exists():
+        raise SystemExit(f"After frame not found: {args.after}")
+    if not 0.0 <= args.pixel_threshold <= 1.0:
+        raise SystemExit("--pixel-threshold must be between 0 and 1")
+    if not 0.0 <= args.changed_ratio_threshold <= 1.0:
+        raise SystemExit("--changed-ratio-threshold must be between 0 and 1")
+
+    report = compare_frames(
+        args.before,
+        args.after,
+        pixel_threshold=args.pixel_threshold,
+        changed_ratio_threshold=args.changed_ratio_threshold,
+    )
+    report_path = write_visual_change_report(args.output, report)
+
+    print(f"Observation: {report.observation}")
+    print(f"Mean absolute difference: {report.mean_absolute_difference:.4f}")
+    print(f"Changed pixel ratio: {report.changed_pixel_ratio:.4f}")
+    print("This is a local visual-change metric only, not a safety assessment.")
     print(f"Report: {report_path}")
     return 0
 

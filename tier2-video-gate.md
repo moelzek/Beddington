@@ -15,7 +15,8 @@ Tier 2A may:
 3. inspect existing local JPEG/PNG files for hardware-free tests;
 4. write derived image metadata such as dimensions, byte count, camera summary,
    and capture metadata keys;
-5. delete raw test frames by default.
+5. compare local PGM/PPM test frames for deterministic visual-change metrics;
+6. delete raw test frames by default.
 
 Tier 2A must not:
 
@@ -104,5 +105,10 @@ Complete as of 2026-06-23. `lullaby camera-smoke` passed locally and on the Pi.
 The Pi report identified the attached `imx708` camera, recorded 640×480 JPEG
 metadata, and left only `camera-smoke.json` in the output directory.
 
-Next: add the first deterministic derived observation using local files or
-mocks. Do not use video as a notification source or safety suppressor.
+`lullaby visual-change` also passed locally and on the Pi using generated PGM
+test frames. It writes only derived change metrics and uses bounded wording:
+`visual_change_detected` or `little_visual_change_detected`.
+
+Next: connect the visual-change metric to two short Pi camera bench captures
+while deleting raw frames by default. Do not use video as a notification source
+or safety suppressor.

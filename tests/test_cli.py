@@ -98,3 +98,38 @@ def test_camera_smoke_rejects_invalid_dimensions() -> None:
                 "0",
             ]
         )
+
+
+def test_visual_change_writes_derived_report(tmp_path, capsys) -> None:
+    before = tmp_path / "before.pgm"
+    after = tmp_path / "after.pgm"
+    before.write_bytes(b"P5\n2 2\n255\n" + bytes([0, 0, 0, 0]))
+    after.write_bytes(b"P5\n2 2\n255\n" + bytes([255, 0, 255, 0]))
+    output_dir = tmp_path / "visual-output"
+
+    result = main(
+        [
+            "--config",
+            "config/default.toml",
+            "visual-change",
+            "--before",
+            str(before),
+            "--after",
+            str(after),
+            "--output",
+            str(output_dir),
+            "--pixel-threshold",
+            "0.5",
+            "--changed-ratio-threshold",
+            "0.25",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    report = json.loads((output_dir / "visual-change.json").read_text(encoding="utf-8"))
+
+    assert result == 0
+    assert "Observation: visual_change_detected" in output
+    assert report["changed_pixel_ratio"] == 0.5
+    assert report["observation"] == "visual_change_detected"
+    assert "not a safety" in report["wording_note"]

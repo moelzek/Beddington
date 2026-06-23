@@ -40,15 +40,15 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Tier 2A derived video observation slice
+### Current task: Tier 2A camera-linked visual-change smoke
 
-Purpose: add a deterministic, hardware-free derived observation over local
-test frames before attempting any nursery video behaviour.
+Purpose: apply the deterministic visual-change metric to two short, local Pi
+camera bench captures while still deleting raw frames by default.
 
-1. Use local files or generated test images first.
-2. Record only derived features, not raw frames.
-3. Keep video as supporting context only.
-4. Avoid active safety, asleep, breathing, or face-covered claims.
+1. Capture two local bench frames on the Pi.
+2. Run the existing visual-change metric over them.
+3. Write only derived change metrics.
+4. Delete raw frames by default.
 
 ### Future cry-stopped verification while soothing
 
@@ -65,6 +65,8 @@ test frames before attempting any nursery video behaviour.
 - [x] Pi Camera Module 3 hardware smoke test: `imx708` detected and a local no-preview still capture succeeded.
 - [x] Tier 2A bench-only video gate: privacy, false-alarm, mount, and dark-room boundaries documented.
 - [x] `camera-smoke` command: file metadata path plus Pi no-preview capture path.
+- [x] `visual-change` command: deterministic local PGM/PPM frame-difference metrics.
+- [ ] Camera-linked visual-change smoke test with raw frames deleted by default.
 - [ ] Cot-safe mount and cable-routing plan before nursery deployment.
 - [ ] Dark-room hardware decision before night video.
 - File/OpenCV adapter for laptop development.
