@@ -150,6 +150,53 @@ def test_selected_soothe_preset_runs_before_notification(tmp_path: Path) -> None
     assert "tried 1 soothe preset" in result.digest
 
 
+def test_selected_soothe_preset_notifies_after_wait_when_crying_persists(
+    tmp_path: Path,
+) -> None:
+    scores = [0.8, 0.9, 0.8, 0.8, 0.8, 0.1, 0.1]
+    notifier = FakeNotifier()
+    soothe_player = FakeSoothePlayer()
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        notifications=NotificationConfig(desktop=False),
+        soothe=SootheConfig(
+            enabled=True,
+            player="none",
+            steps=(SootheStepConfig(name="white noise", wait_seconds=1.0),),
+        ),
+    )
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=notifier,
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+        soothe_player=soothe_player,
+    )
+
+    assert notifier.calls == 1
+    assert soothe_player.steps == ["white noise"]
+    assert soothe_player.stop_calls == 1
+    assert [event.kind for event in result.report.events] == [
+        "cry_started",
+        "soothe_attempted",
+        "notification_sent",
+        "cry_ended",
+    ]
+    soothe_event = result.report.events[1]
+    notification = result.report.events[2]
+    assert notification.offset_seconds >= (
+        soothe_event.offset_seconds + soothe_event.details["wait_seconds"]
+    )
+
+
 def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
     tmp_path: Path,
 ) -> None:
@@ -187,3 +234,45 @@ def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
         "cry_ended",
         "soothe_settled",
     ]
+
+
+def test_soothe_unresolved_when_recording_ends_before_wait(tmp_path: Path) -> None:
+    scores = [0.8, 0.9]
+    notifier = FakeNotifier()
+    soothe_player = FakeSoothePlayer()
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        notifications=NotificationConfig(desktop=False),
+        soothe=SootheConfig(
+            enabled=True,
+            player="none",
+            steps=(SootheStepConfig(name="white noise", wait_seconds=10.0),),
+        ),
+    )
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=notifier,
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+        soothe_player=soothe_player,
+    )
+
+    assert notifier.calls == 0
+    assert soothe_player.stop_calls == 1
+    assert [event.kind for event in result.report.events] == [
+        "cry_started",
+        "soothe_attempted",
+        "soothe_unresolved",
+        "cry_ended",
+    ]
+    assert result.report.events[2].details == {
+        "reason": "recording_ended_before_escalation"
+    }

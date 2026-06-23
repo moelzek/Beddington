@@ -8,6 +8,8 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Official YAMNet TFLite `Baby cry, infant cry` model score.
 - Deterministic confidence threshold, sustained-duration debounce, release delay, and notification cooldown.
 - Optional Tier 1 dry-run soothe preset before parent notification.
+- Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
+- Pi USB microphone capture through Lullaby's microphone adapter.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
 - Console notification plus best-effort macOS/Linux desktop notification.
 - Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.
@@ -92,7 +94,9 @@ lullaby --config config/default.toml preview-soothe --seconds 5
 ```
 
 Expected: the selected `white_noise` preset plays briefly and then stops. This
-is the next Pi Bluetooth speaker smoke test before any MAX98357 wiring.
+has already passed on the Pi through a Bluetooth speaker. The next software gate
+is the quiet-check loop; the MAX98357 wired speaker bench test remains a later,
+powered-off hardware step.
 
 To preview the generated sounds directly on your Mac:
 
@@ -161,7 +165,8 @@ The included generated sounds are synthetic placeholders for testing the preset.
 The uterine-style file is a generated womb-like rumble/whoosh, not a recording
 and not evidence that a particular sound will soothe a baby.
 
-Keep the first real audio tests on a laptop at low volume before wiring the Pi speaker.
+Keep real audio tests at low volume. Do not wire the MAX98357 speaker bench test
+unless the Pi is powered off first.
 
 ## Optional LLM polish
 

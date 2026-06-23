@@ -51,6 +51,7 @@ recordings/
 *.log
 logs/
 output/
+.context/
 .gbrain-source
 data/raw/
 *.sqlite
