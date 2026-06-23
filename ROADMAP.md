@@ -40,17 +40,16 @@
 **Gate:** Mo approved starting Tier 1 on 2026-06-21. Keep work laptop-first
 until the audio-output hardware is bench-tested safely.
 
-### Current task: Quiet-check loop
+### Current task: MAX98357 wired speaker bench test
 
-Purpose: while a selected soothe preset is playing, briefly lower or pause
-playback, listen through the microphone, and require repeated quiet checks
-before logging that crying is no longer detected.
+Purpose: verify the simplest wired speaker path after Bluetooth output has
+passed. Start with the Pi powered off, wire one MAX98357 amplifier to one 3W
+4Ω speaker, then boot and run a low-volume playback check.
 
-1. Keep audio ML as the primary signal.
-2. Add deterministic quiet-check windows during long soothe playback.
-3. Require multiple quiet checks before saying crying is no longer detected.
-4. Keep wording honest: “crying no longer detected”, not “baby is asleep” or
-   “baby is safe”.
+1. Power the Pi off before wiring.
+2. Wire only one amplifier and one speaker for the first test.
+3. Keep volume low and stop if the amplifier, speaker, or Pi gets hot.
+4. Confirm the selected soothe preset plays briefly, then stop playback.
 
 ### Future cry-stopped verification while soothing
 

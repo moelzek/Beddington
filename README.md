@@ -95,9 +95,9 @@ lullaby --config config/default.toml preview-soothe --seconds 5
 ```
 
 Expected: the selected `white_noise` preset plays briefly and then stops. This
-has already passed on the Pi through a Bluetooth speaker. The next software gate
-is the quiet-check loop; the MAX98357 wired speaker bench test remains a later,
-powered-off hardware step.
+has already passed on the Pi through a Bluetooth speaker. The quiet-check
+software gate has also passed; the next hardware gate is the MAX98357 wired
+speaker bench test, which must start with the Pi powered off.
 
 To preview the generated sounds directly on your Mac:
 

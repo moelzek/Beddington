@@ -4,6 +4,21 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 23 June 2026 - Pi synced smoke gate passed
+
+Installed a dedicated SSH key for `lab@lab.powerhub` so the Mac can reach the
+Pi without repeated password prompts. Synced the quiet-check code to
+`~/Labie`, then ran the hardware-free test suite and the short Tier 1 sample on
+the Pi. Both passed; the Pi sample still logs `SOOTHE` before `NOTIFIED`.
+
+Ran a 12-second live USB-microphone smoke test on the Pi. It analysed 17 local
+audio windows and detected no sustained crying, as expected for a non-cry
+room test. The microphone stream printed a few input-overflow warnings, so
+that is worth watching during longer runs.
+
+**Next single outcome:** power the Pi off, then wire one MAX98357 amplifier to
+one 3W 4Ω speaker for a low-volume bench test.
+
 ## 23 June 2026 - Quiet-check loop implemented
 
 Added deterministic Tier 1 quiet-check windows. While soothing is active,
