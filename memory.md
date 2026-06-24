@@ -32,7 +32,7 @@
 | LLM | Optional, provider-agnostic, environment-configured, and behind a flag. The complete app works with it off. |
 | Development | Hardware-free first. Audio/video files and mock sensors use the same adapter interfaces as real Pi hardware. |
 | Parent app | Multiple parent devices and family sharing are desired later. Under the current privacy rule they start with derived alerts, logs, and digests; raw live video on phones requires a separate explicit privacy-boundary decision. |
-| Commercial model | Keep the core monitoring app ad-free. Optional subscription ideas may cover convenience features only; core local monitoring, logs, alerts, and soothing must work without payment, cloud access, or API keys. |
+| Sensors | BME688 can be bench-read after the current camera physical gate, but product environment use is Tier 4. VL53L0X is a near-term mount/enclosure utility. MR60BHA2 is Tier 3 after safety sign-off. HC-SR04, INMP441, OLEDs, and servos stay bench-only until their gates. |
 | Scope | Build only the active approved tier. Future tier expansions still require Mo's explicit approval and their safety gates. |
 
 ## Hardware on hand
@@ -74,7 +74,7 @@ These facts were migrated from the retired Lab Witness inventory.
 - **Audio hardware:** use USB/Bluetooth microphones first; INMP441 I²S microphones are advanced and should wait until the basic Pi audio loop works.
 - **Servo hardware:** servos must be driven through PCA9685 and separate power; do not power servos from Pi GPIO pins.
 - **Tier 3:** MR60BHA2 is owned; later verify cot-distance signal quality, mounting, and ESPHome/MQTT integration only after the radar gate is approved.
-- **Tier 4:** BME688 is owned; later verify placement, hygiene, calibration, and nappy-VOC limits only after the environment gate is approved.
+- **Tier 4:** BME688 is owned; a bench-only local read can happen after the current camera physical gate, but nursery/product use waits for placement, hygiene, calibration, and environment-gate approval.
 - **Utility sensors:** VL53L0X is the preferred distance/proximity sensor. HC-SR04 may be useful for bench proximity checks or mount/enclosure experiments, but needs a voltage divider and should not be used to infer baby state.
 - **Tier 5:** optional MLX90640 only after the relevant gate is approved.
 
@@ -106,7 +106,7 @@ Raw recordings remain local. Generated logs must not contain raw media or secret
 | **3 — Radar** | Presence and gross movement; breathing may be shown only as a non-medical trend | Mentor safety sign-off; never alarms |
 | **4 — Environment** | Room temperature/humidity and nappy-VOC best guess | Calibration and hygiene review |
 | **5 — Thermal** | Relative warmth trend only | Highest-risk optional tier; never fever detection |
-| **Parent app/product layer** | Multiple parent devices, family sharing, push alerts, connection/power-health alerts, optional subscription, and ad-free core app | After local core and hardware gates; auth, encryption, pairing, revocation, and privacy review |
+| **Parent app/reliability layer** | Multiple parent devices, family sharing, push alerts, and connection/power-health alerts | After local core and hardware gates; auth, encryption, pairing, revocation, and privacy review |
 
 ## Tier 0 acceptance
 
@@ -164,7 +164,8 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
-- **2026-06-23** — Mapped Mo's baby-monitor app screenshot requirements into the roadmap: smart audio/video monitoring, smart noise and cry detection, instant noise/connection/power alerts, advanced night vision, multiple parent devices, family sharing, local continuous viewing, optional subscription, and no-ads policy. The placement keeps current safety/privacy boundaries: night vision stays Tier 2-gated, parent sharing starts with derived alerts/logs/digests, and raw live video on phones would require a separate future privacy decision.
+- **2026-06-24** — Removed the extra app-store-style roadmap item at Mo's request and clarified sensor timing. BME688 can be bench-read after the current camera physical gate, but nursery/product use remains Tier 4 after placement, hygiene, and calibration review. VL53L0X is the near-term utility sensor for mount/enclosure checks; MR60BHA2 stays Tier 3 after safety sign-off; HC-SR04, INMP441, OLEDs, and servos remain bench-only until their gates.
+- **2026-06-23** — Mapped Mo's baby-monitor app screenshot requirements into the roadmap: smart audio/video monitoring, smart noise and cry detection, instant noise/connection/power alerts, advanced night vision, multiple parent devices, family sharing, and local continuous viewing. The placement keeps current safety/privacy boundaries: night vision stays Tier 2-gated, parent sharing starts with derived alerts/logs/digests, and raw live video on phones would require a separate future privacy decision.
 - **2026-06-23** — Added `camera-mount-plan.md`, the Tier 2A physical gate before any nursery camera use. The plan uses CPSC baby-monitor cord guidance, AAP safe-sleep guidance, and Raspberry Pi camera-cable guidance; requires all hardware, mounts, power, straps, tape tails, and cables to stay outside a strict 3-foot exclusion zone; keeps Pi/Hailo compute in a vented base; blocks cot-mounted parts and dangling cables; and still requires a chosen physical location, marked exclusion zone, cable route, bench thermal check, and baby-absent derived-JSON smoke test before nursery video.
 - **2026-06-23** — Added `lullaby camera-change`, a Tier 2A bench command that captures two short local BMP frames through the Pi Camera Module 3, runs the deterministic visual-change metric, writes derived `visual-change.json`, and deletes raw frames by default. Tests pass locally and on the Pi with 46 tests. The Pi camera-linked smoke test used 160×120 captures, produced `visual_change_detected` with a changed-pixel ratio of about 0.64 in the live bench scene, and left only `output/pi-camera-change/visual-change.json`.
 - **2026-06-23** — Added `lullaby visual-change`, a deterministic Tier 2A command that compares two local PGM/PPM frames and writes only derived metrics: mean absolute difference, changed-pixel ratio, thresholds, and an observation of `visual_change_detected` or `little_visual_change_detected`. Wording states this is not a safety, sleep, breathing, or face-covering assessment. Tests pass locally and on the Pi with 43 tests; a Pi smoke test over generated local frames produced a 0.5 changed-pixel ratio and then removed the temporary raw test frames.

@@ -18,8 +18,6 @@ They are placed here, but still inherit Lullaby's privacy and safety rules.
 | Multiple parent devices | Parent-app and sharing layer | Start with household pairing and derived alerts/digests. Live video on phones needs a separate privacy-boundary decision. |
 | Share with family | Parent-app and sharing layer | Needs invite/revoke controls, roles, audit log, and encrypted transport. |
 | Unlimited video monitoring | Tier 2 plus parent-app layer | Treat as local live viewing only after thermal, privacy, and mount gates. No cloud recording by default. |
-| Premium subscription | Product/commercial layer | Optional convenience features only. Core local monitoring, alerts, logs, and soothe flow must work without a subscription or API key. |
-| No ads | Product/commercial layer | Keep the core parent app ad-free; do not add ad SDKs to the monitoring path. |
 
 ## Tier 0 — audio spine
 
@@ -110,7 +108,8 @@ location before any nursery camera use.
 
 ## Tier 3 — radar presence and movement
 
-- MR60BHA2 through its ESP32 Wi-Fi/MQTT bridge.
+- [ ] Bench-read MR60BHA2 through its ESP32 Wi-Fi/MQTT bridge.
+- [ ] Verify cot-distance signal quality and mounting outside reach.
 - Presence and gross movement.
 - Supporting context for soothe verification: presence and gross movement trends only.
 - Breathing, if ever displayed, is a non-medical trend only and never drives an alarm or suppresses a parent notification by itself.
@@ -119,8 +118,12 @@ location before any nursery camera use.
 
 ## Tier 4 — nursery environment
 
-- Room temperature/humidity.
-- Nappy VOC as a clearly labelled best guess.
+- [ ] Bench-read BME688 locally: temperature, humidity, pressure, and gas-resistance style raw readings.
+- [ ] Decide safe placement away from the cot, nappy changes, liquids, and grab/reach paths.
+- [ ] Calibrate room baseline before using readings in a digest.
+- Room temperature/humidity trend in the morning digest.
+- Experimental nappy VOC as a clearly labelled best guess, only after calibration and hygiene review.
+- No body-temperature, fever, illness, or air-safety claim.
 
 **Gate:** calibration, placement, and hygiene plan.
 
@@ -131,7 +134,17 @@ location before any nursery camera use.
 
 **Gate:** explicit decision that the value justifies the risk and complexity. Default is to cut.
 
-## Parent app and product layer
+## Other owned sensors and hardware
+
+These are useful, but they are not the next product signal by default.
+
+- [ ] VL53L0X distance sensor: near-term bench utility for mount/enclosure checks; not baby-state inference.
+- [ ] HC-SR04 distance sensor: lower priority because it needs a voltage divider; bench utility only.
+- [ ] OLED display: bench status screen after the core sensor paths are stable.
+- [ ] INMP441 I2S microphones: later audio-hardware upgrade after USB microphone remains reliable.
+- [ ] Servo/PCA9685 movement: bench prototyping only, with separate power; not cot deployment by default.
+
+## Parent app and reliability layer
 
 This is not a sensor tier. It starts only after the local core and the relevant
 hardware gates are stable.
@@ -144,8 +157,6 @@ hardware gates are stable.
 - [ ] Power-health alerts: Pi under-voltage, thermal throttling, and later UPS/power-bank battery where available.
 - [ ] Local-network live video view only after the Tier 2 mount, privacy, dark-room, and thermal gates pass.
 - [ ] Remote access decision: derived alerts and digests first; raw live audio/video off-device requires a separate explicit privacy decision.
-- [ ] Ad-free core app. No ad SDKs in the monitoring path.
-- [ ] Optional subscription model for convenience features only; core local monitoring must keep working without payment, cloud access, or API keys.
 
 **Gate:** authentication, encryption, local pairing, permission revocation,
 privacy review, and no weakening of the raw-audio/video boundary without an

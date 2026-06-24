@@ -4,12 +4,25 @@ Reverse-chronological. Keep entries short: what changed, what was learned, what 
 
 ---
 
+## 24 June 2026 - Sensor timing cleanup
+
+Removed the extra app-store-style item from the roadmap. Clarified the sensor sequence:
+the BME688 air sensor can have a bench-only local read after the current
+camera physical gate, but product use is Tier 4 after placement,
+hygiene, and calibration review. VL53L0X is the nearest utility sensor for
+mount/enclosure checks. MR60BHA2 remains Tier 3 after safety sign-off, while
+HC-SR04, INMP441, OLEDs, and servos stay bench-only until their gates.
+
+**Next single outcome:** finish the physical camera mock-up gate, then choose
+whether the next low-risk hardware step is BME688 bench read or VL53L0X mount
+utility.
+
 ## 23 June 2026 - App-feature roadmap mapping
 
 Mapped the baby-monitor app screenshot features into the Lullaby roadmap:
 smart audio/video monitoring, smart noise and cry detection, instant alerts,
 advanced night vision, multiple parent devices, family sharing, continuous
-viewing, optional subscription, and no-ads policy.
+viewing, and parent-app sharing.
 
 Placed them by dependency instead of copying the competitor flow directly.
 Audio detection stays in Tier 0/Tier 1, night vision stays Tier 2-gated, and

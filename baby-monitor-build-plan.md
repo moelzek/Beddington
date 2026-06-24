@@ -63,13 +63,35 @@ Add MR60BHA2 presence and gross movement through its ESP32 Wi-Fi/MQTT bridge. An
 
 ## Tier 4 — room environment and nappy best guess
 
-Add BME688 room temperature/humidity and a calibrated nappy-VOC best guess. Do not infer body temperature.
+Add BME688 room temperature/humidity after a local bench read, safe placement
+decision, baseline calibration, and hygiene review. Any nappy-VOC idea remains
+an experimental best guess only. Do not infer body temperature, illness, fever,
+or air safety.
 
 ## Tier 5 — optional thermal trend
 
 Add MLX90640 relative warmth trend only. Never describe it as fever detection or a thermometer. Default: cut this tier.
 
-## Product/app layer — after the local core
+## Sensor timing
+
+The next active work remains Tier 2A physical camera planning. Sensor timing:
+
+1. BME688 air sensor: can get a bench-only smoke test after the current camera
+   physical gate, but product use is Tier 4 after placement, calibration, and
+   hygiene review.
+2. VL53L0X distance sensor: useful earlier as a mount/enclosure bench utility;
+   do not use it for baby-state inference.
+3. HC-SR04 distance sensor: lower priority because it needs a voltage divider
+   before touching Pi GPIO.
+4. MR60BHA2 radar: Tier 3, after video/mount basics and mentor safety sign-off;
+   presence and gross movement only.
+5. INMP441 microphones: later audio-hardware upgrade after the USB microphone
+   path remains reliable.
+6. OLED displays: later local status/readout once the signal paths are stable.
+7. Servos: bench prototyping only with PCA9685 and separate power; not default
+   cot deployment.
+
+## Parent app layer — after the local core
 
 Mo wants the parent-facing app capabilities seen in mainstream baby-monitor
 apps, but they must be sequenced after the local privacy-first core:
@@ -84,8 +106,6 @@ apps, but they must be sequenced after the local privacy-first core:
    checks pass.
 6. Local live video only after the Tier 2 gates. Remote raw video is not part
    of the current privacy boundary and would need a separate explicit decision.
-7. No ads in the core monitoring app. Any subscription must be optional and
-   must not be required for local monitoring, logging, alerts, or soothing.
 
 ## Hardware on hand
 

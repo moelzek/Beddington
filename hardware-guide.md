@@ -20,6 +20,7 @@ surface. The nursery camera physical gate lives in
 - [x] Test attached Camera Module 3 detection and local no-preview still capture.
 - [x] Document the cot-safe camera mount and cable-routing plan.
 - [ ] Choose and mock up the actual nursery camera location before any nursery video use.
+- [ ] Bench-read the BME688 air sensor after the current camera physical gate; product use waits for Tier 4.
 - [ ] Test one OLED display as a simple status screen.
 - [ ] Test one VL53L0X distance sensor for mount/enclosure experiments.
 - [ ] Test one SG90 or Miuzei 9g servo through the PCA9685 with separate 5V power.
@@ -278,6 +279,24 @@ print(sensor.distance * 100, "cm")
 ```
 
 Reference: [HC-SR04 datasheet](https://cdn.sparkfun.com/datasheets/Sensors/Proximity/HCSR04.pdf).
+
+## Air sensor
+
+Mo has one Pimoroni BME688 breakout. Treat it as a room-environment sensor for
+bench learning first, not as a nursery safety sensor.
+
+Timing:
+
+1. after the current Tier 2A camera physical gate, run a bench-only local read
+   to confirm the Pi can see the board;
+2. in Tier 4, decide safe placement away from the cot, liquids, nappy handling,
+   and grab/reach paths;
+3. collect a room baseline before using readings in a digest;
+4. keep wording narrow: room temperature/humidity trend and experimental
+   nappy-VOC best guess only after calibration and hygiene review.
+
+Do not use it to infer body temperature, illness, fever, breathing, or whether
+the room is safe.
 
 ## OLED displays
 
