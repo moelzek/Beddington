@@ -32,7 +32,7 @@
 | LLM | Optional, provider-agnostic, environment-configured, and behind a flag. The complete app works with it off. |
 | Development | Hardware-free first. Audio/video files and mock sensors use the same adapter interfaces as real Pi hardware. |
 | Parent app | Multiple parent devices and family sharing are desired later. Under the current privacy rule they start with derived alerts, logs, and digests; raw live video on phones requires a separate explicit privacy-boundary decision. |
-| Sensors | BME688 can be bench-read after the current camera physical gate, but product environment use is Tier 4. VL53L0X is a near-term mount/enclosure utility. MR60BHA2 is Tier 3 after safety sign-off. HC-SR04, INMP441, OLEDs, and servos stay bench-only until their gates. |
+| Sensors | BME688 can be bench-read after the current camera physical gate, but product environment use is Tier 4. VL53L0X is a near-term mount/enclosure utility. MR60BHA2 is Tier 3 after safety sign-off. HC-SR04, HC-SR501-style PIR, INMP441, OLEDs, and servos stay bench-only until their gates. |
 | Scope | Build only the active approved tier. Future tier expansions still require Mo's explicit approval and their safety gates. |
 
 ## Hardware on hand
@@ -61,6 +61,7 @@ These facts were migrated from the retired Lab Witness inventory.
 | Seeed MR60BHA2 60GHz mmWave sensor with XIAO ESP32C6 | On hand, quantity 1 | Later presence/gross movement; breathing may be shown only as a non-medical trend after mentor safety sign-off |
 | Pimoroni BME688 4-in-1 air quality breakout | On hand, quantity 1 | Later room temperature/humidity and experimental nappy-VOC best guess after calibration and hygiene review |
 | HC-SR04 ultrasonic distance sensor | On hand, quantity 5 | GPIO distance/proximity; needs voltage divider; optional utility only, not baby-state inference |
+| HC-SR501-style D-SUN PIR motion sensor | On hand, quantity 1 | Bench-only passive infrared motion/proximity experiment; not baby-state inference and not a safety signal |
 | VL53L0X laser distance/ToF sensor | On hand, quantity 5 | I²C distance/proximity; preferred distance sensor over HC-SR04 |
 | microSD card, 32GB | On hand | Pi OS and deployment |
 | Breadboards, jumper wires, wire, screws | On hand, many | Prototyping |
@@ -75,7 +76,7 @@ These facts were migrated from the retired Lab Witness inventory.
 - **Servo hardware:** servos must be driven through PCA9685 and separate power; do not power servos from Pi GPIO pins.
 - **Tier 3:** MR60BHA2 is owned; later verify cot-distance signal quality, mounting, and ESPHome/MQTT integration only after the radar gate is approved.
 - **Tier 4:** BME688 is owned; a bench-only local read can happen after the current camera physical gate, but nursery/product use waits for placement, hygiene, calibration, and environment-gate approval.
-- **Utility sensors:** VL53L0X is the preferred distance/proximity sensor. HC-SR04 may be useful for bench proximity checks or mount/enclosure experiments, but needs a voltage divider and should not be used to infer baby state.
+- **Utility sensors:** VL53L0X is the preferred distance/proximity sensor. HC-SR04 may be useful for bench proximity checks or mount/enclosure experiments, but needs a voltage divider and should not be used to infer baby state. The HC-SR501-style PIR sensor is bench-only motion/proximity hardware and must not be used as a safety signal.
 - **Tier 5:** optional MLX90640 only after the relevant gate is approved.
 
 Detailed wiring notes, smoke-test snippets, and the safe bench-test order live in
@@ -164,6 +165,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-27** — Added Mo's HC-SR501-style D-SUN PIR motion sensor to the owned inventory as bench-only motion/proximity hardware, not baby-state inference and not a safety signal.
 - **2026-06-24** — Removed the extra app-store-style roadmap item at Mo's request and clarified sensor timing. BME688 can be bench-read after the current camera physical gate, but nursery/product use remains Tier 4 after placement, hygiene, and calibration review. VL53L0X is the near-term utility sensor for mount/enclosure checks; MR60BHA2 stays Tier 3 after safety sign-off; HC-SR04, INMP441, OLEDs, and servos remain bench-only until their gates.
 - **2026-06-23** — Mapped Mo's baby-monitor app screenshot requirements into the roadmap: smart audio/video monitoring, smart noise and cry detection, instant noise/connection/power alerts, advanced night vision, multiple parent devices, family sharing, and local continuous viewing. The placement keeps current safety/privacy boundaries: night vision stays Tier 2-gated, parent sharing starts with derived alerts/logs/digests, and raw live video on phones would require a separate future privacy decision.
 - **2026-06-23** — Added `camera-mount-plan.md`, the Tier 2A physical gate before any nursery camera use. The plan uses CPSC baby-monitor cord guidance, AAP safe-sleep guidance, and Raspberry Pi camera-cable guidance; requires all hardware, mounts, power, straps, tape tails, and cables to stay outside a strict 3-foot exclusion zone; keeps Pi/Hailo compute in a vented base; blocks cot-mounted parts and dangling cables; and still requires a chosen physical location, marked exclusion zone, cable route, bench thermal check, and baby-absent derived-JSON smoke test before nursery video.
