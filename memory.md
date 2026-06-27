@@ -66,6 +66,19 @@ These facts were migrated from the retired Lab Witness inventory.
 | microSD card, 32GB | On hand | Pi OS and deployment |
 | Breadboards, jumper wires, wire, screws | On hand, many | Prototyping |
 
+## Current bench GPIO occupancy
+
+Mo reported this Raspberry Pi 5 physical-pin occupancy on 2026-06-27. Treat it
+as a live wiring map, not as a safety validation; confirm each module pin label
+and Pi pin function before powering the bench rig.
+
+| Hardware | Reported occupied physical pins | Notes |
+|---|---|---|
+| Pimoroni BME688 4-in-1 air quality breakout | 1, 3, 5, 9 | Expected I²C pattern: 3.3V, SDA/GPIO2, SCL/GPIO3, GND |
+| MAX98357 I²S amplifier | 35, 12, 40, 4, 6 | Expected I²S pattern: GPIO19/LRC, GPIO18/BCLK, GPIO21/DIN, 5V, GND |
+| HC-SR501-style D-SUN PIR motion sensor | 7, 14, 2 | Bench-only; if powered from 5V, PIR signal to GPIO must be level-safe before entering the Pi |
+| VL53L0X laser distance/ToF sensor | 19, 20, 16, 15 | Verify before powering: physical pin 19 is GPIO10/SPI0 MOSI, not 3.3V or 5V |
+
 ## Hardware to buy or verify later
 
 - **Tier 0:** no purchase is required for laptop development. Verify microphone quality and placement before Pi deployment.
@@ -165,6 +178,7 @@ asleep” or “baby is safe”.
 
 ## Changelog
 
+- **2026-06-27** — Recorded Mo's current Raspberry Pi 5 bench GPIO occupancy: BME688 on pins 1/3/5/9, MAX98357 on 35/12/40/4/6, HC-SR501-style PIR on 7/14/2, and VL53L0X on 19/20/16/15. Added a warning that the map is not a safety validation and VL53L0X pin 19 needs verification before powering.
 - **2026-06-27** — Added Mo's HC-SR501-style D-SUN PIR motion sensor to the owned inventory as bench-only motion/proximity hardware, not baby-state inference and not a safety signal.
 - **2026-06-24** — Removed the extra app-store-style roadmap item at Mo's request and clarified sensor timing. BME688 can be bench-read after the current camera physical gate, but nursery/product use remains Tier 4 after placement, hygiene, and calibration review. VL53L0X is the near-term utility sensor for mount/enclosure checks; MR60BHA2 stays Tier 3 after safety sign-off; HC-SR04, INMP441, OLEDs, and servos remain bench-only until their gates.
 - **2026-06-23** — Mapped Mo's baby-monitor app screenshot requirements into the roadmap: smart audio/video monitoring, smart noise and cry detection, instant noise/connection/power alerts, advanced night vision, multiple parent devices, family sharing, and local continuous viewing. The placement keeps current safety/privacy boundaries: night vision stays Tier 2-gated, parent sharing starts with derived alerts/logs/digests, and raw live video on phones would require a separate future privacy decision.
