@@ -1137,6 +1137,21 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
     return fields
 
 
+def _build_soothe_presets(config: AppConfig) -> dict[str, SootheStepConfig]:
+    """Soothe presets for the dashboard: the configured ones, plus any bundled
+    assets/soothe/*.wav not already configured (so white noise/heartbeat/music
+    all appear even if only some are in the config)."""
+    presets: dict[str, SootheStepConfig] = dict(config.soothe.presets)
+    assets_dir = Path(__file__).resolve().parents[2] / "assets" / "soothe"
+    if assets_dir.is_dir():
+        for wav in sorted(assets_dir.glob("*.wav")):
+            if wav.stem not in presets:
+                presets[wav.stem] = SootheStepConfig(
+                    name=wav.stem.replace("_", " "), sound_path=wav
+                )
+    return presets
+
+
 class _DashboardSoothe:
     """Plays a chosen soothe preset on a loop through the Pi speaker, for the
     dashboard's soothe controls. One sound at a time; stop ends it."""
@@ -1269,7 +1284,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
-    soothe = _DashboardSoothe(dict(config.soothe.presets)) if config.soothe.presets else None
+    _soothe_presets = _build_soothe_presets(config)
+    soothe = _DashboardSoothe(_soothe_presets) if _soothe_presets else None
 
     def _make_source(camera: int, night: bool) -> object:
         return RpicamFrameSource(
