@@ -9,10 +9,10 @@ SNAPSHOT = {
     "room_gas_resistance_ohms": 120000,
     "room_illuminance_lx": 80.0,
     "person_present": True,
-    "motion_detected": False,
+    # Presence is motion-driven (radar_person_present): real movement is the only
+    # trusted presence signal while the buried radar is unreliable.
+    "motion_detected": True,
     "target_distance_cm": 120.0,
-    # A real breathing lock corroborates the radar's "present" flag (see
-    # radar_person_present): without it, a buried radar's bare flag isn't trusted.
     "radar_respiratory_rate": 16.0,
 }
 
@@ -61,8 +61,9 @@ def test_lighting_synonym_routes() -> None:
 
 def test_motion_not_shadowed_by_presence() -> None:
     # "is there any movement" must reach motion, not presence.
-    answer = answer_question("is there any movement", SNAPSHOT)
-    assert "still" in answer  # SNAPSHOT motion_detected is False
+    still = {**SNAPSHOT, "motion_detected": False}
+    answer = answer_question("is there any movement", still)
+    assert "still" in answer  # motion_detected is False
 
 
 def test_people_count_handles_bad_value() -> None:
@@ -80,17 +81,17 @@ def test_answer_presence_plainly() -> None:
 
 
 def test_phantom_radar_presence_is_not_trusted() -> None:
-    # The buried radar reports "present" constantly; its impossible vitals are
-    # already filtered, so a bare present-flag with no breathing lock and no
-    # motion must NOT be reported as someone in the room.
+    # The buried radar reports "present" constantly with plausible-looking vitals,
+    # so presence is motion-driven: a present-flag and/or a breathing value with
+    # no actual motion must NOT be reported as someone in the room.
     from lullaby.assistant import radar_person_present
 
-    phantom = {"person_present": True, "motion_detected": False}
+    phantom = {"person_present": True, "motion_detected": False, "radar_respiratory_rate": 8.0}
     assert radar_person_present(phantom) is False
     assert answer_question("is anyone there", phantom).startswith("No")
-    # A real breathing lock, or actual motion, IS trusted.
-    assert radar_person_present({"person_present": True, "radar_respiratory_rate": 16.0})
-    assert radar_person_present({"person_present": False, "motion_detected": True})
+    # Only actual motion is trusted as presence.
+    assert radar_person_present({"motion_detected": True}) is True
+    assert radar_person_present({"person_present": True, "radar_respiratory_rate": 16.0}) is False
 
 
 def test_natural_presence_phrasing() -> None:

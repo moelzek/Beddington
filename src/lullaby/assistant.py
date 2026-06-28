@@ -155,27 +155,17 @@ def _brightness_phrase(lux: float) -> str:
 # --- presence and people ---
 
 
-def _radar_locked(snapshot: dict[str, object]) -> bool:
-    """The radar has a plausible breathing lock — i.e. a real, still person.
-
-    A 60GHz radar buried in the plush locks onto micro-vibration/clutter and
-    reports a phantom person with impossible vitals (breathing ~1/min). The reader
-    already filters out-of-range vitals, so a *present* breathing value means a
-    genuine lock, not phantom presence.
-    """
-    return _num(snapshot, "radar_respiratory_rate") is not None
-
-
 def radar_person_present(snapshot: dict[str, object]) -> bool:
-    """Trusted presence: real movement (PIR), or a genuine radar breathing lock.
+    """Trusted presence — currently real movement (PIR) only.
 
-    The bare radar 'person present' flag is unreliable in this placement — it
-    reads true constantly, even in an empty room — so it is only trusted when
-    corroborated by a real breathing lock or actual motion.
+    The 60GHz radar buried in the plush is unreliable here: it locks onto micro-
+    vibration/clutter and reports a phantom person *with plausible-looking vitals*
+    (e.g. a steady breathing ~8/min in an empty room), so neither its bare
+    'present' flag nor its breathing lock can be trusted. Until the radar is
+    re-aimed/desensitised or the camera (Hailo) provides vision-based presence,
+    only actual motion is trusted — which never false-fires in an empty room.
     """
-    if snapshot.get("motion_detected") is True:
-        return True
-    return snapshot.get("person_present") is True and _radar_locked(snapshot)
+    return snapshot.get("motion_detected") is True
 
 
 def _presence_phrase(snapshot: dict[str, object]) -> str:
