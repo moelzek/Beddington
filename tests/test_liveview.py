@@ -10,6 +10,7 @@ import urllib.request
 from lullaby.liveview import (
     FrameBroker,
     build_viewer_html,
+    history_series,
     is_authorised,
     iter_jpeg_frames,
     multipart_frame,
@@ -65,6 +66,35 @@ def test_build_viewer_html_dashboard_overlay() -> None:
     assert "/readings.json?token=t" in html
     assert 'class="panel"' in html
     assert "poll()" in html  # polling script present
+
+
+def test_build_viewer_html_tabbed_dashboard() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+    )
+    assert "/history.json?token=t" in html
+    assert "canvas" in html  # graph tabs
+    assert "room_temperature_c" in html  # sensor spec embedded
+    assert "Camera" in html
+
+
+def test_history_series_converts_bool_and_scale() -> None:
+    hist = [
+        (100.0, {"room_temperature_c": 21.0, "room_gas_resistance_ohms": 50000, "person_present": True}),
+        (103.0, {"room_temperature_c": 22.0, "room_gas_resistance_ohms": 60000, "person_present": False}),
+    ]
+    series = history_series(hist)
+    assert series["room_temperature_c"]["points"] == [[100.0, 21.0], [103.0, 22.0]]
+    assert series["room_gas_resistance_ohms"]["points"] == [[100.0, 50.0], [103.0, 60.0]]
+    assert series["person_present"]["points"] == [[100.0, 1.0], [103.0, 0.0]]
+    assert series["person_present"]["bool"] is True
+
+
+def test_history_series_skips_missing_values() -> None:
+    series = history_series([(1.0, {}), (2.0, {"room_temperature_c": 20.0})])
+    assert series["room_temperature_c"]["points"] == [[2.0, 20.0]]
 
 
 def test_rpicam_vid_command_basic() -> None:
@@ -183,5 +213,35 @@ def test_serve_live_view_serves_readings_when_provider_given() -> None:
         # the viewer page now references the readings endpoint (dashboard mode)
         page = urllib.request.urlopen(f"{base}/?token={token}", timeout=2).read()
         assert b"readings.json" in page
+    finally:
+        source.close()
+
+
+def test_serve_live_view_serves_history_json() -> None:
+    source = _FakeFrameSource([JPEG_A])
+    token = "tk"
+    port = _free_port()
+    series = {
+        "room_temperature_c": {
+            "label": "Temp", "unit": "°C", "bool": False, "points": [[1.0, 21.0]]
+        }
+    }
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "source": source,
+            "history_provider": lambda: series,
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        body = urllib.request.urlopen(f"{base}/history.json?token={token}", timeout=2).read()
+        assert json.loads(body)["room_temperature_c"]["points"] == [[1.0, 21.0]]
     finally:
         source.close()

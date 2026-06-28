@@ -1,0 +1,41 @@
+# Lullaby live-view dashboard (systemd USER service).
+#
+# Serves the LAN-only phone dashboard (camera + live sensor readings + per-sensor
+# graphs) so it is always available and survives reboots. LAN only, token
+# required, no recording, no audio.
+#
+# Install on the Pi (user "lab", repo at ~/Labie, venv at ~/Labie/.venv):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/lullaby-liveview.service ~/.config/systemd/user/lullaby-liveview.service
+#   sudo loginctl enable-linger "$USER"        # run across reboots without a login
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now lullaby-liveview
+#
+# The access token is generated once and persisted to
+# ~/.config/lullaby/liveview.token, so the phone URL stays the same across
+# restarts. Find the current URL with:  head -3 ~/liveview.log
+#
+# Manage:
+#   systemctl --user status lullaby-liveview
+#   systemctl --user restart lullaby-liveview
+#   systemctl --user stop lullaby-liveview     # frees the camera
+#
+# Uses camera 0 by default. It shares the sensors with the Paddington assistant
+# (both can run at once). Do NOT port-forward port 8088 — this is LAN only.
+
+[Unit]
+Description=Lullaby live-view dashboard
+After=default.target network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lab/Labie
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/lab/Labie/.venv/bin/python -m lullaby --config /home/lab/Labie/config/demo.toml live-view --port 8088 --width 640 --height 480 --fps 12
+StandardOutput=append:/home/lab/liveview.log
+StandardError=append:/home/lab/liveview.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

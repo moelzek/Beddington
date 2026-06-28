@@ -4,6 +4,7 @@ import argparse
 import json
 import threading
 import time
+from collections import deque
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -969,10 +970,13 @@ class _SensorSampler:
     """Owns the sensor readers and refreshes a cached snapshot in the background,
     so the live-view HTTP handler can serve readings without blocking on I/O."""
 
-    def __init__(self, readers: list, interval: float) -> None:
+    def __init__(self, readers: list, interval: float, history_seconds: float = 1800) -> None:
         self._readers = readers
         self._interval = max(0.5, interval)
         self._latest: dict[str, object] = {}
+        self._history: deque[tuple[float, dict[str, object]]] = deque(
+            maxlen=max(60, int(history_seconds / self._interval))
+        )
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -988,20 +992,32 @@ class _SensorSampler:
             if snapshot:
                 with self._lock:
                     self._latest = snapshot
+                    self._history.append((time.time(), snapshot))
             self._stop.wait(self._interval)
 
     def latest(self) -> dict[str, object]:
         with self._lock:
             return dict(self._latest)
 
+    def history(self) -> list[tuple[float, dict[str, object]]]:
+        with self._lock:
+            return list(self._history)
+
     def stop(self) -> None:
         self._stop.set()
 
 
 def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
-    """Build short display strings for the live-view dashboard overlay, reusing
-    the assistant's comfort interpretations for consistency."""
-    from .assistant import _humid_label, _num, _temp_label
+    """Build short display strings for the live-view overlay (all sensors),
+    reusing the assistant's comfort interpretations for consistency."""
+    from .assistant import (
+        _air_label,
+        _bright_label,
+        _humid_label,
+        _num,
+        _pressure_label,
+        _temp_label,
+    )
 
     fields: dict[str, object] = {}
     temp = _num(snapshot, "room_temperature_c")
@@ -1010,6 +1026,15 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
     humidity = _num(snapshot, "room_humidity_pct")
     if humidity is not None:
         fields["humidity"] = f"{humidity:.0f}% · {_humid_label(humidity)}"
+    pressure = _num(snapshot, "room_pressure_hpa")
+    if pressure is not None:
+        fields["pressure"] = f"pressure {_pressure_label(pressure)}"
+    gas = _num(snapshot, "room_gas_resistance_ohms")
+    if gas is not None:
+        fields["air"] = f"air {_air_label(gas)}"
+    lux = _num(snapshot, "room_illuminance_lx")
+    if lux is not None:
+        fields["light"] = _bright_label(lux)
     present = snapshot.get("person_present")
     if present is True:
         fields["presence"] = "● someone present"
@@ -1027,15 +1052,40 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
     return fields
 
 
-def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
+def _resolve_live_view_token(explicit: str | None) -> str:
+    """Return a stable access token. An explicit --token wins; otherwise reuse a
+    persisted one (so the phone URL survives restarts/reboots) or create it."""
+    if explicit:
+        return explicit
+    import os
     import secrets
 
+    token_path = os.path.expanduser("~/.config/lullaby/liveview.token")
+    try:
+        with open(token_path, encoding="utf-8") as handle:
+            existing = handle.read().strip()
+        if existing:
+            return existing
+    except OSError:
+        pass
+    token = secrets.token_urlsafe(9)
+    try:
+        os.makedirs(os.path.dirname(token_path), exist_ok=True)
+        with open(token_path, "w", encoding="utf-8") as handle:
+            handle.write(token)
+        os.chmod(token_path, 0o600)
+    except OSError:
+        pass
+    return token
+
+
+def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
 
     if args.port <= 0 or args.width <= 0 or args.height <= 0 or args.fps <= 0:
         raise SystemExit("--port, --width, --height and --fps must be positive")
 
-    token = args.token or secrets.token_urlsafe(9)
+    token = _resolve_live_view_token(args.token)
     command = rpicam_vid_command(
         camera=args.camera_num,
         width=args.width,
@@ -1047,12 +1097,16 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
 
     sampler: _SensorSampler | None = None
     readings_provider = None
+    history_provider = None
     if not args.no_sensors:
+        from .liveview import history_series
+
         readers = build_sensor_readers(config.sensors)
         if readers:
             sampler = _SensorSampler(readers, args.sensor_interval)
             sampler.start()
             readings_provider = lambda: _dashboard_fields(sampler.latest())  # noqa: E731
+            history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     url = f"http://{shown_ip}:{args.port}/?token={token}"
@@ -1071,6 +1125,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             token=token,
             source=source,
             readings_provider=readings_provider,
+            history_provider=history_provider,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")

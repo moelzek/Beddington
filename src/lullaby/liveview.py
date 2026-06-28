@@ -74,17 +74,177 @@ def is_authorised(provided: str, expected: str) -> bool:
     return hmac.compare_digest(provided, expected)
 
 
+# The sensors shown as dashboard tabs/graphs. ``scale`` converts the stored value
+# for display (gas ohms -> kilo-ohms); ``bool`` marks on/off readings (0/1 graph).
+DASHBOARD_SENSORS: tuple[dict[str, object], ...] = (
+    {"key": "room_temperature_c", "label": "Temp", "unit": "°C"},
+    {"key": "room_humidity_pct", "label": "Humidity", "unit": "%"},
+    {"key": "room_pressure_hpa", "label": "Pressure", "unit": "hPa"},
+    {"key": "room_gas_resistance_ohms", "label": "Air", "unit": "kΩ", "scale": 0.001},
+    {"key": "room_illuminance_lx", "label": "Light", "unit": "lux"},
+    {"key": "target_distance_cm", "label": "Distance", "unit": "cm"},
+    {"key": "radar_respiratory_rate", "label": "Breathing", "unit": "/min"},
+    {"key": "radar_heart_rate_bpm", "label": "Heart", "unit": "bpm"},
+    {"key": "person_present", "label": "Presence", "bool": True},
+    {"key": "motion_detected", "label": "Motion", "bool": True},
+)
+
+
+def history_series(
+    history: Iterable[tuple[float, dict[str, object]]],
+    sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
+) -> dict[str, object]:
+    """Turn a list of (timestamp, snapshot) samples into per-sensor time series
+    ready for the dashboard graphs. Booleans become 0/1; ``scale`` is applied."""
+    samples = list(history)
+    series: dict[str, object] = {}
+    for spec in sensors:
+        key = str(spec["key"])
+        scale = float(spec.get("scale", 1))
+        points: list[list[float]] = []
+        for ts, snapshot in samples:
+            value = snapshot.get(key)
+            if isinstance(value, bool):
+                value = 1.0 if value else 0.0
+            elif isinstance(value, (int, float)):
+                value = float(value) * scale
+            else:
+                continue
+            points.append([round(float(ts), 1), round(value, 3)])
+        series[key] = {
+            "label": spec["label"],
+            "unit": spec.get("unit", ""),
+            "bool": bool(spec.get("bool", False)),
+            "points": points,
+        }
+    return series
+
+
+_DASHBOARD_TEMPLATE = """<!doctype html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;background:#000;color:#eee;height:100%;
+font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#tabs{display:flex;overflow-x:auto;background:#111;border-bottom:1px solid #222;
+position:sticky;top:0;-webkit-overflow-scrolling:touch}
+#tabs button{flex:0 0 auto;background:none;border:none;color:#9aa;
+padding:12px 14px;font-size:14px}
+#tabs button.active{color:#fff;border-bottom:2px solid #4ea1ff}
+.panel{display:none}
+.panel.active{display:block}
+#cam img{width:100vw;height:auto;display:block;background:#000}
+#readings{display:flex;gap:14px;flex-wrap:wrap;padding:10px 14px;background:#111}
+#readings span{white-space:nowrap}
+.chartwrap{padding:14px}
+.cur{font-size:24px;font-weight:700;margin:4px 0 12px}
+canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-radius:8px}
+.note{color:#777;padding:12px 14px;font-size:12px}
+</style></head><body>
+<div id="tabs"></div>
+<div id="cam" class="panel active">
+  <img src="__STREAM__" alt="Live camera view">
+  <div id="readings"></div>
+</div>
+<div id="charts"></div>
+<div class="note">LAN only · no recording · no audio</div>
+<script>
+const READINGS="__READINGS__",HISTORY="__HISTORY__",SENSORS=__SENSORS__;
+let active="cam",HIST={};
+const tabs=document.getElementById("tabs"),charts=document.getElementById("charts");
+function tab(id,label){const b=document.createElement("button");b.textContent=label;
+b.dataset.tab=id;b.onclick=function(){show(id)};tabs.appendChild(b);}
+tab("cam","Camera");
+SENSORS.forEach(function(s){tab(s.key,s.label);
+const p=document.createElement("div");p.className="panel";p.id="p-"+s.key;
+p.innerHTML='<div class="chartwrap"><div class="cur" id="cur-'+s.key+'">collecting…</div>'
++'<canvas id="cv-'+s.key+'"></canvas></div>';charts.appendChild(p);});
+function show(id){active=id;
+document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("active")});
+document.getElementById(id==="cam"?"cam":"p-"+id).classList.add("active");
+document.querySelectorAll("#tabs button").forEach(function(b){
+b.classList.toggle("active",b.dataset.tab===id)});
+if(id!=="cam")draw();}
+const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
+async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
+if(r.ok){const d=await r.json();const el=document.getElementById("readings");el.innerHTML="";
+ORDER.forEach(function(k){if(d[k]){const s=document.createElement("span");
+s.textContent=d[k];el.appendChild(s);}});}}catch(e){}setTimeout(poll,3000);}
+async function load(){try{const r=await fetch(HISTORY,{cache:"no-store"});
+if(r.ok)HIST=await r.json();}catch(e){}
+SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
+const c=document.getElementById("cur-"+s.key);const n=h.points.length;
+if(c)c.textContent=n?(s.bool?(h.points[n-1][1]?"yes":"no")
+:(h.points[n-1][1]+(h.unit?" "+h.unit:""))):"no reading yet";});
+draw();}
+function draw(){const s=SENSORS.find(function(x){return x.key===active});if(!s)return;
+const h=HIST[s.key];const cv=document.getElementById("cv-"+s.key);if(!cv||!h)return;
+const ctx=cv.getContext("2d"),W=cv.width=cv.clientWidth*2,H=cv.height=600;
+ctx.clearRect(0,0,W,H);const p=h.points||[];
+if(p.length<2){ctx.fillStyle="#777";ctx.font="30px sans-serif";
+ctx.fillText("collecting data…",30,60);return;}
+const ys=p.map(function(q){return q[1]});let mn=Math.min.apply(0,ys),mx=Math.max.apply(0,ys);
+if(h.bool){mn=0;mx=1;}if(mn===mx){mn-=1;mx+=1;}
+const x0=p[0][0],x1=p[p.length-1][0]||x0+1,pad=70;
+function X(t){return pad+(t-x0)/((x1-x0)||1)*(W-1.3*pad);}
+function Y(v){return H-pad-(v-mn)/((mx-mn)||1)*(H-2*pad);}
+ctx.strokeStyle="#333";ctx.lineWidth=2;ctx.beginPath();
+ctx.moveTo(pad,pad);ctx.lineTo(pad,H-pad);ctx.lineTo(W-10,H-pad);ctx.stroke();
+ctx.fillStyle="#999";ctx.font="26px sans-serif";
+ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1),8,H-pad);
+ctx.strokeStyle="#4ea1ff";ctx.lineWidth=4;ctx.beginPath();
+p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+ctx.stroke();}
+show("cam");poll();load();setInterval(load,5000);
+</script></body></html>"""
+
+
+def _dashboard_page(
+    stream_path: str,
+    readings_path: str,
+    history_path: str,
+    sensors: tuple[dict[str, object], ...],
+    title: str,
+) -> str:
+    spec = json.dumps(
+        [
+            {
+                "key": s["key"],
+                "label": s["label"],
+                "unit": s.get("unit", ""),
+                "bool": bool(s.get("bool", False)),
+            }
+            for s in sensors
+        ]
+    )
+    return (
+        _DASHBOARD_TEMPLATE.replace("__TITLE__", title)
+        .replace("__STREAM__", stream_path)
+        .replace("__READINGS__", readings_path)
+        .replace("__HISTORY__", history_path)
+        .replace("__SENSORS__", spec)
+    )
+
+
 def build_viewer_html(
     stream_path: str,
     title: str = "Lullaby live view",
     readings_path: str | None = None,
+    history_path: str | None = None,
+    sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
-    When ``readings_path`` is given, a translucent panel along the bottom polls
-    that JSON endpoint every few seconds and shows the live room readings over
-    the video — turning the page into a one-screen baby-monitor dashboard.
+    With ``history_path`` it renders the full tabbed dashboard (a Camera tab plus
+    one graph tab per sensor). With only ``readings_path`` it renders the simple
+    bottom-overlay. With neither it is video only.
     """
+    if history_path:
+        return _dashboard_page(
+            stream_path, readings_path or "", history_path, sensors, title
+        )
     overlay = ""
     script = ""
     if readings_path:
@@ -237,6 +397,7 @@ def _make_handler(
     token: str,
     title: str,
     readings_provider: Callable[[], dict[str, object]] | None = None,
+    history_provider: Callable[[], dict[str, object]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "LullabyLiveView/1"
@@ -260,16 +421,22 @@ def _make_handler(
                 readings_path = (
                     f"/readings.json?token={token}" if readings_provider else None
                 )
+                history_path = (
+                    f"/history.json?token={token}" if history_provider else None
+                )
                 body = build_viewer_html(
-                    f"/stream.mjpg?token={token}", title, readings_path
+                    f"/stream.mjpg?token={token}", title, readings_path, history_path
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-            elif path == "/readings.json":
-                payload = readings_provider() if readings_provider else {}
+            elif path in ("/readings.json", "/history.json"):
+                provider = (
+                    readings_provider if path == "/readings.json" else history_provider
+                )
+                payload = provider() if provider else {}
                 body = json.dumps(payload).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -313,17 +480,19 @@ def serve_live_view(
     source: object,
     title: str = "Lullaby live view",
     readings_provider: Callable[[], dict[str, object]] | None = None,
+    history_provider: Callable[[], dict[str, object]] | None = None,
 ) -> None:
     """Serve the live view until interrupted. ``source`` must expose
     ``frames() -> Iterator[bytes]`` and ``close()`` (RpicamFrameSource or a fake).
 
-    ``readings_provider`` (optional) returns the latest readings dict served at
-    ``/readings.json`` and shown in the dashboard overlay.
+    ``readings_provider`` returns the latest readings (``/readings.json``, shown in
+    the overlay); ``history_provider`` returns the per-sensor time series
+    (``/history.json``, drawn in the graph tabs).
     """
     broker = FrameBroker()
     pump = threading.Thread(target=_pump, args=(source, broker), daemon=True)
     pump.start()
-    handler = _make_handler(broker, token, title, readings_provider)
+    handler = _make_handler(broker, token, title, readings_provider, history_provider)
     httpd = ThreadingHTTPServer((host, port), handler)
     try:
         httpd.serve_forever()
