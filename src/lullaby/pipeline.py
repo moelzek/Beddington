@@ -9,6 +9,7 @@ from .audio import AudioSource
 from .config import AppConfig
 from .detector import CryDetector, dominant_baby_sound
 from .digest import build_digest
+from .fusion import FocusTracker
 from .llm import polish_digest
 from .logging import OutputPaths, write_outputs
 from .models import Event, NightReport
@@ -47,6 +48,13 @@ def run_pipeline(
     peak_score = 0.0
     sensor_sample_interval = config.sensors.sample_interval_seconds
     next_sensor_sample_offset = 0.0
+    # Motion→listen: sharpen the sound diary while the sensors see activity. Only
+    # active when we have both sensors and a sound classifier.
+    focus = (
+        FocusTracker()
+        if (sound_classifier is not None and sensor_readers)
+        else None
+    )
     soothe = None
     if config.soothe.enabled:
         soothe = SootheController(
@@ -95,35 +103,55 @@ def run_pipeline(
                     details=targets,
                 )
             )
-        if (
-            (sensor_readers or sound_classifier is not None)
-            and window.offset_seconds + 1e-9 >= next_sensor_sample_offset
-        ):
-            occurred_at = started_at + timedelta(seconds=window.offset_seconds)
-            if sensor_readers:
-                readings = _read_sensor_sample(sensor_readers)
-                if readings:
-                    events.append(
-                        Event(
-                            kind="environment_sample",
-                            occurred_at=occurred_at,
-                            offset_seconds=window.offset_seconds,
-                            details=readings,
-                        )
+        is_sample = (
+            sensor_readers or sound_classifier is not None
+        ) and window.offset_seconds + 1e-9 >= next_sensor_sample_offset
+        occurred_at = started_at + timedelta(seconds=window.offset_seconds)
+        if is_sample and sensor_readers:
+            readings = _read_sensor_sample(sensor_readers)
+            if readings:
+                events.append(
+                    Event(
+                        kind="environment_sample",
+                        occurred_at=occurred_at,
+                        offset_seconds=window.offset_seconds,
+                        details=readings,
                     )
-            if sound_classifier is not None:
-                sound = _classify_window_sound(
-                    sound_classifier, window.samples, config.sounds.threshold
                 )
-                if sound is not None:
-                    events.append(
-                        Event(
-                            kind="sound_observed",
-                            occurred_at=occurred_at,
-                            offset_seconds=window.offset_seconds,
-                            details={"sound": sound},
-                        )
+            if focus is not None and (
+                focus.update(window.offset_seconds, readings) == "opened"
+            ):
+                reason = (
+                    "movement" if readings.get("motion_detected") is True else "presence"
+                )
+                events.append(
+                    Event(
+                        kind="focused_listen",
+                        occurred_at=occurred_at,
+                        offset_seconds=window.offset_seconds,
+                        details={"reason": reason},
                     )
+                )
+        # While focused, classify EVERY window (not just sample ticks) at a lower
+        # threshold — "listen harder". The cry alarm above is untouched.
+        focused = focus is not None and focus.focused(window.offset_seconds)
+        if sound_classifier is not None and (is_sample or focused):
+            threshold = config.sounds.threshold * (0.75 if focused else 1.0)
+            sound = _classify_window_sound(sound_classifier, window.samples, threshold)
+            if sound is not None:
+                details: dict[str, object] = {"sound": sound}
+                if focused:
+                    details["focused"] = True  # only on the focused path; keeps the
+                    # plain sound-diary schema unchanged when there are no sensors
+                events.append(
+                    Event(
+                        kind="sound_observed",
+                        occurred_at=occurred_at,
+                        offset_seconds=window.offset_seconds,
+                        details=details,
+                    )
+                )
+        if is_sample:
             while window.offset_seconds + 1e-9 >= next_sensor_sample_offset:
                 next_sensor_sample_offset += sensor_sample_interval
 
