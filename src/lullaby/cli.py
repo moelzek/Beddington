@@ -151,7 +151,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     listen_assistant.add_argument("--model-size", default="tiny.en")
     listen_assistant.add_argument("--compute-type", default="int8")
-    listen_assistant.add_argument("--energy-threshold", type=float, default=0.02)
+    listen_assistant.add_argument(
+        "--energy-threshold",
+        type=float,
+        default=None,
+        help="Fixed speech threshold; if unset, auto-calibrate to the room noise",
+    )
     listen_assistant.add_argument(
         "--wake-word",
         action="append",
@@ -498,10 +503,6 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     speech_run = 0
     silence_run = 0
     deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
-    print(
-        f'Listening — say "{wake_words[0].title()}, what is the humidity?"'
-        " (Ctrl-C to stop)."
-    )
     try:
         with sd.InputStream(
             samplerate=native_rate,
@@ -511,6 +512,29 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
             device=args.device,
             callback=on_audio,
         ):
+            if args.energy_threshold is not None:
+                threshold = args.energy_threshold
+            else:
+                # Auto-calibrate: sample ~2 s of room noise and set the speech
+                # threshold just above it, so it adapts to the fan being on/off.
+                levels: list[float] = []
+                calib_until = time.monotonic() + 2.0
+                while time.monotonic() < calib_until:
+                    try:
+                        f = frames_q.get(timeout=0.5)
+                    except queue.Empty:
+                        continue
+                    levels.append(float(np.sqrt(np.mean(f**2))))
+                if levels:
+                    levels.sort()
+                    noise = levels[min(len(levels) - 1, int(len(levels) * 0.9))]
+                    threshold = max(0.015, round(noise * 1.5, 4))
+                else:
+                    threshold = 0.02
+            print(
+                f"Listening (speech threshold {threshold:.4f}) — say "
+                f'"{wake_words[0].title()}, what is the temperature?" (Ctrl-C to stop).'
+            )
             frames_seen = 0
             max_rms = 0.0
             last_beat = time.monotonic()
@@ -521,14 +545,14 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     continue
                 pre_roll.append(frame)
                 rms = float(np.sqrt(np.mean(frame**2)))
-                is_speech = rms > args.energy_threshold
+                is_speech = rms > threshold
                 if args.debug:
                     frames_seen += 1
                     max_rms = max(max_rms, rms)
                     if time.monotonic() - last_beat >= 5.0:
                         print(
                             f"  [debug] frames={frames_seen} max_rms={max_rms:.4f} "
-                            f"(speech threshold {args.energy_threshold})"
+                            f"(speech threshold {threshold:.4f})"
                         )
                         frames_seen = 0
                         max_rms = 0.0
