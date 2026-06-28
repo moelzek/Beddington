@@ -26,29 +26,53 @@ def test_answer_interprets_values() -> None:
     dry = answer_question("humidity", {"room_humidity_pct": 30.0})
     assert "30 percent" in dry and "dry" in dry
     dark = answer_question("is it bright", {"room_illuminance_lx": 5.0})
-    assert "5 lux" in dark and "dark" in dark
+    assert "dark" in dark  # spoken as an interpretation, no raw lux
 
 
 def test_answer_temperature() -> None:
-    assert "21.4 degrees" in answer_question("is it warm in here?", SNAPSHOT)
+    assert "21 degrees" in answer_question("is it warm in here?", SNAPSHOT)
 
 
-def test_answer_pressure() -> None:
-    assert "1012 hectopascals" in answer_question("what's the air pressure?", SNAPSHOT)
+def test_answer_pressure_is_interpreted() -> None:
+    # No raw hectopascals — pressure is spoken high/normal/low.
+    answer = answer_question("what's the air pressure?", SNAPSHOT)
+    assert "pressure" in answer and "normal" in answer
+    assert "hectopascal" not in answer
 
 
-def test_answer_air_quality() -> None:
-    assert "120 kilo-ohms" in answer_question("how is the air quality?", SNAPSHOT)
+def test_answer_air_quality_is_interpreted() -> None:
+    answer = answer_question("how is the air quality?", SNAPSHOT)
+    assert "air quality" in answer and "clean" in answer
+    assert "ohm" not in answer
 
 
-def test_answer_brightness() -> None:
-    assert "80 lux" in answer_question("is it dark in the room?", SNAPSHOT)
+def test_answer_brightness_is_interpreted() -> None:
+    answer = answer_question("is it dark in the room?", SNAPSHOT)
+    assert "lit" in answer  # "softly lit", not "80 lux"
+    assert "lux" not in answer
+
+
+def test_lighting_synonym_routes() -> None:
+    assert "lit" in answer_question("how is the lighting", {"room_illuminance_lx": 80.0})
+
+
+def test_motion_not_shadowed_by_presence() -> None:
+    # "is there any movement" must reach motion, not presence.
+    answer = answer_question("is there any movement", SNAPSHOT)
+    assert "still" in answer  # SNAPSHOT motion_detected is False
+
+
+def test_people_count_handles_bad_value() -> None:
+    # A glitchy NaN/inf radar count must not crash; it falls back to presence.
+    for bad in (float("nan"), float("inf")):
+        answer = answer_question("how many people are there", {"target_count": bad})
+        assert isinstance(answer, str) and answer
 
 
 def test_answer_presence_plainly() -> None:
     assert (
         answer_question("is anyone there?", SNAPSHOT)
-        == "Yes — I can detect someone in the room."
+        == "Yes, I can detect someone in the room."
     )
 
 
@@ -116,9 +140,11 @@ def test_vitals_questions_are_refused() -> None:
     for question in (
         "how many breaths per minute",
         "is she breathing",
+        "is she still breathing",
         "is anyone breathing in there",
         "is she breathing and moving",
         "what is her heart rate",
+        "what is her heart rate and how warm is the room",
         "what is her pulse",
         "what is the respiratory rate",
     ):
@@ -131,7 +157,7 @@ def test_vitals_questions_are_refused() -> None:
 def test_specific_question_beats_overview() -> None:
     # "how warm is the room" must route to temperature, not the room overview.
     answer = answer_question("how warm is the room?", SNAPSHOT)
-    assert "21.4 degrees" in answer
+    assert "21 degrees" in answer
     assert "Here's the room" not in answer
 
 
@@ -153,7 +179,7 @@ def test_answer_fallback_when_value_missing() -> None:
 
 def test_answer_tolerates_misheard_keywords() -> None:
     # Whisper slips on the topic word at marginal audio; fuzzy matching recovers it.
-    assert "21.4 degrees" in answer_question("what's the temprature", SNAPSHOT)
+    assert "21 degrees" in answer_question("what's the temprature", SNAPSHOT)
     assert "49 percent" in answer_question("tell me the humdity", SNAPSHOT)
 
 
