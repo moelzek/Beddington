@@ -42,6 +42,25 @@ class NarratorConfig:
 
 
 @dataclass(frozen=True)
+class AirSensorConfig:
+    enabled: bool = False
+    i2c_address: int = 0x76
+
+
+@dataclass(frozen=True)
+class MotionSensorConfig:
+    enabled: bool = False
+    gpio_pin: int = 4
+
+
+@dataclass(frozen=True)
+class SensorsConfig:
+    air: AirSensorConfig = AirSensorConfig()
+    motion: MotionSensorConfig = MotionSensorConfig()
+    sample_interval_seconds: float = 10.0
+
+
+@dataclass(frozen=True)
 class SootheStepConfig:
     name: str
     sound_path: Path | None = None
@@ -78,6 +97,7 @@ class AppConfig:
     notifications: NotificationConfig = NotificationConfig()
     llm: LlmConfig = LlmConfig()
     narrator: NarratorConfig = NarratorConfig()
+    sensors: SensorsConfig = SensorsConfig()
     soothe: SootheConfig = SootheConfig()
 
 
@@ -97,6 +117,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         notifications = raw.get("notifications", {})
         llm = raw.get("llm", {})
         narrator = raw.get("narrator", {})
+        sensors = raw.get("sensors", {})
         soothe = raw.get("soothe", {})
         raw_soothe_presets = soothe.get("presets")
         raw_soothe_steps = soothe.get("steps")
@@ -140,6 +161,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 model=str(llm.get("model", config.llm.model)),
             ),
             narrator=_load_narrator(narrator, config.narrator),
+            sensors=_load_sensors(sensors, config.sensors),
             soothe=SootheConfig(
                 enabled=bool(soothe.get("enabled", config.soothe.enabled)),
                 player=str(soothe.get("player", config.soothe.player)),
@@ -289,6 +311,50 @@ def _load_narrator(
     )
 
 
+def _load_sensors(
+    raw_sensors: object,
+    default: SensorsConfig,
+) -> SensorsConfig:
+    if not isinstance(raw_sensors, dict):
+        return default
+    raw_air = raw_sensors.get("air", {})
+    raw_motion = raw_sensors.get("motion", {})
+    return SensorsConfig(
+        air=_load_air_sensor(raw_air, default.air),
+        motion=_load_motion_sensor(raw_motion, default.motion),
+        sample_interval_seconds=float(
+            raw_sensors.get(
+                "sample_interval_seconds",
+                default.sample_interval_seconds,
+            )
+        ),
+    )
+
+
+def _load_air_sensor(
+    raw_air: object,
+    default: AirSensorConfig,
+) -> AirSensorConfig:
+    if not isinstance(raw_air, dict):
+        return default
+    return AirSensorConfig(
+        enabled=bool(raw_air.get("enabled", default.enabled)),
+        i2c_address=int(raw_air.get("i2c_address", default.i2c_address)),
+    )
+
+
+def _load_motion_sensor(
+    raw_motion: object,
+    default: MotionSensorConfig,
+) -> MotionSensorConfig:
+    if not isinstance(raw_motion, dict):
+        return default
+    return MotionSensorConfig(
+        enabled=bool(raw_motion.get("enabled", default.enabled)),
+        gpio_pin=int(raw_motion.get("gpio_pin", default.gpio_pin)),
+    )
+
+
 def _validate(config: AppConfig) -> None:
     if not 0.0 <= config.detection.threshold <= 1.0:
         raise ValueError("detection.threshold must be between 0 and 1")
@@ -352,3 +418,10 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("narrator.piper_binary must not be empty")
     if not narrator.piper_model.strip():
         raise ValueError("narrator.piper_model must not be empty")
+    sensors = config.sensors
+    if sensors.sample_interval_seconds <= 0:
+        raise ValueError("sensors.sample_interval_seconds must be positive")
+    if not 0 <= sensors.air.i2c_address <= 0x7F:
+        raise ValueError("sensors.air.i2c_address must be a 7-bit I2C address")
+    if sensors.motion.gpio_pin < 0:
+        raise ValueError("sensors.motion.gpio_pin must be non-negative")

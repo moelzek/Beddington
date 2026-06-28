@@ -21,6 +21,7 @@ from .models import Event, NightReport
 from .narrator import narrate, speak
 from .notifications import LocalNotifier
 from .pipeline import run_pipeline
+from .sensors import build_sensor_readers
 from .soothe import build_soothe_player
 from .video import (
     capture_rpicam_still,
@@ -185,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output,
         started_at=args.started_at,
         use_llm=args.llm,
+        sensor_readers=build_sensor_readers(config.sensors),
     )
     spoken_text = result.digest
     narrator_config = config.narrator

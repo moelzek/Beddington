@@ -130,8 +130,10 @@ def test_build_narration_prompt_uses_only_derived_facts() -> None:
     assert "Crying episode durations: 5 seconds." in prompt
     assert "Soothe attempts: 1 (white noise)." in prompt
     assert "crying no longer detected after 2 quiet checks" in prompt
-    assert "Room temperature: 20.5 C." in prompt
-    assert "Motion: not detected." in prompt
+    assert "Best-guess room temperature context: 21.5 C." in prompt
+    assert "Best-guess room humidity context: 48.2%." in prompt
+    assert "Movement noticed 2 times." in prompt
+    assert "best-guess context only" in prompt
     assert "Never say the baby is safe, asleep, healthy, fine, or breathing" in prompt
     assert 'Say "crying"' in prompt
     assert 'do not say "tantrum"' in prompt
@@ -251,9 +253,25 @@ def _sample_report() -> NightReport:
             occurred_at=started + timedelta(seconds=2),
             offset_seconds=2.0,
             score=0.82,
+            details={"name": "white noise"},
+        ),
+        Event(
+            kind="environment_sample",
+            occurred_at=started + timedelta(seconds=2),
+            offset_seconds=2.0,
             details={
-                "name": "white noise",
                 "room_temperature_c": 20.5,
+                "room_humidity_pct": 47.0,
+                "motion_detected": True,
+            },
+        ),
+        Event(
+            kind="environment_sample",
+            occurred_at=started + timedelta(seconds=4),
+            offset_seconds=4.0,
+            details={
+                "room_temperature_c": 21.5,
+                "room_humidity_pct": 48.2,
                 "motion_detected": False,
             },
         ),
@@ -270,6 +288,12 @@ def _sample_report() -> NightReport:
             offset_seconds=7.0,
             score=0.1,
             details={"quiet_checks": 2},
+        ),
+        Event(
+            kind="environment_sample",
+            occurred_at=started + timedelta(seconds=8),
+            offset_seconds=8.0,
+            details={"motion_detected": True},
         ),
     )
     return NightReport(

@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import json
+import sys
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+
+from lullaby.config import (
+    AppConfig,
+    DetectionConfig,
+    SensorsConfig,
+)
+from lullaby.models import AudioWindow
+from lullaby.pipeline import run_pipeline
+from lullaby.sensors import (
+    Bme680AirReader,
+    NullSensorReader,
+    PirMotionReader,
+    build_sensor_readers,
+)
+
+
+@dataclass
+class FakeSource:
+    scores: list[float]
+    name: str = "fake.wav"
+
+    @property
+    def duration_seconds(self) -> float:
+        return len(self.scores) * 0.5
+
+    def windows(self) -> Iterator[AudioWindow]:
+        for index in range(len(self.scores)):
+            yield AudioWindow(index * 0.5, np.zeros(16_000, dtype=np.float32))
+
+
+class FakeDetector:
+    name = "fake detector"
+
+    def __init__(self, scores: list[float]):
+        self._scores = iter(scores)
+
+    def score(self, samples: np.ndarray) -> float:
+        del samples
+        return next(self._scores)
+
+
+class FakeNotifier:
+    def notify(self, title: str, message: str) -> dict[str, bool]:
+        assert title == "Lullaby"
+        assert "Sustained crying" in message
+        return {"console": True, "desktop": False}
+
+
+class FakeSensorReader:
+    def read(self) -> dict[str, object]:
+        return {
+            "room_temperature_c": 21.3,
+            "room_humidity_pct": 47,
+            "motion_detected": True,
+        }
+
+
+def test_null_reader_returns_empty_sample() -> None:
+    assert NullSensorReader().read() == {}
+
+
+def test_build_sensor_readers_default_is_hardware_free() -> None:
+    assert build_sensor_readers(SensorsConfig()) == []
+
+
+def test_bme680_reader_returns_temperature_and_humidity(monkeypatch) -> None:
+    calls: list[int] = []
+
+    class FakeBmeSensor:
+        data = SimpleNamespace(temperature=21.34, humidity=47.04)
+
+        def __init__(self, i2c_addr: int):
+            calls.append(i2c_addr)
+
+        def get_sensor_data(self) -> bool:
+            return True
+
+    monkeypatch.setitem(
+        sys.modules,
+        "bme680",
+        SimpleNamespace(
+            I2C_ADDR_PRIMARY=0x76,
+            I2C_ADDR_SECONDARY=0x77,
+            BME680=FakeBmeSensor,
+        ),
+    )
+
+    assert Bme680AirReader(0x76).read() == {
+        "room_temperature_c": 21.3,
+        "room_humidity_pct": 47.0,
+    }
+    assert calls == [0x76]
+
+
+def test_bme680_reader_tries_secondary_address(monkeypatch) -> None:
+    calls: list[int] = []
+
+    class FakeBmeSensor:
+        data = SimpleNamespace(temperature=20.0, humidity=50.0)
+
+        def __init__(self, i2c_addr: int):
+            calls.append(i2c_addr)
+            if i2c_addr == 0x76:
+                raise OSError("primary missing")
+
+        def get_sensor_data(self) -> bool:
+            return True
+
+    monkeypatch.setitem(
+        sys.modules,
+        "bme680",
+        SimpleNamespace(
+            I2C_ADDR_PRIMARY=0x76,
+            I2C_ADDR_SECONDARY=0x77,
+            BME680=FakeBmeSensor,
+        ),
+    )
+
+    assert Bme680AirReader().read() == {
+        "room_temperature_c": 20.0,
+        "room_humidity_pct": 50.0,
+    }
+    assert calls == [0x76, 0x77]
+
+
+def test_bme680_reader_degrades_when_library_missing(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "bme680", None)
+
+    assert Bme680AirReader().read() == {}
+
+
+def test_pir_motion_reader_parses_high(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        commands.append(command)
+        assert kwargs["capture_output"] is True
+        assert kwargs["text"] is True
+        assert kwargs["check"] is False
+        return SimpleNamespace(returncode=0, stdout="4: ip    pd | hi // GPIO4")
+
+    monkeypatch.setattr("lullaby.sensors.subprocess.run", fake_run)
+
+    assert PirMotionReader(gpio_pin=4).read() == {"motion_detected": True}
+    assert commands == [["pinctrl", "get", "4"]]
+
+
+def test_pir_motion_reader_parses_low(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lullaby.sensors.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="4: ip    pd | lo // GPIO4",
+        ),
+    )
+
+    assert PirMotionReader(gpio_pin=4).read() == {"motion_detected": False}
+
+
+def test_pir_motion_reader_degrades_when_pinctrl_missing(monkeypatch) -> None:
+    def fake_run(*args: object, **kwargs: object) -> object:
+        raise FileNotFoundError("pinctrl")
+
+    monkeypatch.setattr("lullaby.sensors.subprocess.run", fake_run)
+
+    reader = PirMotionReader(gpio_pin=4)
+    assert reader.read() == {}
+    assert reader.read() == {}
+
+
+def test_pipeline_appends_environment_samples_without_changing_detection_events(
+    tmp_path: Path,
+) -> None:
+    scores = [0.1, 0.8, 0.9, 0.7, 0.1, 0.1]
+    started_at = datetime(2026, 6, 28, tzinfo=UTC)
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        sensors=SensorsConfig(sample_interval_seconds=1.0),
+    )
+
+    without_sensors = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=FakeNotifier(),
+        config=config,
+        output_dir=tmp_path / "without",
+        started_at=started_at,
+    )
+    with_sensors = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=FakeNotifier(),
+        config=config,
+        output_dir=tmp_path / "with",
+        started_at=started_at,
+        sensor_readers=(FakeSensorReader(),),
+    )
+
+    environment_samples = [
+        event for event in with_sensors.report.events if event.kind == "environment_sample"
+    ]
+    assert environment_samples
+    assert environment_samples[0].details == {
+        "room_temperature_c": 21.3,
+        "room_humidity_pct": 47,
+        "motion_detected": True,
+    }
+    assert "21.3" not in with_sensors.paths.readable_log.read_text(encoding="utf-8")
+    assert "21.3" not in with_sensors.digest
+    assert _detection_sequence_json(with_sensors.report.events) == (
+        _detection_sequence_json(without_sensors.report.events)
+    )
+
+
+def _detection_sequence_json(events) -> str:
+    detection_kinds = {
+        "cry_started",
+        "cry_ended",
+        "notification_sent",
+        "soothe_attempted",
+        "soothe_settled",
+        "soothe_quiet_check_started",
+        "soothe_quiet_check",
+        "soothe_quiet_confirmed",
+        "soothe_unresolved",
+    }
+    payload = [event.to_dict() for event in events if event.kind in detection_kinds]
+    return json.dumps(payload, sort_keys=True)

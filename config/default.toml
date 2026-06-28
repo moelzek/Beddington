@@ -52,6 +52,21 @@ sound_path = "../assets/soothe/uterine_whoosh.wav"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
+[sensors]
+# Optional derived room context for narration. These samples never control
+# cry detection, timing, soothing, or alerts.
+sample_interval_seconds = 10.0
+
+[sensors.air]
+# Pimoroni BME688 air breakout on I2C. Off by default for hardware-free runs.
+enabled = false
+i2c_address = 0x76
+
+[sensors.motion]
+# HC-SR501 PIR motion on GPIO4. Off by default and treated as context only.
+enabled = false
+gpio_pin = 4
+
 [llm]
 enabled = false
 base_url = ""

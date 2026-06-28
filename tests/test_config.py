@@ -49,6 +49,17 @@ voice_enabled = true
 voice_engine = "piper"
 piper_binary = "~/piper/piper"
 piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
+
+[sensors]
+sample_interval_seconds = 3.5
+
+[sensors.air]
+enabled = true
+i2c_address = 0x76
+
+[sensors.motion]
+enabled = true
+gpio_pin = 4
 """,
         encoding="utf-8",
     )
@@ -77,6 +88,11 @@ piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
     assert config.narrator.temperature == 0.2
     assert config.narrator.voice_enabled is True
     assert config.narrator.voice_engine == "piper"
+    assert config.sensors.sample_interval_seconds == 3.5
+    assert config.sensors.air.enabled is True
+    assert config.sensors.air.i2c_address == 0x76
+    assert config.sensors.motion.enabled is True
+    assert config.sensors.motion.gpio_pin == 4
 
 
 def test_default_config_points_at_generated_soothe_assets() -> None:
@@ -93,6 +109,11 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.soothe.steps[0].play_seconds == 1800.0
     assert all(step.sound_path is not None for step in config.soothe.steps)
     assert all(step.sound_path.exists() for step in config.soothe.steps if step.sound_path)
+    assert config.sensors.sample_interval_seconds == 10.0
+    assert config.sensors.air.enabled is False
+    assert config.sensors.air.i2c_address == 0x76
+    assert config.sensors.motion.enabled is False
+    assert config.sensors.motion.gpio_pin == 4
 
 
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
@@ -169,4 +190,28 @@ def test_narrator_backend_must_be_ollama(tmp_path: Path) -> None:
     path.write_text("[narrator]\nbackend = \"cloud\"\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="narrator.backend"):
+        load_config(path)
+
+
+def test_sensor_sample_interval_must_be_positive(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[sensors]\nsample_interval_seconds = 0\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sensors.sample_interval_seconds"):
+        load_config(path)
+
+
+def test_air_sensor_address_must_be_7_bit(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[sensors.air]\ni2c_address = 0x80\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sensors.air.i2c_address"):
+        load_config(path)
+
+
+def test_motion_sensor_gpio_pin_must_be_non_negative(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[sensors.motion]\ngpio_pin = -1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sensors.motion.gpio_pin"):
         load_config(path)

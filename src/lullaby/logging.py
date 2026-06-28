@@ -96,6 +96,8 @@ def _readable_log(report: NightReport) -> str:
             )
         elif event.kind == "soothe_unresolved":
             lines.append(f"{at}  UNRESOLVED  recording ended before soothe preset finished")
+        elif event.kind == "environment_sample":
+            continue
     lines.extend(
         [
             "",

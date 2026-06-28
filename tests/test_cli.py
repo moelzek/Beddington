@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import struct
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from lullaby.cli import main
+from lullaby.logging import OutputPaths
+from lullaby.models import NightReport
 from lullaby.video import ImageInfo, VisualChangeReport
 
 
@@ -57,6 +60,79 @@ def test_preview_soothe_rejects_unknown_preset() -> None:
                 "rain",
             ]
         )
+
+
+def test_analyze_passes_configured_sensor_readers(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[sensors]
+sample_interval_seconds = 2.0
+
+[sensors.motion]
+enabled = true
+gpio_pin = 4
+""",
+        encoding="utf-8",
+    )
+    wav_path = tmp_path / "sample.wav"
+    wav_path.write_bytes(b"RIFF")
+    readers = [object()]
+    captured = {}
+
+    def fake_build_sensor_readers(sensors_config):
+        assert sensors_config.motion.enabled is True
+        assert sensors_config.motion.gpio_pin == 4
+        return readers
+
+    def fake_run_pipeline(**kwargs):
+        captured.update(kwargs)
+        started = datetime(2026, 6, 28, tzinfo=UTC)
+        report = NightReport(
+            started_at=started,
+            finished_at=started + timedelta(seconds=1),
+            source="fake.wav",
+            detector="fake",
+            threshold=0.4,
+            sustained_seconds=1.5,
+            windows_processed=0,
+            peak_score=0.0,
+            events=(),
+        )
+        return SimpleNamespace(
+            report=report,
+            digest="digest",
+            paths=OutputPaths(
+                events_json=tmp_path / "events.json",
+                readable_log=tmp_path / "night-log.txt",
+                digest=tmp_path / "morning-digest.txt",
+            ),
+        )
+
+    monkeypatch.setattr("lullaby.cli.YamNetTFLiteDetector", lambda model: object())
+    monkeypatch.setattr("lullaby.cli.WavFileAudioSource", lambda path: object())
+    monkeypatch.setattr("lullaby.cli.build_sensor_readers", fake_build_sensor_readers)
+    monkeypatch.setattr("lullaby.cli.run_pipeline", fake_run_pipeline)
+
+    result = main(
+        [
+            "--config",
+            str(config_path),
+            "analyze",
+            str(wav_path),
+            "--output",
+            str(tmp_path / "output"),
+        ]
+    )
+
+    assert result == 0
+    assert captured["sensor_readers"] is readers
+    assert captured["config"].sensors.sample_interval_seconds == 2.0
+    assert "digest" in capsys.readouterr().out
 
 
 def test_camera_smoke_image_mode_writes_derived_report(tmp_path, capsys) -> None:

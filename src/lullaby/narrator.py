@@ -56,6 +56,7 @@ def build_narration_prompt(report: NightReport) -> str:
         "Write one short British English narration for a parent after a Lullaby run.\n"
         "Use only the derived facts below. Do not infer causes, comfort, health, "
         "sleep, safety, or breathing. Do not give medical advice.\n"
+        "Treat room readings and movement as best-guess context only.\n"
         'Never say the baby is safe, asleep, healthy, fine, or breathing. Say "crying"; '
         'do not say "tantrum".\n'
         "No raw audio or video is included here. Do not ask for or mention raw media.\n"
@@ -176,24 +177,50 @@ def _outcome_fact(events: tuple[Event, ...], notification_count: int) -> str:
 
 def _environment_facts(events: tuple[Event, ...]) -> list[str]:
     facts: list[str] = []
-    seen: set[str] = set()
+    latest_temperature: float | None = None
+    latest_humidity: float | None = None
+    motion_count = 0
+    saw_environment_sample = False
+    saw_motion = False
     for event in events:
-        for key, value in event.details.items():
-            normalised = key.lower()
-            if normalised in {"room_temperature_c", "room_temp_c", "temperature_c"}:
-                label = "Room temperature"
-                fact = f"{label}: {value} C."
-            elif normalised in {"motion_detected", "room_motion", "motion"}:
-                label = "Motion"
-                if isinstance(value, bool):
-                    value = "detected" if value else "not detected"
-                fact = f"{label}: {value}."
-            else:
-                continue
-            if fact not in seen:
-                facts.append(fact)
-                seen.add(fact)
+        if event.kind != "environment_sample":
+            continue
+        saw_environment_sample = True
+        temperature = _number(event.details.get("room_temperature_c"))
+        humidity = _number(event.details.get("room_humidity_pct"))
+        if temperature is not None:
+            latest_temperature = temperature
+        if humidity is not None:
+            latest_humidity = humidity
+        if "motion_detected" in event.details:
+            saw_motion = True
+            if event.details["motion_detected"] is True:
+                motion_count += 1
+    if latest_temperature is not None:
+        facts.append(
+            f"Best-guess room temperature context: {_format_measure(latest_temperature)} C."
+        )
+    if latest_humidity is not None:
+        facts.append(
+            f"Best-guess room humidity context: {_format_measure(latest_humidity)}%."
+        )
+    if saw_environment_sample and saw_motion:
+        facts.append(f"Movement noticed {motion_count} times.")
     return facts
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _format_measure(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}"
 
 
 def _format_duration(seconds: float) -> str:

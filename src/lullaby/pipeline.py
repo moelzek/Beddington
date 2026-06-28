@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,7 @@ from .llm import polish_digest
 from .logging import OutputPaths, write_outputs
 from .models import Event, NightReport
 from .notifications import Notifier
+from .sensors import SensorReader
 from .soothe import SoothePlayer, build_soothe_player, SootheController
 from .state import CryEventTracker
 
@@ -32,6 +34,7 @@ def run_pipeline(
     started_at: datetime | None = None,
     use_llm: bool | None = None,
     soothe_player: SoothePlayer | None = None,
+    sensor_readers: Sequence[SensorReader] = (),
 ) -> RunResult:
     started_at = started_at or datetime.now(UTC)
     if started_at.tzinfo is None:
@@ -41,6 +44,8 @@ def run_pipeline(
     events: list[Event] = []
     windows_processed = 0
     peak_score = 0.0
+    sensor_sample_interval = config.sensors.sample_interval_seconds
+    next_sensor_sample_offset = 0.0
     soothe = None
     if config.soothe.enabled:
         soothe = SootheController(
@@ -89,6 +94,23 @@ def run_pipeline(
                     details=targets,
                 )
             )
+        if (
+            sensor_readers
+            and window.offset_seconds + 1e-9 >= next_sensor_sample_offset
+        ):
+            readings = _read_sensor_sample(sensor_readers)
+            if readings:
+                events.append(
+                    Event(
+                        kind="environment_sample",
+                        occurred_at=started_at
+                        + timedelta(seconds=window.offset_seconds),
+                        offset_seconds=window.offset_seconds,
+                        details=readings,
+                    )
+                )
+            while window.offset_seconds + 1e-9 >= next_sensor_sample_offset:
+                next_sensor_sample_offset += sensor_sample_interval
 
     if soothe is not None:
         soothe_result = soothe.finish(source.duration_seconds, peak_score)
@@ -138,3 +160,17 @@ def run_pipeline(
         )
     paths = write_outputs(output_dir, report, digest)
     return RunResult(report=report, digest=digest, paths=paths)
+
+
+def _read_sensor_sample(
+    sensor_readers: Sequence[SensorReader],
+) -> dict[str, object]:
+    readings: dict[str, object] = {}
+    for reader in sensor_readers:
+        try:
+            data = reader.read()
+        except Exception:
+            data = {}
+        if data:
+            readings.update(data)
+    return readings
