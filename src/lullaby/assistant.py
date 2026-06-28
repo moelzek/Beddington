@@ -40,6 +40,59 @@ def _mentions(question: str, *keywords: str, fuzzy: tuple[str, ...] = ()) -> boo
     return False
 
 
+def _temperature_phrase(c: float) -> str:
+    if 16 <= c <= 20:
+        return f"The room is about {c:g} degrees Celsius — comfortable for a baby."
+    side = "cool" if c < 16 else "warm"
+    return (
+        f"The room is about {c:g} degrees Celsius — a bit {side} for a baby; "
+        "around 16 to 20 degrees is the usual comfortable range."
+    )
+
+
+def _humidity_phrase(h: float) -> str:
+    if 40 <= h <= 60:
+        return f"The humidity is about {h:g} percent — comfortable."
+    side = "dry" if h < 40 else "humid"
+    return (
+        f"The humidity is about {h:g} percent — a bit {side}; "
+        "40 to 60 percent is the usual comfortable range."
+    )
+
+
+def _pressure_phrase(p: float) -> str:
+    if p < 1000:
+        label = "on the low side"
+    elif p <= 1025:
+        label = "normal"
+    else:
+        label = "on the high side"
+    return f"The air pressure is about {p:g} hectopascals — {label}."
+
+
+def _air_quality_phrase(ohms: float) -> str:
+    kohm = ohms / 1000
+    if kohm >= 50:
+        label = "the air seems clean"
+    elif kohm >= 20:
+        label = "the air seems okay"
+    else:
+        label = "the air seems a bit stuffy"
+    return f"The air quality reads about {kohm:.0f} kilo-ohms — {label} (higher is cleaner)."
+
+
+def _brightness_phrase(lux: float) -> str:
+    if lux < 10:
+        label = "it's dark, good for sleep"
+    elif lux < 50:
+        label = "it's dimly lit"
+    elif lux < 200:
+        label = "it's softly lit"
+    else:
+        label = "it's bright"
+    return f"The room is about {lux:g} lux — {label}."
+
+
 def answer_question(question: str, snapshot: dict[str, object]) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
     q = normalize_transcript(question)
@@ -47,34 +100,31 @@ def answer_question(question: str, snapshot: dict[str, object]) -> str:
     if _mentions(q, "humid", fuzzy=("humidity",)):
         value = _num(snapshot, "room_humidity_pct")
         if value is not None:
-            return f"The humidity is about {value:g} percent."
+            return _humidity_phrase(value)
 
     if _mentions(
         q, "temperature", "warm", "hot", "cold", "degree", fuzzy=("temperature",)
     ):
         value = _num(snapshot, "room_temperature_c")
         if value is not None:
-            return f"The room is about {value:g} degrees Celsius."
+            return _temperature_phrase(value)
 
     if _mentions(q, "pressure", fuzzy=("pressure",)):
         value = _num(snapshot, "room_pressure_hpa")
         if value is not None:
-            return f"The air pressure is about {value:g} hectopascals."
+            return _pressure_phrase(value)
 
     if _mentions(
         q, "air quality", "gas", "smell", "voc", "stuffy", "nappy", fuzzy=("quality",)
     ):
         value = _num(snapshot, "room_gas_resistance_ohms")
         if value is not None:
-            return (
-                f"The air-quality gas reading is about {value / 1000:.0f} kilo-ohms. "
-                "Higher means cleaner air."
-            )
+            return _air_quality_phrase(value)
 
     if _mentions(q, "light", "bright", "dark", "lux", fuzzy=("brightness",)):
         value = _num(snapshot, "room_illuminance_lx")
         if value is not None:
-            return f"The room brightness is about {value:g} lux."
+            return _brightness_phrase(value)
 
     if _mentions(q, "how far", "distance", "close", fuzzy=("distance",)):
         value = _num(snapshot, "target_distance_cm")

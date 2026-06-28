@@ -15,10 +15,18 @@ SNAPSHOT = {
 
 
 def test_answer_humidity() -> None:
-    assert (
-        answer_question("Hi Lullaby, what is the humidity?", SNAPSHOT)
-        == "The humidity is about 49 percent."
-    )
+    answer = answer_question("Hi Paddington, what is the humidity?", SNAPSHOT)
+    assert "49 percent" in answer
+    assert "comfortable" in answer  # 49% sits in the comfortable range
+
+
+def test_answer_interprets_values() -> None:
+    warm = answer_question("temperature", {"room_temperature_c": 27.0})
+    assert "27 degrees" in warm and "warm" in warm
+    dry = answer_question("humidity", {"room_humidity_pct": 30.0})
+    assert "30 percent" in dry and "dry" in dry
+    dark = answer_question("is it bright", {"room_illuminance_lx": 5.0})
+    assert "5 lux" in dark and "dark" in dark
 
 
 def test_answer_temperature() -> None:
