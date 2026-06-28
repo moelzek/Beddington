@@ -28,6 +28,20 @@ class LlmConfig:
 
 
 @dataclass(frozen=True)
+class NarratorConfig:
+    enabled: bool = False
+    backend: str = "ollama"
+    model: str = "llama3.2:1b"
+    host: str = "http://127.0.0.1:11434"
+    num_predict: int = 140
+    temperature: float = 0.3
+    voice_enabled: bool = False
+    voice_engine: str = "piper"
+    piper_binary: str = "~/piper/piper"
+    piper_model: str = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
+
+
+@dataclass(frozen=True)
 class SootheStepConfig:
     name: str
     sound_path: Path | None = None
@@ -63,6 +77,7 @@ class AppConfig:
     detection: DetectionConfig = DetectionConfig()
     notifications: NotificationConfig = NotificationConfig()
     llm: LlmConfig = LlmConfig()
+    narrator: NarratorConfig = NarratorConfig()
     soothe: SootheConfig = SootheConfig()
 
 
@@ -81,6 +96,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         detection = raw.get("detection", {})
         notifications = raw.get("notifications", {})
         llm = raw.get("llm", {})
+        narrator = raw.get("narrator", {})
         soothe = raw.get("soothe", {})
         raw_soothe_presets = soothe.get("presets")
         raw_soothe_steps = soothe.get("steps")
@@ -123,6 +139,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 base_url=str(llm.get("base_url", config.llm.base_url)),
                 model=str(llm.get("model", config.llm.model)),
             ),
+            narrator=_load_narrator(narrator, config.narrator),
             soothe=SootheConfig(
                 enabled=bool(soothe.get("enabled", config.soothe.enabled)),
                 player=str(soothe.get("player", config.soothe.player)),
@@ -250,6 +267,28 @@ def _load_quiet_check(
     )
 
 
+def _load_narrator(
+    raw_narrator: object,
+    default: NarratorConfig,
+) -> NarratorConfig:
+    if not isinstance(raw_narrator, dict):
+        return default
+    return NarratorConfig(
+        enabled=bool(raw_narrator.get("enabled", default.enabled)),
+        backend=str(raw_narrator.get("backend", default.backend)),
+        model=str(raw_narrator.get("model", default.model)),
+        host=str(raw_narrator.get("host", default.host)),
+        num_predict=int(raw_narrator.get("num_predict", default.num_predict)),
+        temperature=float(raw_narrator.get("temperature", default.temperature)),
+        voice_enabled=bool(
+            raw_narrator.get("voice_enabled", default.voice_enabled)
+        ),
+        voice_engine=str(raw_narrator.get("voice_engine", default.voice_engine)),
+        piper_binary=str(raw_narrator.get("piper_binary", default.piper_binary)),
+        piper_model=str(raw_narrator.get("piper_model", default.piper_model)),
+    )
+
+
 def _validate(config: AppConfig) -> None:
     if not 0.0 <= config.detection.threshold <= 1.0:
         raise ValueError("detection.threshold must be between 0 and 1")
@@ -296,3 +335,20 @@ def _validate(config: AppConfig) -> None:
                 "soothe.quiet_check.quiet_threshold must be less than or equal "
                 "to detection.threshold"
             )
+    narrator = config.narrator
+    if narrator.backend != "ollama":
+        raise ValueError("narrator.backend must be 'ollama'")
+    if not narrator.model.strip():
+        raise ValueError("narrator.model must not be empty")
+    if not narrator.host.strip():
+        raise ValueError("narrator.host must not be empty")
+    if narrator.num_predict <= 0:
+        raise ValueError("narrator.num_predict must be positive")
+    if narrator.temperature < 0:
+        raise ValueError("narrator.temperature must be non-negative")
+    if narrator.voice_engine not in {"piper", "espeak-ng"}:
+        raise ValueError("narrator.voice_engine must be 'piper' or 'espeak-ng'")
+    if not narrator.piper_binary.strip():
+        raise ValueError("narrator.piper_binary must not be empty")
+    if not narrator.piper_model.strip():
+        raise ValueError("narrator.piper_model must not be empty")

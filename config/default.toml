@@ -56,3 +56,17 @@ play_seconds = 1800.0
 enabled = false
 base_url = ""
 model = ""
+
+[narrator]
+# Optional local narrator. Runs only after the deterministic report exists.
+# It receives derived text only and never controls detection, timing, or alerts.
+enabled = false
+backend = "ollama"
+model = "llama3.2:1b"
+host = "http://127.0.0.1:11434"
+num_predict = 140
+temperature = 0.3
+voice_enabled = false
+voice_engine = "piper"
+piper_binary = "~/piper/piper"
+piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"

@@ -18,6 +18,7 @@ from .detector import YamNetTFLiteDetector, ensure_model
 from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
+from .narrator import narrate, speak
 from .notifications import LocalNotifier
 from .pipeline import run_pipeline
 from .soothe import build_soothe_player
@@ -132,6 +133,11 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
         help="Enable the selected Tier 1 soothe preset before parent notification",
     )
     parser.add_argument(
+        "--speak",
+        action="store_true",
+        help="Run the optional local narrator after analysis and speak it if possible",
+    )
+    parser.add_argument(
         "--started-at",
         type=datetime.fromisoformat,
         help="Optional ISO timestamp for the start of the recording",
@@ -180,8 +186,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         started_at=args.started_at,
         use_llm=args.llm,
     )
+    spoken_text = result.digest
+    narrator_config = config.narrator
+    if args.speak:
+        narrator_config = replace(narrator_config, enabled=True, voice_enabled=True)
+    if narrator_config.enabled:
+        spoken_text = narrate(result.report, narrator_config, build_digest(result.report))
+        if narrator_config.voice_enabled:
+            speak(spoken_text, narrator_config)
     print()
-    print(result.digest)
+    print(spoken_text)
     print()
     print(f"Events: {result.paths.events_json}")
     print(f"Readable log: {result.paths.readable_log}")

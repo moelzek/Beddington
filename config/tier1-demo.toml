@@ -23,3 +23,15 @@ play_seconds = 0.0
 enabled = false
 base_url = ""
 model = ""
+
+[narrator]
+enabled = false
+backend = "ollama"
+model = "llama3.2:1b"
+host = "http://127.0.0.1:11434"
+num_predict = 140
+temperature = 0.3
+voice_enabled = false
+voice_engine = "piper"
+piper_binary = "~/piper/piper"
+piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"

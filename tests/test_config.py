@@ -37,6 +37,18 @@ name = "white noise"
 sound_path = "white-noise.wav"
 wait_seconds = 2.5
 play_seconds = 1800
+
+[narrator]
+enabled = true
+backend = "ollama"
+model = "llama3.2:1b"
+host = "http://127.0.0.1:11434"
+num_predict = 100
+temperature = 0.2
+voice_enabled = true
+voice_engine = "piper"
+piper_binary = "~/piper/piper"
+piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
 """,
         encoding="utf-8",
     )
@@ -57,6 +69,14 @@ play_seconds = 1800
     assert config.soothe.quiet_check.listen_seconds == 1.0
     assert config.soothe.quiet_check.required_checks == 2
     assert config.soothe.quiet_check.quiet_threshold == 0.3
+    assert config.narrator.enabled is True
+    assert config.narrator.backend == "ollama"
+    assert config.narrator.model == "llama3.2:1b"
+    assert config.narrator.host == "http://127.0.0.1:11434"
+    assert config.narrator.num_predict == 100
+    assert config.narrator.temperature == 0.2
+    assert config.narrator.voice_enabled is True
+    assert config.narrator.voice_engine == "piper"
 
 
 def test_default_config_points_at_generated_soothe_assets() -> None:
@@ -141,4 +161,12 @@ quiet_threshold = 0.5
     )
 
     with pytest.raises(ValueError, match="quiet_threshold"):
+        load_config(path)
+
+
+def test_narrator_backend_must_be_ollama(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[narrator]\nbackend = \"cloud\"\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="narrator.backend"):
         load_config(path)
