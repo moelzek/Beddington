@@ -11,6 +11,9 @@ SNAPSHOT = {
     "person_present": True,
     "motion_detected": False,
     "target_distance_cm": 120.0,
+    # A real breathing lock corroborates the radar's "present" flag (see
+    # radar_person_present): without it, a buried radar's bare flag isn't trusted.
+    "radar_respiratory_rate": 16.0,
 }
 
 
@@ -74,6 +77,20 @@ def test_answer_presence_plainly() -> None:
         answer_question("is anyone there?", SNAPSHOT)
         == "Yes, I can detect someone in the room."
     )
+
+
+def test_phantom_radar_presence_is_not_trusted() -> None:
+    # The buried radar reports "present" constantly; its impossible vitals are
+    # already filtered, so a bare present-flag with no breathing lock and no
+    # motion must NOT be reported as someone in the room.
+    from lullaby.assistant import radar_person_present
+
+    phantom = {"person_present": True, "motion_detected": False}
+    assert radar_person_present(phantom) is False
+    assert answer_question("is anyone there", phantom).startswith("No")
+    # A real breathing lock, or actual motion, IS trusted.
+    assert radar_person_present({"person_present": True, "radar_respiratory_rate": 16.0})
+    assert radar_person_present({"person_present": False, "motion_detected": True})
 
 
 def test_natural_presence_phrasing() -> None:

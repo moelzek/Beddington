@@ -325,6 +325,13 @@ def test_coerce_radar_value() -> None:
     assert _coerce_radar_value("radar_heart_rate_bpm", 0.0) is None
     assert _coerce_radar_value("radar_respiratory_rate", 0.0) is None
     assert _coerce_radar_value("target_count", 0.0) == 0
+    # Out-of-range vitals are a clutter/noise lock (no real person), not a
+    # measurement — e.g. the buried radar's phantom "breathing ~1/min".
+    assert _coerce_radar_value("radar_respiratory_rate", 1.0) is None
+    assert _coerce_radar_value("radar_respiratory_rate", 16.0) == 16.0
+    assert _coerce_radar_value("radar_respiratory_rate", 90.0) is None
+    assert _coerce_radar_value("radar_heart_rate_bpm", 30.0) is None
+    assert _coerce_radar_value("radar_heart_rate_bpm", 300.0) is None
 
 
 def test_build_sensor_readers_includes_radar_when_enabled() -> None:

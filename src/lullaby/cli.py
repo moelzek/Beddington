@@ -1131,6 +1131,7 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
         _num,
         _pressure_label,
         _temp_label,
+        radar_person_present,
     )
 
     fields: dict[str, object] = {}
@@ -1149,17 +1150,24 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
     lux = _num(snapshot, "room_illuminance_lx")
     if lux is not None:
         fields["light"] = _bright_label(lux)
-    present = snapshot.get("person_present")
-    if present is True:
+    # Trusted presence only: the buried radar's bare "present" flag reads true
+    # constantly, so require a real breathing lock or actual motion (see
+    # radar_person_present). A bare reading with neither shows "no one detected".
+    has_presence_reading = (
+        snapshot.get("person_present") is not None
+        or snapshot.get("motion_detected") is not None
+    )
+    if radar_person_present(snapshot):
         fields["presence"] = "● someone present"
-    elif present is False:
+    elif has_presence_reading:
         fields["presence"] = "○ no one detected"
     resp = _num(snapshot, "radar_respiratory_rate")
     heart = _num(snapshot, "radar_heart_rate_bpm")
-    if resp is not None or heart is not None:
-        bits = []
-        if resp is not None:
-            bits.append(f"breathing ~{resp:.0f}")
+    # Only surface vitals on a genuine breathing lock. Heart alone (with the
+    # implausible breathing already filtered out) is a phantom clutter reading,
+    # so it must not show on the always-on dashboard.
+    if resp is not None:
+        bits = [f"breathing ~{resp:.0f}"]
         if heart is not None:
             bits.append(f"heart ~{heart:.0f}")
         fields["vitals"] = "from radar: " + ", ".join(bits)

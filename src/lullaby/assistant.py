@@ -155,20 +155,41 @@ def _brightness_phrase(lux: float) -> str:
 # --- presence and people ---
 
 
+def _radar_locked(snapshot: dict[str, object]) -> bool:
+    """The radar has a plausible breathing lock — i.e. a real, still person.
+
+    A 60GHz radar buried in the plush locks onto micro-vibration/clutter and
+    reports a phantom person with impossible vitals (breathing ~1/min). The reader
+    already filters out-of-range vitals, so a *present* breathing value means a
+    genuine lock, not phantom presence.
+    """
+    return _num(snapshot, "radar_respiratory_rate") is not None
+
+
+def radar_person_present(snapshot: dict[str, object]) -> bool:
+    """Trusted presence: real movement (PIR), or a genuine radar breathing lock.
+
+    The bare radar 'person present' flag is unreliable in this placement — it
+    reads true constantly, even in an empty room — so it is only trusted when
+    corroborated by a real breathing lock or actual motion.
+    """
+    if snapshot.get("motion_detected") is True:
+        return True
+    return snapshot.get("person_present") is True and _radar_locked(snapshot)
+
+
 def _presence_phrase(snapshot: dict[str, object]) -> str:
+    if radar_person_present(snapshot):
+        return "Yes, I can detect someone in the room."
     present = snapshot.get("person_present")
     motion = snapshot.get("motion_detected")
-    if present is True:
-        return "Yes, I can detect someone in the room."
-    if present is False:
-        if motion is True:
-            return "There's some movement, but I don't detect a person in the room."
-        return "No, I don't detect anyone in the room right now."
-    # No radar presence reading — only motion (PIR) to go on, so hedge rather
-    # than claim the room is empty from a missing reading.
-    if motion is True:
-        return "There's some movement, but I don't have a clear presence reading."
-    return "I don't have a clear presence reading right now."
+    # No radar presence reading and no motion — hedge rather than claim the room
+    # is empty from a missing reading.
+    if present is None and motion is None:
+        return "I don't have a clear presence reading right now."
+    # A reading exists (radar present but no real lock, or explicitly empty) and
+    # nothing is moving: not a trustworthy person.
+    return "No, I don't detect anyone in the room right now."
 
 
 def _people_phrase(snapshot: dict[str, object]) -> str:

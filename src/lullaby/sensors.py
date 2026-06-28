@@ -294,9 +294,12 @@ def _coerce_radar_value(field: str, value: object) -> object | None:
     if field == "target_count":
         return int(round(number))
     rounded = round(number, 1)
-    if field in (RADAR_RESPIRATORY_KEY, RADAR_HEART_RATE_KEY) and rounded <= 0:
-        # A 0 (or negative) breathing/heart rate is the radar's "no lock"
-        # sentinel, not a real measurement — omit it like NaN.
+    # Plausibility gates: a 60GHz radar locked onto micro-vibration/clutter (no
+    # real person) emits nonsense vitals (e.g. breathing ~1/min). Treat out-of-
+    # range breathing/heart as "no lock" so a phantom reading never shows.
+    if field == RADAR_RESPIRATORY_KEY and not (6.0 <= rounded <= 70.0):
+        return None
+    if field == RADAR_HEART_RATE_KEY and not (40.0 <= rounded <= 200.0):
         return None
     return rounded
 
