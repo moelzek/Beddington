@@ -37,6 +37,7 @@ def test_format_sensor_line_combines_all_sensors() -> None:
     assert "still" in line
     assert "31.9 lux" in line
     assert "87 bpm heart" in line
+    assert "scene: settled near the cot" in line
 
 
 def test_format_sensor_line_empty() -> None:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import NarratorConfig
+from .context import describe_presence_scene
 from .models import Event, NightReport
 from .soothe import _playback_command, _player_name
 
@@ -204,6 +205,8 @@ def _environment_facts(events: tuple[Event, ...]) -> list[str]:
     saw_motion = False
     saw_presence = False
     presence_detected = False
+    latest_person_present: object = None
+    latest_motion: object = None
     for event in events:
         if event.kind != "environment_sample":
             continue
@@ -219,10 +222,12 @@ def _environment_facts(events: tuple[Event, ...]) -> list[str]:
             latest_illuminance = illuminance
         if "motion_detected" in event.details:
             saw_motion = True
+            latest_motion = event.details["motion_detected"]
             if event.details["motion_detected"] is True:
                 motion_count += 1
         if "person_present" in event.details:
             saw_presence = True
+            latest_person_present = event.details["person_present"]
             if event.details["person_present"] is True:
                 presence_detected = True
     if latest_temperature is not None:
@@ -247,6 +252,9 @@ def _environment_facts(events: tuple[Event, ...]) -> list[str]:
             if presence_detected
             else "Best-guess presence context: no one was detected in the room."
         )
+    scene = describe_presence_scene(latest_person_present, latest_motion)
+    if scene is not None:
+        facts.append(f"Best-guess scene: {scene}.")
     return facts
 
 

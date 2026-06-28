@@ -14,6 +14,7 @@ from .audio import (
     WavFileAudioSource,
 )
 from .config import AppConfig, SootheStepConfig, load_config
+from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
 from .digest import build_digest
 from .llm import polish_digest
@@ -294,6 +295,11 @@ def _format_sensor_line(reading: dict[str, object]) -> str:
         rendered = num(key, suffix)
         if rendered is not None:
             parts.append(rendered)
+    scene = describe_presence_scene(
+        reading.get("person_present"), reading.get("motion_detected")
+    )
+    if scene is not None:
+        parts.append(f"scene: {scene}")
     return " | ".join(parts) if parts else "no readings yet"
 
 

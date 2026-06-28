@@ -185,6 +185,7 @@ def test_build_narration_prompt_includes_radar_context() -> None:
 
     assert "Best-guess room brightness context: 96.2 lux." in prompt
     assert "someone was detected in the room" in prompt
+    assert "Best-guess scene: present near the cot." in prompt
     assert "Never mention heart rate, breathing rate, or any vital sign." in prompt
 
 
