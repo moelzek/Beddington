@@ -13,6 +13,7 @@ from .audio import (
     RealtimeWavFileAudioSource,
     WavFileAudioSource,
 )
+from .assistant import answer_question
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
@@ -131,6 +132,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="Min score to report a sound (defaults to [sounds].threshold)",
     )
+    ask = subparsers.add_parser(
+        "ask",
+        help="Ask about the room; it answers from the live sensors",
+    )
+    ask.add_argument("question", nargs="+", help="e.g. what is the humidity")
+    ask.add_argument(
+        "--speak", action="store_true", help="Speak the answer aloud via the voice"
+    )
     camera = subparsers.add_parser(
         "camera-smoke",
         help="Run a local camera or image metadata smoke test",
@@ -216,6 +225,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _sensors_live_command(args, config)
     if args.command == "sounds-live":
         return _sounds_live_command(args, config)
+    if args.command == "ask":
+        return _ask_command(args, config)
     if args.command == "camera-smoke":
         return _camera_smoke_command(args)
     if args.command == "visual-change":
@@ -362,6 +373,38 @@ def _sensors_live_command(args: argparse.Namespace, config: AppConfig) -> int:
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("Stopped.")
+    return 0
+
+
+def _read_sensor_snapshot(
+    readers: Sequence[object],
+    warm_seconds: float = 2.0,
+) -> dict[str, object]:
+    for reader in readers:  # kick background connections (e.g. the radar)
+        try:
+            reader.read()
+        except Exception:
+            pass
+    if warm_seconds > 0 and readers:
+        time.sleep(warm_seconds)
+    snapshot: dict[str, object] = {}
+    for reader in readers:
+        try:
+            snapshot.update(reader.read())
+        except Exception:
+            pass
+    return snapshot
+
+
+def _ask_command(args: argparse.Namespace, config: AppConfig) -> int:
+    question = " ".join(args.question).strip()
+    if not question:
+        raise SystemExit("Ask a question, e.g. lullaby ask what is the humidity")
+    snapshot = _read_sensor_snapshot(build_sensor_readers(config.sensors))
+    answer = answer_question(question, snapshot)
+    print(answer)
+    if args.speak:
+        speak(answer, replace(config.narrator, voice_enabled=True))
     return 0
 
 
