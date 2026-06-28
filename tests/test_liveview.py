@@ -145,9 +145,11 @@ def test_rpicam_vid_command_basic() -> None:
 
 
 def test_rpicam_vid_command_night_adds_low_light() -> None:
-    cmd = rpicam_vid_command(night=True)
+    cmd = rpicam_vid_command(night=True, fps=12)
     assert "--shutter" in cmd  # longer exposure
     assert "--gain" in cmd  # higher gain
+    # Night drops the frame rate so the long exposure fits (more light per frame).
+    assert int(cmd[cmd.index("--framerate") + 1]) < 12
 
 
 def test_frame_broker_delivers_and_closes() -> None:

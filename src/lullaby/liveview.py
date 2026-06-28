@@ -148,9 +148,10 @@ width:calc(100dvh - 48px);height:100vw;max-width:none;max-height:none}
 #cam img.rot90{transform:translate(-50%,-50%) rotate(90deg)}
 #cam img.rot270{transform:translate(-50%,-50%) rotate(270deg)}
 #cam img.rot180{transform:rotate(180deg)}
-.nightnote{position:absolute;left:12px;right:12px;top:38%;text-align:center;
-padding:14px 16px;border-radius:10px;color:#dde;font-size:16px;
-background:rgba(20,24,48,.72);display:none}
+.nightnote{position:absolute;left:0;right:0;bottom:0;text-align:center;
+padding:8px 14px;color:#dde;font-size:13px;
+background:rgba(20,24,48,.82);display:none;z-index:4}
+#cam.night #readings{bottom:36px}
 .chartwrap{padding:14px}
 .cur{font-size:24px;font-weight:700;margin:4px 0 12px}
 canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-radius:8px}
@@ -241,7 +242,9 @@ rb.onclick=cycleRot;el.appendChild(rb);
 ORDER.forEach(function(k){if(d[k]){const s=document.createElement("span");
 s.textContent=d[k];el.appendChild(s);}});
 const nn=document.getElementById("nightnote");
-if(nn)nn.style.display=(d.mode==="night")?"block":"none";}
+if(nn)nn.style.display=(d.mode==="night")?"block":"none";
+const cam=document.getElementById("cam");
+if(cam)cam.classList.toggle("night",d.mode==="night");}
 async function cycleMode(){const set=LASTMODE.mode_auto?"day":(LASTMODE.mode==="day"?"night":"");
 try{await fetch(MODEURL+"&set="+set,{method:"POST",cache:"no-store"});}catch(e){}
 try{const r=await fetch(READINGS,{cache:"no-store"});if(r.ok)renderReadings(await r.json());}catch(e){}}
@@ -406,10 +409,15 @@ def rpicam_vid_command(
 ) -> list[str]:
     """Build the rpicam-vid argv that streams MJPEG to stdout.
 
-    ``night`` enables a low-light mode (longer shutter + higher gain) that helps
-    when a dim night-light is on; a fully dark room still needs a NoIR camera and
-    IR light. The longer shutter naturally lowers the achievable frame rate.
+    ``night`` enables a low-light mode that gathers as much light as possible: a
+    long exposure plus high gain, with the frame rate dropped so the long shutter
+    fits (a still nursery doesn't need a high frame rate, and each frame collects
+    far more light). It helps when a dim night-light is on; a fully dark room still
+    needs a NoIR camera and an IR lamp — both cameras here are IR-filtered.
     """
+    # Night: 0.4s exposure at gain 16, denoise off so faint detail survives. The
+    # frame rate must allow the shutter (2 fps → 0.5s period ≥ the 0.4s exposure).
+    NIGHT_FPS, NIGHT_SHUTTER_US, NIGHT_GAIN = 2, 400000, 16.0
     cmd = [
         binary,
         "--camera", str(camera),
@@ -417,13 +425,17 @@ def rpicam_vid_command(
         "--codec", "mjpeg",
         "--width", str(width),
         "--height", str(height),
-        "--framerate", str(fps),
+        "--framerate", str(NIGHT_FPS if night else fps),
         "--nopreview",
         "--inline",
         "-o", "-",
     ]
     if night:
-        cmd += ["--shutter", "120000", "--gain", "8.0", "--denoise", "cdn_off"]
+        cmd += [
+            "--shutter", str(NIGHT_SHUTTER_US),
+            "--gain", str(NIGHT_GAIN),
+            "--denoise", "cdn_off",
+        ]
     return cmd
 
 
