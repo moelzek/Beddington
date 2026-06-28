@@ -135,8 +135,11 @@ padding:12px 14px;font-size:14px}
 #tabs button.active{color:#fff;border-bottom:2px solid #4ea1ff}
 .panel{display:none}
 .panel.active{display:block}
-#cam img{width:100vw;height:auto;display:block;background:#000}
-#readings{display:flex;gap:14px;flex-wrap:wrap;padding:10px 14px;background:#111}
+#cam.panel.active{display:flex;align-items:center;justify-content:center;position:relative;
+height:calc(100vh - 48px);height:calc(100dvh - 48px);background:#000}
+#cam img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+#readings{position:absolute;left:0;right:0;bottom:0;display:flex;gap:14px;flex-wrap:wrap;
+padding:10px 14px;background:rgba(0,0,0,.5)}
 #readings span{white-space:nowrap}
 .chartwrap{padding:14px}
 .cur{font-size:24px;font-weight:700;margin:4px 0 12px}
