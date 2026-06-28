@@ -10,15 +10,15 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from lullaby.config import (
+from beddington.config import (
     AppConfig,
     DetectionConfig,
     RadarSensorConfig,
     SensorsConfig,
 )
-from lullaby.models import AudioWindow
-from lullaby.pipeline import run_pipeline
-from lullaby.sensors import (
+from beddington.models import AudioWindow
+from beddington.pipeline import run_pipeline
+from beddington.sensors import (
     Bme680AirReader,
     Mr60RadarReader,
     NullSensorReader,
@@ -56,7 +56,7 @@ class FakeDetector:
 
 class FakeNotifier:
     def notify(self, title: str, message: str) -> dict[str, bool]:
-        assert title == "Lullaby"
+        assert title == "Beddington"
         assert "Sustained crying" in message
         return {"console": True, "desktop": False}
 
@@ -261,7 +261,7 @@ def test_pir_motion_reader_parses_high(monkeypatch) -> None:
         assert kwargs["check"] is False
         return SimpleNamespace(returncode=0, stdout="4: ip    pd | hi // GPIO4")
 
-    monkeypatch.setattr("lullaby.sensors.subprocess.run", fake_run)
+    monkeypatch.setattr("beddington.sensors.subprocess.run", fake_run)
 
     assert PirMotionReader(gpio_pin=4).read() == {"motion_detected": True}
     assert commands == [["pinctrl", "get", "4"]]
@@ -269,7 +269,7 @@ def test_pir_motion_reader_parses_high(monkeypatch) -> None:
 
 def test_pir_motion_reader_parses_low(monkeypatch) -> None:
     monkeypatch.setattr(
-        "lullaby.sensors.subprocess.run",
+        "beddington.sensors.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0,
             stdout="4: ip    pd | lo // GPIO4",
@@ -283,7 +283,7 @@ def test_pir_motion_reader_degrades_when_pinctrl_missing(monkeypatch) -> None:
     def fake_run(*args: object, **kwargs: object) -> object:
         raise FileNotFoundError("pinctrl")
 
-    monkeypatch.setattr("lullaby.sensors.subprocess.run", fake_run)
+    monkeypatch.setattr("beddington.sensors.subprocess.run", fake_run)
 
     reader = PirMotionReader(gpio_pin=4)
     assert reader.read() == {}

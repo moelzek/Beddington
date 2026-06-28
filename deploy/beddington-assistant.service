@@ -1,0 +1,37 @@
+# Beddington always-on voice assistant (systemd USER service).
+#
+# Install on the Pi (user "lab", repo at ~/Beddington, venv at ~/Beddington/.venv):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/beddington-assistant.service ~/.config/systemd/user/beddington-assistant.service
+#   sudo loginctl enable-linger "$USER"        # run without an active login / across reboots
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now beddington-assistant
+#
+# Manage:
+#   systemctl --user status beddington-assistant
+#   systemctl --user restart beddington-assistant
+#   systemctl --user stop beddington-assistant           # frees the mic for the cry monitor
+#   tail -f ~/beddington-assistant.log
+#
+# NOTE: the mic can only be owned by one program at a time, so this service and
+# the cry-detection `listen`/`analyze` loop must not run on the same mic at once.
+
+[Unit]
+Description=Beddington voice assistant
+After=default.target sound.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lab/Beddington
+Environment=SDL_AUDIODRIVER=pulse
+Environment=PYTHONUNBUFFERED=1
+# --model-size base.en: more accurate than tiny.en on marginal/distant audio
+# (fewer "I can tell you about..." fallbacks), ~2s slower per question. RAM ok.
+ExecStart=/home/lab/Beddington/.venv/bin/python -m beddington --config /home/lab/Beddington/config/demo.toml listen-assistant --model-size base.en
+StandardOutput=append:/home/lab/beddington-assistant.log
+StandardError=append:/home/lab/beddington-assistant.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

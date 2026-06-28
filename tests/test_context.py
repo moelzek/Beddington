@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lullaby.context import describe_presence_scene
+from beddington.context import describe_presence_scene
 
 
 def test_scene_radar_present() -> None:

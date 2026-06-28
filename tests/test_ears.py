@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from lullaby.assistant import answer_question
-from lullaby.ears import extract_wake_question, iter_utterances
+from beddington.assistant import answer_question
+from beddington.ears import extract_wake_question, iter_utterances
 
 
 def test_extract_question_after_wake() -> None:

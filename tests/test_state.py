@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from lullaby.config import DetectionConfig
-from lullaby.state import CryEventTracker
+from beddington.config import DetectionConfig
+from beddington.state import CryEventTracker
 
 
 def _tracker(**overrides: float) -> CryEventTracker:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from lullaby.audio import (
+from beddington.audio import (
     SAMPLE_RATE,
     WINDOW_SAMPLES,
     _choose_input_sample_rate,

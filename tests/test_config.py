@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from lullaby.config import load_config
+from beddington.config import load_config
 
 
 def test_load_config_reads_detection_values(tmp_path: Path) -> None:

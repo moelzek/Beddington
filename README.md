@@ -1,6 +1,6 @@
-# Lullaby
+# Beddington
 
-Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locally, records sustained crying events, writes a readable night log, and produces a morning digest. Tier 1 may try one selected soothe preset before escalating. It is an assistive notebook, not a medical guardian: raw audio/video never leaves the device, uncertain interpretations are labelled best guesses, and the complete app works with cloud features disabled.
+Beddington is a privacy-first baby-monitor companion. Tier 0 processes audio locally, records sustained crying events, writes a readable night log, and produces a morning digest. Tier 1 may try one selected soothe preset before escalating. It is an assistive notebook, not a medical guardian: raw audio/video never leaves the device, uncertain interpretations are labelled best guesses, and the complete app works with cloud features disabled.
 
 ## What works now
 
@@ -10,7 +10,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 - Optional Tier 1 dry-run soothe preset before parent notification.
 - Optional deterministic quiet-check windows during soothing.
 - Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
-- Pi USB microphone capture through Lullaby's microphone adapter.
+- Pi USB microphone capture through Beddington's microphone adapter.
 - Pi Camera Module 3 hardware smoke test and Tier 2A bench-only camera metadata command.
 - Tier 2A local visual-change and camera-linked visual-change smoke tests, with raw frames deleted by default.
 - Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
@@ -23,7 +23,7 @@ Lullaby is a privacy-first baby-monitor companion. Tier 0 processes audio locall
 Use Python 3.11–3.14. The commands below use the machine’s `python3`; substitute `python3.12` if you want the exact version used for the primary acceptance run.
 
 ```bash
-cd ~/Code/Labie
+cd ~/Code/Beddington
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -33,16 +33,16 @@ python -m pip install ".[dev]"
 Run the included public sample:
 
 ```bash
-lullaby --config config/default.toml analyze \
+beddington --config config/default.toml analyze \
   sample_data/crying_baby_cc0.wav \
   --output output/sample-night
 ```
 
-The first run downloads and verifies the official 3.9 MB YAMNet TFLite model into `~/.cache/lullaby/models/`. The audio file is then processed locally. You should see:
+The first run downloads and verifies the official 3.9 MB YAMNet TFLite model into `~/.cache/beddington/models/`. The audio file is then processed locally. You should see:
 
 ```text
-[Lullaby] Sustained crying detected (...). Please check the baby.
-Lullaby detected 1 sustained crying episode...
+[Beddington] Sustained crying detected (...). Please check the baby.
+Beddington detected 1 sustained crying episode...
 Events: output/sample-night/events.json
 Readable log: output/sample-night/night-log.txt
 Morning digest: output/sample-night/morning-digest.txt
@@ -64,19 +64,19 @@ Tier 1 is explicit and off in the default config. The demo config uses dry-run
 playback, so it records the selected soothe preset without playing sound:
 
 ```bash
-lullaby --config config/tier1-demo.toml analyze \
+beddington --config config/tier1-demo.toml analyze \
   sample_data/crying_baby_cc0.wav \
   --output output/tier1-demo
 ```
 
-You should see a digest that says Lullaby tried one soothe preset before
+You should see a digest that says Beddington tried one soothe preset before
 escalation. Open the readable log:
 
 ```bash
 cat output/tier1-demo/night-log.txt
 ```
 
-Expected: a `SOOTHE` line before any `NOTIFIED` line. Lullaby chooses exactly
+Expected: a `SOOTHE` line before any `NOTIFIED` line. Beddington chooses exactly
 one configured preset; it does not cycle through every sound. The default
 preset is `white_noise`. Available generated presets are:
 
@@ -85,7 +85,7 @@ preset is `white_noise`. Available generated presets are:
 - [heartbeat.wav](assets/soothe/heartbeat.wav)
 - [soothing_music.wav](assets/soothe/soothing_music.wav)
 
-The files themselves are short, but Lullaby can loop the selected preset for
+The files themselves are short, but Beddington can loop the selected preset for
 the configured `play_seconds`. The default presets are set up for 30-minute
 play windows when real playback is enabled.
 
@@ -93,7 +93,7 @@ To test real playback without running cry detection, select the speaker output
 on the machine first, keep the volume low, then run:
 
 ```bash
-lullaby --config config/default.toml preview-soothe --seconds 5
+beddington --config config/default.toml preview-soothe --seconds 5
 ```
 
 Expected: the selected `white_noise` preset plays briefly and then stops. This
@@ -135,7 +135,7 @@ sudo apt install libportaudio2
 Listen for 60 seconds:
 
 ```bash
-lullaby --config config/default.toml listen \
+beddington --config config/default.toml listen \
   --seconds 60 \
   --output output/live
 ```
@@ -150,10 +150,10 @@ features and does not use video to trigger or suppress notifications.
 On the Pi, run:
 
 ```bash
-lullaby camera-smoke --output output/pi-camera-smoke
+beddington camera-smoke --output output/pi-camera-smoke
 ```
 
-Expected: Lullaby captures one local no-preview test frame, writes
+Expected: Beddington captures one local no-preview test frame, writes
 `output/pi-camera-smoke/camera-smoke.json`, and deletes the raw test frame by
 default. The report contains derived metadata such as image size and camera
 summary, not raw image data.
@@ -161,7 +161,7 @@ summary, not raw image data.
 For hardware-free tests on a laptop, inspect an existing local JPEG or PNG:
 
 ```bash
-lullaby camera-smoke --image path/to/local-test-image.jpg --output output/camera-smoke
+beddington camera-smoke --image path/to/local-test-image.jpg --output output/camera-smoke
 ```
 
 Raw frames must stay local and must not be committed. The Tier 2 video boundary
@@ -175,7 +175,7 @@ Use `visual-change` for the first deterministic derived video observation. It
 compares two local PGM/PPM test frames and writes only change metrics:
 
 ```bash
-lullaby visual-change \
+beddington visual-change \
   --before path/to/before.pgm \
   --after path/to/after.pgm \
   --output output/visual-change
@@ -192,10 +192,10 @@ assessment.
 Use `camera-change` for a bench-only camera-linked smoke test:
 
 ```bash
-lullaby camera-change --output output/pi-camera-change
+beddington camera-change --output output/pi-camera-change
 ```
 
-Expected: Lullaby captures two short local BMP test frames from the Pi camera,
+Expected: Beddington captures two short local BMP test frames from the Pi camera,
 compares them, writes `output/pi-camera-change/visual-change.json`, and deletes
 the raw BMP frames by default. The result may say `visual_change_detected` or
 `little_visual_change_detected` depending on camera noise, exposure, and scene
@@ -222,7 +222,7 @@ Edit [config/default.toml](config/default.toml):
 - `soothe.preset`: the one preset to use, such as `white_noise`, `heartbeat`, or `soothing_music`.
 - `soothe.presets.<name>.sound_path`: local audio file to play when `player = "auto"`.
 - `soothe.presets.<name>.play_seconds`: how long that preset may loop.
-- `soothe.presets.<name>.wait_seconds`: how long Lullaby waits before parent notification.
+- `soothe.presets.<name>.wait_seconds`: how long Beddington waits before parent notification.
 - `soothe.quiet_check.enabled`: briefly pause or lower playback, listen, and
   require repeated quiet checks before logging that crying is no longer
   detected.
@@ -231,7 +231,7 @@ Edit [config/default.toml](config/default.toml):
 - `soothe.quiet_check.listen_seconds`: how long each listen-only check lasts.
 - `soothe.quiet_check.required_checks`: how many consecutive quiet checks are
   required. This must be at least `2`.
-- `soothe.quiet_check.stop_on_notify`: stop playback when Lullaby escalates to a
+- `soothe.quiet_check.stop_on_notify`: stop playback when Beddington escalates to a
   parent notification.
 
 The included generated sounds are synthetic placeholders for testing the preset.
@@ -251,7 +251,7 @@ cp .env.example .env
 set -a
 source .env
 set +a
-lullaby --config config/default.toml analyze \
+beddington --config config/default.toml analyze \
   sample_data/crying_baby_cc0.wav \
   --output output/sample-night-llm \
   --llm
@@ -262,7 +262,7 @@ Only derived event text and the rule-based summary are sent. Raw audio is never 
 ## Layout
 
 ```text
-src/lullaby/       application code
+src/beddington/       application code
 tests/             hardware-free tests
 sample_data/       public CC0 verification recording
 config/            deterministic thresholds and feature flags
@@ -281,4 +281,4 @@ Archive/           retired Lab Witness material
 
 ## Safety and privacy
 
-Lullaby does not diagnose illness, detect SIDS/apnoea/fever, or replace adult supervision or approved monitoring equipment. Keep any companion beside the cot, never in it, and keep hot compute in a vented base.
+Beddington does not diagnose illness, detect SIDS/apnoea/fever, or replace adult supervision or approved monitoring equipment. Keep any companion beside the cot, never in it, and keep hot compute in a vented base.

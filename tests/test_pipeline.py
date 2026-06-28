@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from lullaby.config import (
+from beddington.config import (
     AppConfig,
     DetectionConfig,
     NotificationConfig,
@@ -18,8 +18,8 @@ from lullaby.config import (
     SootheStepConfig,
     SoundsConfig,
 )
-from lullaby.models import AudioWindow
-from lullaby.pipeline import run_pipeline
+from beddington.models import AudioWindow
+from beddington.pipeline import run_pipeline
 
 
 @dataclass
@@ -52,7 +52,7 @@ class FakeNotifier:
         self.calls = 0
 
     def notify(self, title: str, message: str) -> dict[str, bool]:
-        assert title == "Lullaby"
+        assert title == "Beddington"
         assert "Sustained crying" in message
         self.calls += 1
         return {"console": True, "desktop": False}

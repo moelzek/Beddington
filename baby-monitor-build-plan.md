@@ -1,4 +1,4 @@
-# Lullaby — tiered build plan and bill of materials
+# Beddington — tiered build plan and bill of materials
 
 > Companion to [baby-monitor-evaluation.md](baby-monitor-evaluation.md). Live status and locked decisions are in [memory.md](memory.md).
 
@@ -38,7 +38,7 @@ flowchart LR
 Approved on 2026-06-21 and started laptop-first. The first slice adds a
 configurable dry-run soothe preset that records one soothe attempt, waits, and
 notifies only if crying persists. The parent chooses one mode such as white
-noise, heartbeat-style pulses, or soothing music; Lullaby does not cycle
+noise, heartbeat-style pulses, or soothing music; Beddington does not cycle
 through all sounds automatically. Next, play the selected local preset at low
 volume on a laptop before moving to the Pi speaker/amplifier bench test.
 “Likely hungry” may combine cry plus time since feed, but is always a labelled

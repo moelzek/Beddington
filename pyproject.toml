@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lullaby-monitor"
+name = "beddington-monitor"
 version = "0.1.0"
 description = "Privacy-first, local baby-cry event logging and morning digests"
 readme = "README.md"
@@ -19,10 +19,10 @@ ears = ["faster-whisper>=1.0,<2"]
 dev = ["pytest>=9,<10"]
 
 [project.scripts]
-lullaby = "lullaby.cli:main"
+beddington = "beddington.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lullaby"]
+packages = ["src/beddington"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

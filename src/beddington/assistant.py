@@ -1,6 +1,6 @@
 """A small, deterministic question-answerer over a live sensor snapshot.
 
-The "brain" of the Paddington voice assistant. It maps a plain-language question
+The "brain" of the Beddington voice assistant. It maps a plain-language question
 to an answer built directly from the current sensor readings — no LLM, so it can
 never invent a value. Answers interpret the reading (comfortable / a bit warm /
 dry / dimly lit / clean) using ordinary nursery comfort ranges, framed as gentle

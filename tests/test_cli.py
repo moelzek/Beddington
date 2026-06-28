@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from lullaby.cli import _format_sensor_line, main
-from lullaby.logging import OutputPaths
-from lullaby.models import NightReport
-from lullaby.video import ImageInfo, VisualChangeReport
+from beddington.cli import _format_sensor_line, main
+from beddington.logging import OutputPaths
+from beddington.models import NightReport
+from beddington.video import ImageInfo, VisualChangeReport
 
 
 def test_format_sensor_line_combines_all_sensors() -> None:
@@ -144,10 +144,10 @@ gpio_pin = 4
             ),
         )
 
-    monkeypatch.setattr("lullaby.cli.YamNetTFLiteDetector", lambda model: object())
-    monkeypatch.setattr("lullaby.cli.WavFileAudioSource", lambda path: object())
-    monkeypatch.setattr("lullaby.cli.build_sensor_readers", fake_build_sensor_readers)
-    monkeypatch.setattr("lullaby.cli.run_pipeline", fake_run_pipeline)
+    monkeypatch.setattr("beddington.cli.YamNetTFLiteDetector", lambda model: object())
+    monkeypatch.setattr("beddington.cli.WavFileAudioSource", lambda path: object())
+    monkeypatch.setattr("beddington.cli.build_sensor_readers", fake_build_sensor_readers)
+    monkeypatch.setattr("beddington.cli.run_pipeline", fake_run_pipeline)
 
     result = main(
         [
@@ -262,7 +262,7 @@ def test_camera_change_writes_derived_report(tmp_path, capsys, monkeypatch) -> N
             camera_summary="0 : imx708 [4608x2592 10-bit RGGB]",
         )
 
-    monkeypatch.setattr("lullaby.cli.capture_rpicam_visual_change", fake_capture)
+    monkeypatch.setattr("beddington.cli.capture_rpicam_visual_change", fake_capture)
 
     result = main(
         [

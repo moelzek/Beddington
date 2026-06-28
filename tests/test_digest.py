@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
-from lullaby.digest import build_digest
-from lullaby.models import Event, NightReport
+from beddington.digest import build_digest
+from beddington.models import Event, NightReport
 
 
 def test_digest_reports_no_sustained_episodes() -> None:

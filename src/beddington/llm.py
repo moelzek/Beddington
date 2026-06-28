@@ -13,8 +13,8 @@ def polish_digest(summary: str, report: NightReport, config: LlmConfig) -> str:
         return summary
     if not config.base_url or not config.model or not config.api_key:
         raise ValueError(
-            "LLM polish is enabled but LULLABY_LLM_BASE_URL, "
-            "LULLABY_LLM_MODEL, or LULLABY_LLM_API_KEY is missing"
+            "LLM polish is enabled but BEDDINGTON_LLM_BASE_URL, "
+            "BEDDINGTON_LLM_MODEL, or BEDDINGTON_LLM_API_KEY is missing"
         )
 
     endpoint = config.base_url.rstrip("/") + "/chat/completions"
@@ -53,7 +53,7 @@ def polish_digest(summary: str, report: NightReport, config: LlmConfig) -> str:
         headers={
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "lullaby/0.1",
+            "User-Agent": "beddington/0.1",
         },
         method="POST",
     )

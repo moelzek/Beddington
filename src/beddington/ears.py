@@ -18,13 +18,14 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
-# "paddington" plus the common ways Whisper mangles it on marginal/far audio
-# (badington, bangton, padington...). Fuzzy matching (edit distance <= 2) catches
-# the near-variants of each, so a slightly-misheard wake word still triggers.
+# "beddington" is the default wake word; "paddington" and common Whisper
+# mangles stay as aliases for marginal/far audio. Fuzzy matching (edit distance
+# <= 2) catches the near-variants, so a slightly-misheard wake word still
+# triggers.
 WAKE_WORDS: tuple[str, ...] = (
-    "paddington",
     "beddington",
     "bedington",
+    "paddington",
     "badington",
     "bangton",
     "padington",
@@ -71,7 +72,7 @@ def extract_wake_question(
     words = normalize_transcript(transcript).split()
     if not words:
         return None
-    # The distinctive token of each wake phrase (e.g. "lullaby"); a leading
+    # The distinctive token of each wake phrase (e.g. "beddington"); a leading
     # "hi"/"hey" before it is stripped naturally by returning the trailing words.
     core_tokens = {phrase.split()[-1] for phrase in wake_words if phrase.split()}
     for index, word in enumerate(words):

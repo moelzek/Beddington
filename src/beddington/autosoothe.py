@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 
-DEFAULT_STATE_PATH = os.path.expanduser("~/.config/lullaby/autosoothe.json")
+DEFAULT_STATE_PATH = os.path.expanduser("~/.config/beddington/autosoothe.json")
 
 
 def read_state(path: str = DEFAULT_STATE_PATH) -> dict[str, object]:

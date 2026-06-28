@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from lullaby.night_digest import summarise_night
+from beddington.night_digest import summarise_night
 
 # A night digest must never claim sleep/safety/health.
 _BANNED = {"asleep", "sleeping", "slept", "safe", "healthy", "fine", "normal", "well"}

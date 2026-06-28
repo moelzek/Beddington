@@ -16,7 +16,7 @@ enabled = false
 threshold = 0.2
 
 [soothe]
-# Tier 1 is explicit. Keep this off unless you want Lullaby to play the
+# Tier 1 is explicit. Keep this off unless you want Beddington to play the
 # selected preset before notifying.
 enabled = false
 # "none" records the preset without playing audio. Use "auto" with sound_path
@@ -89,7 +89,7 @@ password = ""
 include_distance = true
 include_target_count = true
 # Bench/research ONLY. When true, the radar's respiratory + heart-rate values are
-# captured and surfaced as raw, clearly-labelled bench data (e.g. `lullaby
+# captured and surfaced as raw, clearly-labelled bench data (e.g. `beddington
 # radar-vitals`). They are never fed into the spoken recap, never paired with any
 # reassurance, never drive detection/alerts, and are never a medical or safety
 # signal. Product/clinical use of these vitals needs the Tier-3 gate + sign-off.

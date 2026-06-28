@@ -5,9 +5,9 @@ import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from lullaby.logging import write_outputs
-from lullaby.models import Event, NightReport
-from lullaby.radar_vitals import (
+from beddington.logging import write_outputs
+from beddington.models import Event, NightReport
+from beddington.radar_vitals import (
     RADAR_VITALS_DISCLAIMER,
     format_radar_reading,
     summarise_radar_vitals,

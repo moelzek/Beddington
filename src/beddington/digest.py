@@ -10,7 +10,7 @@ def build_digest(report: NightReport) -> str:
     soothe_count = sum(event.kind == "soothe_attempted" for event in report.events)
     if not episodes:
         return (
-            "Lullaby did not detect any sustained crying episodes in this recording. "
+            "Beddington did not detect any sustained crying episodes in this recording. "
             f"It analysed {report.windows_processed} audio windows locally."
         )
 
@@ -25,14 +25,14 @@ def build_digest(report: NightReport) -> str:
     soothe_sentence = ""
     if soothe_count:
         soothe_word = "preset" if soothe_count == 1 else "presets"
-        soothe_sentence = f"Lullaby tried {soothe_count} soothe {soothe_word} before escalation. "
+        soothe_sentence = f"Beddington tried {soothe_count} soothe {soothe_word} before escalation. "
     return (
-        f"Lullaby detected {len(episodes)} sustained crying {episode_word}. "
+        f"Beddington detected {len(episodes)} sustained crying {episode_word}. "
         f"The first began {_format_offset(first_offset)} after the recording started. "
         f"Together they lasted about {_format_duration(total)}; "
         f"the longest lasted {_format_duration(longest)}. "
         f"{soothe_sentence}"
-        f"Lullaby sent {notification_count} {notification_word}. "
+        f"Beddington sent {notification_count} {notification_word}. "
         "This is an event summary, not a medical or safety assessment."
     )
 

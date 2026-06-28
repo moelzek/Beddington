@@ -91,7 +91,7 @@ def run_pipeline(
                 else "Sustained crying detected "
             )
             targets = notifier.notify(
-                "Lullaby",
+                "Beddington",
                 message + f"(model score {score:.2f}). Please check the baby.",
             )
             events.append(
@@ -160,7 +160,7 @@ def run_pipeline(
         events.extend(soothe_result.events)
         if soothe_result.notify:
             targets = notifier.notify(
-                "Lullaby",
+                "Beddington",
                 (
                     "Sustained crying still detected "
                     f"(model score {peak_score:.2f}). Please check the baby."

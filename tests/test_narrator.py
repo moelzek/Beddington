@@ -9,15 +9,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from lullaby.config import (
+from beddington.config import (
     AppConfig,
     DetectionConfig,
     NarratorConfig,
     NotificationConfig,
 )
-from lullaby.models import AudioWindow, Event, NightReport
-from lullaby.narrator import build_narration_prompt, narrate, speak
-from lullaby.pipeline import run_pipeline
+from beddington.models import AudioWindow, Event, NightReport
+from beddington.narrator import build_narration_prompt, narrate, speak
+from beddington.pipeline import run_pipeline
 
 
 class FakeResponse:
@@ -64,7 +64,7 @@ class FakeNotifier:
         self.calls = 0
 
     def notify(self, title: str, message: str) -> dict[str, bool]:
-        assert title == "Lullaby"
+        assert title == "Beddington"
         assert "Sustained crying" in message
         self.calls += 1
         return {"console": True, "desktop": False}
@@ -78,7 +78,7 @@ def test_narrate_returns_ollama_response(monkeypatch: pytest.MonkeyPatch) -> Non
         requests.append((request, timeout))
         return FakeResponse({"response": "Crying was detected once for 5 seconds."})
 
-    monkeypatch.setattr("lullaby.narrator.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fake_urlopen)
 
     text = narrate(
         report,
@@ -108,7 +108,7 @@ def test_narrate_trims_trailing_ramble(monkeypatch: pytest.MonkeyPatch) -> None:
             }
         )
 
-    monkeypatch.setattr("lullaby.narrator.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fake_urlopen)
 
     text = narrate(_sample_report(), NarratorConfig(enabled=True), "fallback digest")
 
@@ -119,7 +119,7 @@ def test_narrate_returns_fallback_when_disabled(monkeypatch: pytest.MonkeyPatch)
     def fail_urlopen(request, timeout):
         raise AssertionError("urlopen should not be called")
 
-    monkeypatch.setattr("lullaby.narrator.urllib.request.urlopen", fail_urlopen)
+    monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fail_urlopen)
 
     assert (
         narrate(_sample_report(), NarratorConfig(), "fallback digest")
@@ -133,7 +133,7 @@ def test_narrate_returns_fallback_when_post_raises(
     def fail_urlopen(request, timeout):
         raise OSError("ollama unavailable")
 
-    monkeypatch.setattr("lullaby.narrator.urllib.request.urlopen", fail_urlopen)
+    monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fail_urlopen)
 
     assert (
         narrate(_sample_report(), NarratorConfig(enabled=True), "fallback digest")
@@ -284,8 +284,8 @@ def test_speak_uses_piper_and_supported_player(
             assert Path(command[1]).exists()
         return object()
 
-    monkeypatch.setattr("lullaby.narrator.shutil.which", fake_which)
-    monkeypatch.setattr("lullaby.narrator.subprocess.run", fake_run)
+    monkeypatch.setattr("beddington.narrator.shutil.which", fake_which)
+    monkeypatch.setattr("beddington.narrator.subprocess.run", fake_run)
 
     result = speak(
         "Crying was detected once.",
@@ -305,7 +305,7 @@ def test_speak_degrades_when_binary_absent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("lullaby.narrator.shutil.which", lambda command: None)
+    monkeypatch.setattr("beddington.narrator.shutil.which", lambda command: None)
 
     result = speak(
         "Crying was detected once.",

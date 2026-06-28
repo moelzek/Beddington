@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lullaby.assistant import answer_question
+from beddington.assistant import answer_question
 
 SNAPSHOT = {
     "room_temperature_c": 21.4,
@@ -84,7 +84,7 @@ def test_radar_presence_requires_corroboration() -> None:
     # Radar-driven presence (the PIR has been removed): trust the "present" flag
     # only when a real target or a plausible breathing lock corroborates it, so
     # bare-flag micro-vibration clutter is never reported as someone in the room.
-    from lullaby.assistant import radar_person_present
+    from beddington.assistant import radar_person_present
 
     # Flag + a real target (distance / count) or a breathing lock → present.
     assert radar_person_present({"person_present": True, "target_distance_cm": 90.0})
@@ -268,7 +268,7 @@ def test_answer_distance() -> None:
 
 
 def test_is_night_question() -> None:
-    from lullaby.assistant import is_night_question
+    from beddington.assistant import is_night_question
 
     assert is_night_question("how was the night")
     assert is_night_question("Paddington, give me the night summary")
@@ -298,7 +298,7 @@ def test_answer_tolerates_misheard_keywords() -> None:
 
 
 def test_match_soothe_command() -> None:
-    from lullaby.assistant import match_soothe_command
+    from beddington.assistant import match_soothe_command
 
     assert match_soothe_command("play white noise") == {
         "action": "play", "preset": "white_noise"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import errno
 from pathlib import Path
 
-from lullaby.detector import _move_model_file, dominant_baby_sound
+from beddington.detector import _move_model_file, dominant_baby_sound
 
 
 def test_dominant_baby_sound_picks_highest_above_threshold() -> None:

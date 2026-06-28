@@ -176,7 +176,7 @@ class Mr60RadarReader:
             return
         self._thread = threading.Thread(
             target=self._run,
-            name="lullaby-radar",
+            name="beddington-radar",
             daemon=True,
         )
         self._thread.start()

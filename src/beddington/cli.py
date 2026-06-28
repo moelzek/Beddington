@@ -46,7 +46,7 @@ from .video import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="lullaby",
+        prog="beddington",
         description="Local baby-cry events, night logs, and morning digests.",
     )
     parser.add_argument("--config", type=Path, help="TOML config file")
@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     listen_assistant = subparsers.add_parser(
         "listen-assistant",
-        help='Wake-word voice Q&A: say "Hi Paddington, what is the humidity?"',
+        help='Wake-word voice Q&A: say "Hi Beddington, what is the humidity?"',
     )
     listen_assistant.add_argument("--device")
     listen_assistant.add_argument(
@@ -162,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     listen_assistant.add_argument(
         "--wake-word",
         action="append",
-        help="Override the wake word(s); repeatable (default: Paddington)",
+        help="Override the wake word(s); repeatable (default: Beddington)",
     )
     listen_assistant.add_argument(
         "--no-speak", action="store_true", help="Print answers only, do not speak"
@@ -257,7 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--sensor-interval", type=float, default=3.0)
     live.add_argument(
         "--history-db",
-        default="~/.local/share/lullaby/sensors.db",
+        default="~/.local/share/beddington/sensors.db",
         help="SQLite file persisting derived sensor history (graphs survive restarts)",
     )
     live.add_argument(
@@ -275,7 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
         "night-digest",
         help="Summarise the night from the persisted sensor history (optionally speak it)",
     )
-    night.add_argument("--history-db", default="~/.local/share/lullaby/sensors.db")
+    night.add_argument("--history-db", default="~/.local/share/beddington/sensors.db")
     night.add_argument("--history-hours", type=float, default=12.0)
     night.add_argument(
         "--speak", action="store_true", help="Speak the digest aloud (Piper)"
@@ -523,9 +523,9 @@ def _transcribe(model: object, audio: object) -> str:
         no_speech_threshold=0.6,
         temperature=0.0,
         # Bias decoding toward the wake word + topics so marginal audio mangles
-        # them less ("Paddington" not "Vatican", "temperature" not "up virtual").
+        # them less ("Beddington"/"Paddington", "temperature" not "up virtual").
         initial_prompt=(
-            "Hey Paddington. Hi Beddington. What is the temperature, humidity, "
+            "Hey Beddington. Hi Paddington. What is the temperature, humidity, "
             "air pressure, brightness, or air quality? How was the night?"
         ),
     )
@@ -578,7 +578,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
 
         from .sensor_store import SensorStore
 
-        db_path = os.path.expanduser("~/.local/share/lullaby/sensors.db")
+        db_path = os.path.expanduser("~/.local/share/beddington/sensors.db")
         if os.path.exists(db_path):
             night_store = SensorStore(db_path)
     except Exception:
@@ -717,7 +717,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         spoken = speak(answer, speak_config)
                         if args.debug:
                             print(f"  [debug] speak: {spoken}")
-                        # Drop frames captured while we were speaking, so Lullaby
+                        # Drop frames captured while we were speaking, so Beddington
                         # never transcribes its own voice as a new command.
                         try:
                             while True:
@@ -732,7 +732,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
 def _ask_command(args: argparse.Namespace, config: AppConfig) -> int:
     question = " ".join(args.question).strip()
     if not question:
-        raise SystemExit("Ask a question, e.g. lullaby ask what is the humidity")
+        raise SystemExit("Ask a question, e.g. beddington ask what is the humidity")
     snapshot = _read_sensor_snapshot(build_sensor_readers(config.sensors))
     answer = answer_question(question, snapshot)
     print(answer)
@@ -1251,7 +1251,7 @@ def _resolve_live_view_token(explicit: str | None) -> str:
     import os
     import secrets
 
-    token_path = os.path.expanduser("~/.config/lullaby/liveview.token")
+    token_path = os.path.expanduser("~/.config/beddington/liveview.token")
     try:
         with open(token_path, encoding="utf-8") as handle:
             existing = handle.read().strip()
@@ -1278,7 +1278,7 @@ def _soothe_via_dashboard(cmd: dict[str, str], port: int = 8088) -> str:
 
     try:
         with open(
-            os.path.expanduser("~/.config/lullaby/liveview.token"), encoding="utf-8"
+            os.path.expanduser("~/.config/beddington/liveview.token"), encoding="utf-8"
         ) as handle:
             token = handle.read().strip()
     except OSError:
@@ -1487,7 +1487,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     url = f"http://{shown_ip}:{args.port}/?token={token}"
     overlay = "video + live room readings" if readings_provider else "video only"
 
-    print("Lullaby live view — LAN only, no Internet, no recording, no audio.")
+    print("Beddington live view — LAN only, no Internet, no recording, no audio.")
     if dual:
         print(
             f"  Day eye = camera {args.camera_num}, night eye = camera "

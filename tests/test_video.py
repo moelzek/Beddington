@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from lullaby import video
+from beddington import video
 
 
 def minimal_png(width: int, height: int) -> bytes:

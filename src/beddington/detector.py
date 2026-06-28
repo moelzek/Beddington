@@ -106,11 +106,11 @@ class YamNetTFLiteDetector:
 
 
 def default_model_path() -> Path:
-    configured = os.getenv("LULLABY_YAMNET_MODEL")
+    configured = os.getenv("BEDDINGTON_YAMNET_MODEL")
     if configured:
         return Path(configured).expanduser()
     cache_root = Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return cache_root / "lullaby" / "models" / MODEL_FILENAME
+    return cache_root / "beddington" / "models" / MODEL_FILENAME
 
 
 def ensure_model(model_path: Path | None = None) -> Path:
@@ -121,8 +121,8 @@ def ensure_model(model_path: Path | None = None) -> Path:
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading the official YAMNet TFLite model to {destination} ...")
-    request = urllib.request.Request(MODEL_URL, headers={"User-Agent": "lullaby/0.1"})
-    with tempfile.TemporaryDirectory(prefix="lullaby-yamnet-") as temp_dir:
+    request = urllib.request.Request(MODEL_URL, headers={"User-Agent": "beddington/0.1"})
+    with tempfile.TemporaryDirectory(prefix="beddington-yamnet-") as temp_dir:
         archive_path = Path(temp_dir) / "yamnet.tar.gz"
         with urllib.request.urlopen(request, timeout=90) as response:
             archive_path.write_bytes(response.read())

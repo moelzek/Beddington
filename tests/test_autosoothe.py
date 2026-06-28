@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lullaby.autosoothe import CryWatcher, read_state, write_state
+from beddington.autosoothe import CryWatcher, read_state, write_state
 
 
 def test_state_roundtrip(tmp_path: Path) -> None:

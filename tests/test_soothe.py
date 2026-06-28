@@ -6,9 +6,9 @@ import sys
 import time
 from pathlib import Path
 
-from lullaby import soothe
-from lullaby.config import SootheStepConfig
-from lullaby.soothe import SubprocessSoothePlayer
+from beddington import soothe
+from beddington.config import SootheStepConfig
+from beddington.soothe import SubprocessSoothePlayer
 
 
 class FakeProcess:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lullaby.fusion import FocusTracker, has_activity
+from beddington.fusion import FocusTracker, has_activity
 
 
 def test_has_activity() -> None:

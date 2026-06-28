@@ -1,4 +1,4 @@
-# Lullaby soothe assets
+# Beddington soothe assets
 
 These are synthetic local placeholder sounds for Tier 1 testing:
 

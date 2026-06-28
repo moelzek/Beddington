@@ -207,7 +207,7 @@ def capture_rpicam_visual_change(
         )
         return report
 
-    with tempfile.TemporaryDirectory(prefix="lullaby-camera-change-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="beddington-camera-change-") as temp_dir:
         before_path = Path(temp_dir) / "camera-change-before.bmp"
         after_path = Path(temp_dir) / "camera-change-after.bmp"
         return _capture_rpicam_pair_to_paths(
@@ -331,7 +331,7 @@ def capture_rpicam_still(
         )
         return report
 
-    with tempfile.TemporaryDirectory(prefix="lullaby-camera-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="beddington-camera-") as temp_dir:
         image_path = Path(temp_dir) / "camera-smoke.jpg"
         metadata_path = Path(temp_dir) / "camera-smoke-metadata.json"
         return _capture_to_paths(

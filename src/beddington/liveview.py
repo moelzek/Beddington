@@ -1,4 +1,4 @@
-"""LAN-only live camera view for Lullaby.
+"""LAN-only live camera view for Beddington.
 
 Serves a Motion-JPEG stream over plain HTTP so a phone on the *same WiFi* can
 watch the camera in a browser. Privacy-first by construction:
@@ -275,9 +275,9 @@ ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1
 ctx.strokeStyle="#4ea1ff";ctx.lineWidth=4;ctx.beginPath();
 p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
 ctx.stroke();}
-let curRot=parseInt(localStorage.getItem("lullabyRotate"));if(isNaN(curRot))curRot=ROTATE;
+let curRot=parseInt(localStorage.getItem("beddingtonRotate"));if(isNaN(curRot))curRot=ROTATE;
 function applyRot(){var ci=document.querySelector("#cam img");if(ci)ci.className=curRot?("rot"+curRot):"";}
-function cycleRot(){curRot=(curRot+90)%360;try{localStorage.setItem("lullabyRotate",curRot);}catch(e){}
+function cycleRot(){curRot=(curRot+90)%360;try{localStorage.setItem("beddingtonRotate",curRot);}catch(e){}
 applyRot();var rb=document.getElementById("rotbtn");if(rb)rb.textContent="⟳ "+curRot+"°";}
 applyRot();
 show("cam");poll();load();setInterval(load,5000);
@@ -334,7 +334,7 @@ def _dashboard_page(
 
 def build_viewer_html(
     stream_path: str,
-    title: str = "Lullaby live view",
+    title: str = "Beddington live view",
     readings_path: str | None = None,
     history_path: str | None = None,
     digest_path: str | None = None,
@@ -528,7 +528,7 @@ def _make_handler(
     rotate: int = 0,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
-        server_version = "LullabyLiveView/1"
+        server_version = "BeddingtonLiveView/1"
 
         def _provided_token(self) -> str:
             query = parse_qs(urlparse(self.path).query)
@@ -694,7 +694,7 @@ def serve_live_view(
     source: object | None = None,
     sources: dict[str, object] | None = None,
     mode_getter: Callable[[], str] | None = None,
-    title: str = "Lullaby live view",
+    title: str = "Beddington live view",
     readings_provider: Callable[[], dict[str, object]] | None = None,
     history_provider: Callable[[], dict[str, object]] | None = None,
     digest_provider: Callable[[], dict[str, object]] | None = None,

@@ -63,7 +63,7 @@ def build_narration_prompt(report: NightReport) -> str:
 
     fact_lines = "\n".join(f"- {fact}" for fact in facts)
     return (
-        "You are Lullaby, a baby-monitor companion giving a parent a brief spoken "
+        "You are Beddington, a baby-monitor companion giving a parent a brief spoken "
         "morning recap. Write 2 to 3 short, plain British English sentences and then stop.\n"
         "State only the derived facts below. Do not interpret, guess causes, judge, "
         "comfort, or comment on any numbers or scores. Mention the crying, the soothing "
@@ -103,7 +103,7 @@ def narrate(report: NightReport, config: NarratorConfig, digest_fallback: str) -
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "lullaby/0.1",
+            "User-Agent": "beddington/0.1",
         },
         method="POST",
     )
@@ -129,7 +129,7 @@ def speak(text: str, config: NarratorConfig) -> dict[str, Any]:
     if not text.strip():
         return {"spoken": False, "reason": "no_text"}
 
-    with tempfile.TemporaryDirectory(prefix="lullaby-voice-") as directory:
+    with tempfile.TemporaryDirectory(prefix="beddington-voice-") as directory:
         wav_path = Path(directory) / "narration.wav"
         synthesis = _synthesise(text, config, wav_path)
         if not synthesis["created"]:

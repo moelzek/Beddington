@@ -205,15 +205,15 @@ def load_config(path: Path | None = None) -> AppConfig:
         config,
         llm=replace(
             config.llm,
-            enabled=_env_bool("LULLABY_LLM_ENABLED", config.llm.enabled),
-            base_url=os.getenv("LULLABY_LLM_BASE_URL", config.llm.base_url),
-            model=os.getenv("LULLABY_LLM_MODEL", config.llm.model),
-            api_key=os.getenv("LULLABY_LLM_API_KEY", ""),
+            enabled=_env_bool("BEDDINGTON_LLM_ENABLED", config.llm.enabled),
+            base_url=os.getenv("BEDDINGTON_LLM_BASE_URL", config.llm.base_url),
+            model=os.getenv("BEDDINGTON_LLM_MODEL", config.llm.model),
+            api_key=os.getenv("BEDDINGTON_LLM_API_KEY", ""),
         ),
         soothe=replace(
             config.soothe,
-            enabled=_env_bool("LULLABY_SOOTHE_ENABLED", config.soothe.enabled),
-            player=os.getenv("LULLABY_SOOTHE_PLAYER", config.soothe.player),
+            enabled=_env_bool("BEDDINGTON_SOOTHE_ENABLED", config.soothe.enabled),
+            player=os.getenv("BEDDINGTON_SOOTHE_PLAYER", config.soothe.player),
         ),
     )
     _validate(config)

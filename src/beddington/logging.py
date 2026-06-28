@@ -49,7 +49,7 @@ def _contains_radar_vitals(report: NightReport) -> bool:
 
 def _readable_log(report: NightReport) -> str:
     lines = [
-        "Lullaby night log",
+        "Beddington night log",
         f"Source: {report.source}",
         f"Started: {report.started_at.isoformat()}",
         f"Detector: {report.detector}",

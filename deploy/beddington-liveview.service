@@ -1,35 +1,35 @@
-# Lullaby live-view dashboard (systemd USER service).
+# Beddington live-view dashboard (systemd USER service).
 #
 # Serves the LAN-only phone dashboard (camera + live sensor readings + per-sensor
 # graphs) so it is always available and survives reboots. LAN only, token
 # required, no recording, no audio.
 #
-# Install on the Pi (user "lab", repo at ~/Labie, venv at ~/Labie/.venv):
+# Install on the Pi (user "lab", repo at ~/Beddington, venv at ~/Beddington/.venv):
 #   mkdir -p ~/.config/systemd/user
-#   cp deploy/lullaby-liveview.service ~/.config/systemd/user/lullaby-liveview.service
+#   cp deploy/beddington-liveview.service ~/.config/systemd/user/beddington-liveview.service
 #   sudo loginctl enable-linger "$USER"        # run across reboots without a login
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now lullaby-liveview
+#   systemctl --user enable --now beddington-liveview
 #
 # The access token is generated once and persisted to
-# ~/.config/lullaby/liveview.token, so the phone URL stays the same across
+# ~/.config/beddington/liveview.token, so the phone URL stays the same across
 # restarts. Find the current URL with:  head -3 ~/liveview.log
 #
 # Manage:
-#   systemctl --user status lullaby-liveview
-#   systemctl --user restart lullaby-liveview
-#   systemctl --user stop lullaby-liveview     # frees the camera
+#   systemctl --user status beddington-liveview
+#   systemctl --user restart beddington-liveview
+#   systemctl --user stop beddington-liveview     # frees the camera
 #
-# Uses camera 0 by default. It shares the sensors with the Paddington assistant
+# Uses camera 0 by default. It shares the sensors with the Beddington assistant
 # (both can run at once). Do NOT port-forward port 8088 — this is LAN only.
 
 [Unit]
-Description=Lullaby live-view dashboard
+Description=Beddington live-view dashboard
 After=default.target network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/lab/Labie
+WorkingDirectory=/home/lab/Beddington
 Environment=PYTHONUNBUFFERED=1
 # So the dashboard soothe controls can play through the speaker (ffplay via SDL).
 Environment=SDL_AUDIODRIVER=pulse
@@ -37,7 +37,7 @@ Environment=SDL_AUDIODRIVER=pulse
 # which left rpicam zombied and the air sensor unread until a manual restart.
 # Wait for the subsystems to settle first.
 ExecStartPre=/bin/sleep 25
-ExecStart=/home/lab/Labie/.venv/bin/python -m lullaby --config /home/lab/Labie/config/demo.toml live-view --port 8088 --width 640 --height 480 --fps 12 --night-camera-num 1 --rotate 90
+ExecStart=/home/lab/Beddington/.venv/bin/python -m beddington --config /home/lab/Beddington/config/demo.toml live-view --port 8088 --width 640 --height 480 --fps 12 --night-camera-num 1 --rotate 90
 StandardOutput=append:/home/lab/liveview.log
 StandardError=append:/home/lab/liveview.log
 Restart=on-failure

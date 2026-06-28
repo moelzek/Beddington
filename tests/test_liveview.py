@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.request
 
-from lullaby.liveview import (
+from beddington.liveview import (
     FrameBroker,
     build_viewer_html,
     history_series,
@@ -126,7 +126,7 @@ def test_history_series_skips_missing_values() -> None:
 
 
 def test_day_night_mode_hysteresis() -> None:
-    from lullaby.liveview import day_night_mode
+    from beddington.liveview import day_night_mode
 
     assert day_night_mode(2.0, "day") == "night"  # clearly dark
     assert day_night_mode(200.0, "night") == "day"  # clearly lit

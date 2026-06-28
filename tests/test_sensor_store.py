@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lullaby.sensor_store import SensorStore
+from beddington.sensor_store import SensorStore
 
 
 def test_store_append_and_series(tmp_path: Path) -> None:
