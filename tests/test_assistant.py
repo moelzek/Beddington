@@ -242,6 +242,18 @@ def test_answer_distance() -> None:
     assert "120 centimetres" in answer_question("how far away is the baby?", SNAPSHOT)
 
 
+def test_is_night_question() -> None:
+    from lullaby.assistant import is_night_question
+
+    assert is_night_question("how was the night")
+    assert is_night_question("Paddington, give me the night summary")
+    assert is_night_question("what happened overnight")
+    assert is_night_question("recap please")
+    # current-reading questions are not night questions
+    assert not is_night_question("what is the temperature")
+    assert not is_night_question("is anyone there")
+
+
 def test_answer_fallback_when_unknown() -> None:
     assert "say it again" in answer_question(
         "what is the meaning of life?", SNAPSHOT

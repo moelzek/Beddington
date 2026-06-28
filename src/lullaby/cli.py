@@ -15,7 +15,7 @@ from .audio import (
     RealtimeWavFileAudioSource,
     WavFileAudioSource,
 )
-from .assistant import answer_question
+from .assistant import answer_question, is_night_question
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
@@ -512,7 +512,7 @@ def _transcribe(model: object, audio: object) -> str:
         # them less ("Paddington" not "Vatican", "temperature" not "up virtual").
         initial_prompt=(
             "Hey Paddington. What is the temperature, humidity, air pressure, "
-            "brightness, or air quality?"
+            "brightness, or air quality? How was the night?"
         ),
     )
     return " ".join(segment.text for segment in segments).strip()
@@ -556,6 +556,19 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
             reader.read()
         except Exception:
             pass
+    # Read-only handle on the persisted history so "how was the night?" can be
+    # answered from it (the live-view service is the writer).
+    night_store = None
+    try:
+        import os
+
+        from .sensor_store import SensorStore
+
+        db_path = os.path.expanduser("~/.local/share/lullaby/sensors.db")
+        if os.path.exists(db_path):
+            night_store = SensorStore(db_path)
+    except Exception:
+        night_store = None
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
 
@@ -665,8 +678,16 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         print(f'  [debug] transcript="{text}" -> question={question!r}')
                     if question is None:
                         continue  # no wake word — ignore silently
-                    snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
-                    answer = answer_question(question, snapshot)
+                    if is_night_question(question) and night_store is not None:
+                        from .night_digest import summarise_night
+
+                        digest = summarise_night(
+                            night_store.series(time.time() - 12 * 3600)
+                        )
+                        answer = digest.replace("• ", "").replace("\n", " ")
+                    else:
+                        snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
+                        answer = answer_question(question, snapshot)
                     print(f'  heard: "{question}"  ->  {answer}')
                     if not args.no_speak:
                         spoken = speak(answer, speak_config)

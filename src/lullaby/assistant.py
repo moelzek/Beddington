@@ -240,6 +240,20 @@ def _room_overview(snapshot: dict[str, object]) -> str:
     return "Here's the room: " + "; ".join(parts) + "."
 
 
+# Questions that ask for the night recap rather than a current reading. The
+# listen loop answers these from the persisted sensor history (night_digest.py),
+# not the live snapshot.
+_NIGHT_WORDS = (
+    "the night", "overnight", "last night", "night summary", "summary",
+    "recap", "digest", "how was the night", "how did the night",
+)
+
+
+def is_night_question(question: str) -> bool:
+    """True if the question asks for the night recap (answered from history)."""
+    return _mentions(normalize_transcript(question), *_NIGHT_WORDS)
+
+
 def answer_question(question: str, snapshot: dict[str, object]) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
     q = normalize_transcript(question)
