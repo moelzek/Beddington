@@ -23,11 +23,41 @@ MODEL_SHA256 = "10c95ea3eb9a7bb4cb8bddf6feb023250381008177ac162ce169694d05c317de
 MODEL_FILENAME = "yamnet-classification-tflite-v1.tflite"
 CRY_LABEL = "Baby cry, infant cry"
 
+# Curated non-cry baby/room sounds, mapped to the exact YAMNet labels. Crying has
+# its own deterministic detector; this is the "what else did the mic hear" diary.
+BABY_SOUND_LABELS: dict[str, tuple[str, ...]] = {
+    "crying": ("Baby cry, infant cry", "Crying, sobbing"),
+    "fussing": ("Whimper",),
+    "cooing": ("Coo", "Babbling", "Gurgling"),
+    "laughing": ("Baby laughter", "Laughter", "Giggle", "Chuckle, chortle"),
+    "talking": ("Speech", "Child speech, kid speaking"),
+    "snoring": ("Snoring",),
+    "coughing": ("Cough",),
+    "sneezing": ("Sneeze",),
+    "hiccup": ("Hiccup",),
+}
+
 
 class CryDetector(Protocol):
     name: str
 
     def score(self, samples: np.ndarray) -> float: ...
+
+
+def dominant_baby_sound(
+    category_scores: dict[str, float],
+    threshold: float,
+    exclude: tuple[str, ...] = (),
+) -> str | None:
+    """Return the highest-scoring sound category strictly above threshold."""
+    best: str | None = None
+    best_score = threshold
+    for category, score in category_scores.items():
+        if category in exclude:
+            continue
+        if score > best_score:
+            best, best_score = category, score
+    return best
 
 
 class YamNetTFLiteDetector:
@@ -44,9 +74,15 @@ class YamNetTFLiteDetector:
             self._input_index, [WINDOW_SAMPLES], strict=True
         )
         self._interpreter.allocate_tensors()
-        self._cry_index = _read_labels(self.model_path).index(CRY_LABEL)
+        labels = _read_labels(self.model_path)
+        self._cry_index = labels.index(CRY_LABEL)
+        self._sound_indices: dict[str, list[int]] = {}
+        for category, names in BABY_SOUND_LABELS.items():
+            indices = [labels.index(name) for name in names if name in labels]
+            if indices:
+                self._sound_indices[category] = indices
 
-    def score(self, samples: np.ndarray) -> float:
+    def _infer(self, samples: np.ndarray) -> np.ndarray:
         if samples.shape != (WINDOW_SAMPLES,):
             raise ValueError(
                 f"YAMNet expects {WINDOW_SAMPLES} samples; received {samples.shape}"
@@ -55,8 +91,18 @@ class YamNetTFLiteDetector:
             self._input_index, samples.astype(np.float32, copy=False)
         )
         self._interpreter.invoke()
-        scores = self._interpreter.get_tensor(self._output_index)
-        return float(scores[0, self._cry_index])
+        return self._interpreter.get_tensor(self._output_index)[0]
+
+    def score(self, samples: np.ndarray) -> float:
+        return float(self._infer(samples)[self._cry_index])
+
+    def classify(self, samples: np.ndarray) -> dict[str, float]:
+        """Score each curated baby-sound category for this window (one inference)."""
+        scores = self._infer(samples)
+        return {
+            category: max(float(scores[index]) for index in indices)
+            for category, indices in self._sound_indices.items()
+        }
 
 
 def default_model_path() -> Path:

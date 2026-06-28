@@ -59,6 +59,7 @@ def build_narration_prompt(report: NightReport) -> str:
 
     facts.append(_outcome_fact(report.events, len(notifications)))
     facts.extend(_environment_facts(report.events))
+    facts.extend(_sound_facts(report.events))
 
     fact_lines = "\n".join(f"- {fact}" for fact in facts)
     return (
@@ -66,8 +67,8 @@ def build_narration_prompt(report: NightReport) -> str:
         "morning recap. Write 2 to 3 short, plain British English sentences and then stop.\n"
         "State only the derived facts below. Do not interpret, guess causes, judge, "
         "comfort, or comment on any numbers or scores. Mention the crying, the soothing "
-        "and its outcome, and any room temperature, humidity, brightness, presence, and "
-        "movement count given.\n"
+        "and its outcome, any room temperature, humidity, brightness, presence, and "
+        "movement count given, and any other sounds heard.\n"
         "Treat the room temperature, humidity, brightness, presence, and movement as "
         "best-guess context only.\n"
         "Do not invent, add, or guess any value. If a temperature, humidity, brightness, "
@@ -193,6 +194,23 @@ def _outcome_fact(events: tuple[Event, ...], notification_count: int) -> str:
         return f"Parent notification outcome: {notification_count} {word} sent."
 
     return "Parent notification outcome: no parent notification sent."
+
+
+def _sound_facts(events: tuple[Event, ...]) -> list[str]:
+    counts: dict[str, int] = {}
+    for event in events:
+        if event.kind != "sound_observed":
+            continue
+        sound = event.details.get("sound")
+        if isinstance(sound, str):
+            counts[sound] = counts.get(sound, 0) + 1
+    if not counts:
+        return []
+    parts = [
+        f"{sound} {count} time{'' if count == 1 else 's'}"
+        for sound, count in sorted(counts.items(), key=lambda item: -item[1])
+    ]
+    return [f"Other sounds heard: {', '.join(parts)}."]
 
 
 def _environment_facts(events: tuple[Event, ...]) -> list[str]:

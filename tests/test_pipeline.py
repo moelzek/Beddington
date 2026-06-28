@@ -13,8 +13,10 @@ from lullaby.config import (
     DetectionConfig,
     NotificationConfig,
     QuietCheckConfig,
+    SensorsConfig,
     SootheConfig,
     SootheStepConfig,
+    SoundsConfig,
 )
 from lullaby.models import AudioWindow
 from lullaby.pipeline import run_pipeline
@@ -443,3 +445,36 @@ def test_soothe_unresolved_when_recording_ends_before_wait(tmp_path: Path) -> No
     assert result.report.events[2].details == {
         "reason": "recording_ended_before_escalation"
     }
+
+
+def test_pipeline_records_non_cry_sounds(tmp_path: Path) -> None:
+    scores = [0.1, 0.1, 0.1, 0.1]
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        sensors=SensorsConfig(sample_interval_seconds=0.5),
+        sounds=SoundsConfig(enabled=True, threshold=0.2),
+    )
+
+    def classifier(samples: np.ndarray) -> dict[str, float]:
+        del samples
+        return {"crying": 0.9, "cooing": 0.6, "snoring": 0.05}
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=FakeNotifier(),
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 28, tzinfo=UTC),
+        sound_classifier=classifier,
+    )
+
+    sounds = [e for e in result.report.events if e.kind == "sound_observed"]
+    assert sounds
+    # Crying is excluded (it has its own detector); cooing is the recorded sound.
+    assert all(event.details["sound"] == "cooing" for event in sounds)

@@ -18,6 +18,10 @@ notification_cooldown_seconds = 20
 [notifications]
 desktop = false
 
+[sounds]
+enabled = true
+threshold = 0.3
+
 [soothe]
 enabled = true
 player = "none"
@@ -89,6 +93,8 @@ gpio_pin = 4
     assert config.narrator.temperature == 0.2
     assert config.narrator.voice_enabled is True
     assert config.narrator.voice_engine == "piper"
+    assert config.sounds.enabled is True
+    assert config.sounds.threshold == 0.3
     assert config.sensors.sample_interval_seconds == 3.5
     assert config.sensors.air.enabled is True
     assert config.sensors.air.i2c_address == 0x76
@@ -255,4 +261,12 @@ def test_radar_requires_host_when_enabled(tmp_path: Path) -> None:
     path.write_text("[sensors.radar]\nenabled = true\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="sensors.radar.host"):
+        load_config(path)
+
+
+def test_sounds_threshold_must_be_in_range(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[sounds]\nthreshold = 1.5\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sounds.threshold"):
         load_config(path)

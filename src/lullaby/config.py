@@ -20,6 +20,14 @@ class NotificationConfig:
 
 
 @dataclass(frozen=True)
+class SoundsConfig:
+    # Record non-cry baby/room sounds the mic hears (cooing, laughter, snoring...)
+    # as observer-only context. Off by default; never affects cry detection.
+    enabled: bool = False
+    threshold: float = 0.2
+
+
+@dataclass(frozen=True)
 class LlmConfig:
     enabled: bool = False
     base_url: str = ""
@@ -116,6 +124,7 @@ class AppConfig:
     llm: LlmConfig = LlmConfig()
     narrator: NarratorConfig = NarratorConfig()
     sensors: SensorsConfig = SensorsConfig()
+    sounds: SoundsConfig = SoundsConfig()
     soothe: SootheConfig = SootheConfig()
 
 
@@ -136,6 +145,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         llm = raw.get("llm", {})
         narrator = raw.get("narrator", {})
         sensors = raw.get("sensors", {})
+        sounds = raw.get("sounds", {})
         soothe = raw.get("soothe", {})
         raw_soothe_presets = soothe.get("presets")
         raw_soothe_steps = soothe.get("steps")
@@ -180,6 +190,7 @@ def load_config(path: Path | None = None) -> AppConfig:
             ),
             narrator=_load_narrator(narrator, config.narrator),
             sensors=_load_sensors(sensors, config.sensors),
+            sounds=_load_sounds(sounds, config.sounds),
             soothe=SootheConfig(
                 enabled=bool(soothe.get("enabled", config.soothe.enabled)),
                 player=str(soothe.get("player", config.soothe.player)),
@@ -329,6 +340,18 @@ def _load_narrator(
     )
 
 
+def _load_sounds(
+    raw_sounds: object,
+    default: SoundsConfig,
+) -> SoundsConfig:
+    if not isinstance(raw_sounds, dict):
+        return default
+    return SoundsConfig(
+        enabled=bool(raw_sounds.get("enabled", default.enabled)),
+        threshold=float(raw_sounds.get("threshold", default.threshold)),
+    )
+
+
 def _load_sensors(
     raw_sensors: object,
     default: SensorsConfig,
@@ -471,3 +494,5 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("sensors.radar.host must be set when sensors.radar.enabled")
     if not 1 <= sensors.radar.port <= 65535:
         raise ValueError("sensors.radar.port must be a valid TCP port")
+    if not 0.0 <= config.sounds.threshold <= 1.0:
+        raise ValueError("sounds.threshold must be between 0 and 1")

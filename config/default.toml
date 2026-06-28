@@ -8,6 +8,13 @@ notification_cooldown_seconds = 30.0
 [notifications]
 desktop = true
 
+[sounds]
+# Record non-cry baby/room sounds the mic hears (cooing, laughter, snoring, etc.)
+# as observer-only context for the night story. Off by default; the deterministic
+# cry detection is unaffected.
+enabled = false
+threshold = 0.2
+
 [soothe]
 # Tier 1 is explicit. Keep this off unless you want Lullaby to play the
 # selected preset before notifying.

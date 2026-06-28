@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .audio import AudioSource
 from .config import AppConfig
-from .detector import CryDetector
+from .detector import CryDetector, dominant_baby_sound
 from .digest import build_digest
 from .llm import polish_digest
 from .logging import OutputPaths, write_outputs
@@ -35,6 +35,7 @@ def run_pipeline(
     use_llm: bool | None = None,
     soothe_player: SoothePlayer | None = None,
     sensor_readers: Sequence[SensorReader] = (),
+    sound_classifier: Callable[..., dict[str, float]] | None = None,
 ) -> RunResult:
     started_at = started_at or datetime.now(UTC)
     if started_at.tzinfo is None:
@@ -95,20 +96,34 @@ def run_pipeline(
                 )
             )
         if (
-            sensor_readers
+            (sensor_readers or sound_classifier is not None)
             and window.offset_seconds + 1e-9 >= next_sensor_sample_offset
         ):
-            readings = _read_sensor_sample(sensor_readers)
-            if readings:
-                events.append(
-                    Event(
-                        kind="environment_sample",
-                        occurred_at=started_at
-                        + timedelta(seconds=window.offset_seconds),
-                        offset_seconds=window.offset_seconds,
-                        details=readings,
+            occurred_at = started_at + timedelta(seconds=window.offset_seconds)
+            if sensor_readers:
+                readings = _read_sensor_sample(sensor_readers)
+                if readings:
+                    events.append(
+                        Event(
+                            kind="environment_sample",
+                            occurred_at=occurred_at,
+                            offset_seconds=window.offset_seconds,
+                            details=readings,
+                        )
                     )
+            if sound_classifier is not None:
+                sound = _classify_window_sound(
+                    sound_classifier, window.samples, config.sounds.threshold
                 )
+                if sound is not None:
+                    events.append(
+                        Event(
+                            kind="sound_observed",
+                            occurred_at=occurred_at,
+                            offset_seconds=window.offset_seconds,
+                            details={"sound": sound},
+                        )
+                    )
             while window.offset_seconds + 1e-9 >= next_sensor_sample_offset:
                 next_sensor_sample_offset += sensor_sample_interval
 
@@ -160,6 +175,19 @@ def run_pipeline(
         )
     paths = write_outputs(output_dir, report, digest)
     return RunResult(report=report, digest=digest, paths=paths)
+
+
+def _classify_window_sound(
+    classifier: Callable[..., dict[str, float]],
+    samples: object,
+    threshold: float,
+) -> str | None:
+    try:
+        scores = classifier(samples)
+    except Exception:
+        return None
+    # Crying has its own deterministic detector; this diary is non-cry sounds.
+    return dominant_baby_sound(scores, threshold, exclude=("crying",))
 
 
 def _read_sensor_sample(

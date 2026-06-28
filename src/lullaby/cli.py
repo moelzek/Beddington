@@ -119,6 +119,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to run; 0 (default) runs until Ctrl-C",
     )
     sensors_live.add_argument("--interval", type=float, default=3.0)
+    sounds_live = subparsers.add_parser(
+        "sounds-live",
+        help="Live readout of what the mic hears (cooing, laughter, snoring, cry...)",
+    )
+    sounds_live.add_argument("--seconds", type=float, default=30.0)
+    sounds_live.add_argument("--device")
+    sounds_live.add_argument("--model", type=Path)
+    sounds_live.add_argument(
+        "--threshold",
+        type=float,
+        help="Min score to report a sound (defaults to [sounds].threshold)",
+    )
     camera = subparsers.add_parser(
         "camera-smoke",
         help="Run a local camera or image metadata smoke test",
@@ -202,6 +214,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _radar_vitals_command(args, config)
     if args.command == "sensors-live":
         return _sensors_live_command(args, config)
+    if args.command == "sounds-live":
+        return _sounds_live_command(args, config)
     if args.command == "camera-smoke":
         return _camera_smoke_command(args)
     if args.command == "visual-change":
@@ -233,6 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         started_at=args.started_at,
         use_llm=args.llm,
         sensor_readers=build_sensor_readers(config.sensors),
+        sound_classifier=detector.classify if config.sounds.enabled else None,
     )
     spoken_text = result.digest
     narrator_config = config.narrator
@@ -345,6 +360,35 @@ def _sensors_live_command(args: argparse.Namespace, config: AppConfig) -> int:
             elapsed = int(time.monotonic() - start)
             print(f"  [{elapsed:>5}s] {_format_sensor_line(merged)}")
             time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("Stopped.")
+    return 0
+
+
+def _sounds_live_command(args: argparse.Namespace, config: AppConfig) -> int:
+    if args.seconds <= 0:
+        raise SystemExit("--seconds must be positive")
+    threshold = (
+        args.threshold if args.threshold is not None else config.sounds.threshold
+    )
+    detector = YamNetTFLiteDetector(args.model)
+    source = MicrophoneAudioSource(args.seconds, args.device)
+    print(f"Listening for {args.seconds:g}s — make sounds near the mic (Ctrl-C to stop).")
+    try:
+        for window in source.windows():
+            scores = detector.classify(window.samples)
+            heard = sorted(
+                ((cat, score) for cat, score in scores.items() if score >= threshold),
+                key=lambda item: -item[1],
+            )
+            if heard:
+                label = ", ".join(f"{cat} {score:.2f}" for cat, score in heard[:3])
+            elif scores:
+                top_cat, top_score = max(scores.items(), key=lambda item: item[1])
+                label = f"(quiet — loudest: {top_cat} {top_score:.2f})"
+            else:
+                label = "(no sound categories available)"
+            print(f"  [{window.offset_seconds:6.1f}s] {label}")
     except KeyboardInterrupt:
         print("Stopped.")
     return 0
