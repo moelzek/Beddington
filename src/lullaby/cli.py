@@ -8,7 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
-from .audio import MicrophoneAudioSource, WavFileAudioSource
+from .audio import (
+    MicrophoneAudioSource,
+    RealtimeWavFileAudioSource,
+    WavFileAudioSource,
+)
 from .config import AppConfig, SootheStepConfig, load_config
 from .detector import YamNetTFLiteDetector, ensure_model
 from .digest import build_digest
@@ -37,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     analyze = subparsers.add_parser("analyze", help="Analyse a WAV file")
     analyze.add_argument("wav", type=Path)
+    analyze.add_argument(
+        "--realtime",
+        action="store_true",
+        help="Feed the WAV through the pipeline at real-time pace (live-style demo)",
+    )
     _add_run_options(analyze)
 
     listen = subparsers.add_parser("listen", help="Listen to a microphone")
@@ -154,7 +163,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "analyze":
         if not args.wav.exists():
             raise SystemExit(f"WAV file not found: {args.wav}")
-        source = WavFileAudioSource(args.wav)
+        source = (
+            RealtimeWavFileAudioSource(args.wav)
+            if getattr(args, "realtime", False)
+            else WavFileAudioSource(args.wav)
+        )
     else:
         source = MicrophoneAudioSource(args.seconds, args.device)
 

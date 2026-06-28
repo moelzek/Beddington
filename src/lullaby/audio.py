@@ -41,6 +41,33 @@ class WavFileAudioSource:
         yield from iter_windows(self._waveform)
 
 
+class RealtimeWavFileAudioSource:
+    """Plays a WAV through the pipeline at real-time (wall-clock) pace.
+
+    Same windows as :class:`WavFileAudioSource`, but each window is held back
+    until its real-time offset. This lets soothe playback and quiet-check
+    windows run for their real duration without relying on the live microphone
+    capture path. Useful for deterministic, repeatable live-style demos.
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.name = f"realtime:{path}"
+        self._waveform = read_wav(path)
+
+    @property
+    def duration_seconds(self) -> float:
+        return len(self._waveform) / SAMPLE_RATE
+
+    def windows(self) -> Iterator[AudioWindow]:
+        started_at = time.monotonic()
+        for window in iter_windows(self._waveform):
+            delay = (started_at + window.offset_seconds) - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            yield window
+
+
 class MicrophoneAudioSource:
     """Real-time 16 kHz mono microphone windows using optional sounddevice."""
 
@@ -68,13 +95,12 @@ class MicrophoneAudioSource:
         blocks: queue.Queue[np.ndarray] = queue.Queue()
 
         def callback(indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
+            # Keep the audio thread light: just copy + enqueue the raw block.
+            # Resampling happens on the consumer thread to avoid input overflow.
             del frames, time_info
             if status:
                 print(f"Microphone warning: {status}")
-            block = indata[:, 0].astype(np.float32, copy=True)
-            if input_sample_rate != SAMPLE_RATE:
-                block = _resample(block, input_sample_rate, SAMPLE_RATE)
-            blocks.put(block)
+            blocks.put(indata[:, 0].astype(np.float32, copy=True))
 
         buffer = np.empty(0, dtype=np.float32)
         offset = 0.0
@@ -82,6 +108,8 @@ class MicrophoneAudioSource:
 
         def add_block(block: np.ndarray) -> Iterator[AudioWindow]:
             nonlocal buffer, offset
+            if input_sample_rate != SAMPLE_RATE:
+                block = _resample(block, input_sample_rate, SAMPLE_RATE)
             buffer = np.concatenate((buffer, block))
             while len(buffer) >= WINDOW_SAMPLES:
                 yield AudioWindow(offset, buffer[:WINDOW_SAMPLES].copy())
@@ -94,6 +122,7 @@ class MicrophoneAudioSource:
             dtype="float32",
             blocksize=input_block_samples,
             device=self.device,
+            latency="high",
             callback=callback,
         ):
             while time.monotonic() < deadline:
