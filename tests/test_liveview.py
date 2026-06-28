@@ -80,6 +80,18 @@ def test_build_viewer_html_tabbed_dashboard() -> None:
     assert "Camera" in html
 
 
+def test_build_viewer_html_has_night_tab_when_digest() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        digest_path="/digest.json?token=t",
+    )
+    assert "/digest.json?token=t" in html
+    assert "Night" in html
+    assert "loadDigest" in html
+
+
 def test_history_series_converts_bool_and_scale() -> None:
     hist = [
         (100.0, {"room_temperature_c": 21.0, "room_gas_resistance_ohms": 50000, "person_present": True}),

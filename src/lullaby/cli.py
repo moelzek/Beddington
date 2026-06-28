@@ -257,6 +257,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep only in-memory history (do not persist to disk)",
     )
+    night = subparsers.add_parser(
+        "night-digest",
+        help="Summarise the night from the persisted sensor history (optionally speak it)",
+    )
+    night.add_argument("--history-db", default="~/.local/share/lullaby/sensors.db")
+    night.add_argument("--history-hours", type=float, default=12.0)
+    night.add_argument(
+        "--speak", action="store_true", help="Speak the digest aloud (Piper)"
+    )
     return parser
 
 
@@ -311,6 +320,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _camera_change_command(args)
     if args.command == "live-view":
         return _live_view_command(args, config)
+    if args.command == "night-digest":
+        return _night_digest_command(args, config)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -1115,6 +1126,23 @@ def _resolve_live_view_token(explicit: str | None) -> str:
     return token
 
 
+def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:
+    import os
+
+    from .night_digest import summarise_night
+    from .sensor_store import SensorStore
+
+    store = SensorStore(os.path.expanduser(args.history_db))
+    window = max(0.1, args.history_hours) * 3600
+    text = summarise_night(store.series(time.time() - window))
+    store.close()
+    print(text)
+    if args.speak:
+        spoken = text.replace("• ", "").replace("\n", " ")
+        speak(spoken, replace(config.narrator, enabled=True, voice_enabled=True))
+    return 0
+
+
 def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
 
@@ -1134,6 +1162,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     sampler: _SensorSampler | None = None
     readings_provider = None
     history_provider = None
+    digest_provider = None
     if not args.no_sensors:
         import os
 
@@ -1153,9 +1182,14 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             sampler.start()
             readings_provider = lambda: _dashboard_fields(sampler.latest())  # noqa: E731
             if store is not None:
+                from .night_digest import summarise_night
+
                 window = max(0.1, args.history_hours) * 3600
                 history_provider = (  # noqa: E731
                     lambda: store.series(time.time() - window)
+                )
+                digest_provider = (  # noqa: E731
+                    lambda: {"text": summarise_night(store.series(time.time() - window))}
                 )
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
@@ -1178,6 +1212,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             source=source,
             readings_provider=readings_provider,
             history_provider=history_provider,
+            digest_provider=digest_provider,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")

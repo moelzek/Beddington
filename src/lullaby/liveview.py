@@ -144,6 +144,7 @@ padding:10px 14px;background:rgba(0,0,0,.5)}
 .chartwrap{padding:14px}
 .cur{font-size:24px;font-weight:700;margin:4px 0 12px}
 canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-radius:8px}
+.digest{white-space:pre-wrap;font-size:15px;line-height:1.7;color:#ddd;margin:0}
 .note{color:#777;padding:12px 14px;font-size:12px}
 </style></head><body>
 <div id="tabs"></div>
@@ -154,22 +155,30 @@ canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-r
 <div id="charts"></div>
 <div class="note">LAN only · no recording · no audio</div>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",SENSORS=__SENSORS__;
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SENSORS=__SENSORS__;
 let active="cam",HIST={};
 const tabs=document.getElementById("tabs"),charts=document.getElementById("charts");
 function tab(id,label){const b=document.createElement("button");b.textContent=label;
 b.dataset.tab=id;b.onclick=function(){show(id)};tabs.appendChild(b);}
 tab("cam","Camera");
+if(DIGEST){tab("night","Night");
+const np=document.createElement("div");np.className="panel";np.id="p-night";
+np.innerHTML='<div class="chartwrap"><pre id="digest-text" class="digest">Loading…</pre></div>';
+charts.appendChild(np);}
 SENSORS.forEach(function(s){tab(s.key,s.label);
 const p=document.createElement("div");p.className="panel";p.id="p-"+s.key;
 p.innerHTML='<div class="chartwrap"><div class="cur" id="cur-'+s.key+'">collecting…</div>'
 +'<canvas id="cv-'+s.key+'"></canvas></div>';charts.appendChild(p);});
+async function loadDigest(){const e=document.getElementById("digest-text");if(!e)return;
+try{const r=await fetch(DIGEST,{cache:"no-store"});if(r.ok){const d=await r.json();
+e.textContent=d.text||"No summary yet.";}else{e.textContent="No summary yet.";}}
+catch(x){e.textContent="No summary yet.";}}
 function show(id){active=id;
 document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("active")});
 document.getElementById(id==="cam"?"cam":"p-"+id).classList.add("active");
 document.querySelectorAll("#tabs button").forEach(function(b){
 b.classList.toggle("active",b.dataset.tab===id)});
-if(id!=="cam")draw();}
+if(id==="night")loadDigest();else if(id!=="cam")draw();}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
 async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
 if(r.ok){const d=await r.json();const el=document.getElementById("readings");el.innerHTML="";
@@ -208,6 +217,7 @@ def _dashboard_page(
     stream_path: str,
     readings_path: str,
     history_path: str,
+    digest_path: str,
     sensors: tuple[dict[str, object], ...],
     title: str,
 ) -> str:
@@ -227,6 +237,7 @@ def _dashboard_page(
         .replace("__STREAM__", stream_path)
         .replace("__READINGS__", readings_path)
         .replace("__HISTORY__", history_path)
+        .replace("__DIGEST__", digest_path)
         .replace("__SENSORS__", spec)
     )
 
@@ -236,17 +247,19 @@ def build_viewer_html(
     title: str = "Lullaby live view",
     readings_path: str | None = None,
     history_path: str | None = None,
+    digest_path: str | None = None,
     sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
     With ``history_path`` it renders the full tabbed dashboard (a Camera tab plus
-    one graph tab per sensor). With only ``readings_path`` it renders the simple
-    bottom-overlay. With neither it is video only.
+    one graph tab per sensor, and a Night tab when ``digest_path`` is given). With
+    only ``readings_path`` it renders the simple bottom-overlay. With neither it
+    is video only.
     """
     if history_path:
         return _dashboard_page(
-            stream_path, readings_path or "", history_path, sensors, title
+            stream_path, readings_path or "", history_path, digest_path or "", sensors, title
         )
     overlay = ""
     script = ""
@@ -401,6 +414,7 @@ def _make_handler(
     title: str,
     readings_provider: Callable[[], dict[str, object]] | None = None,
     history_provider: Callable[[], dict[str, object]] | None = None,
+    digest_provider: Callable[[], dict[str, object]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "LullabyLiveView/1"
@@ -427,18 +441,27 @@ def _make_handler(
                 history_path = (
                     f"/history.json?token={token}" if history_provider else None
                 )
+                digest_path = (
+                    f"/digest.json?token={token}" if digest_provider else None
+                )
                 body = build_viewer_html(
-                    f"/stream.mjpg?token={token}", title, readings_path, history_path
+                    f"/stream.mjpg?token={token}",
+                    title,
+                    readings_path,
+                    history_path,
+                    digest_path=digest_path,
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-            elif path in ("/readings.json", "/history.json"):
-                provider = (
-                    readings_provider if path == "/readings.json" else history_provider
-                )
+            elif path in ("/readings.json", "/history.json", "/digest.json"):
+                provider = {
+                    "/readings.json": readings_provider,
+                    "/history.json": history_provider,
+                    "/digest.json": digest_provider,
+                }[path]
                 payload = provider() if provider else {}
                 body = json.dumps(payload).encode()
                 self.send_response(200)
@@ -484,18 +507,22 @@ def serve_live_view(
     title: str = "Lullaby live view",
     readings_provider: Callable[[], dict[str, object]] | None = None,
     history_provider: Callable[[], dict[str, object]] | None = None,
+    digest_provider: Callable[[], dict[str, object]] | None = None,
 ) -> None:
     """Serve the live view until interrupted. ``source`` must expose
     ``frames() -> Iterator[bytes]`` and ``close()`` (RpicamFrameSource or a fake).
 
     ``readings_provider`` returns the latest readings (``/readings.json``, shown in
     the overlay); ``history_provider`` returns the per-sensor time series
-    (``/history.json``, drawn in the graph tabs).
+    (``/history.json``, drawn in the graph tabs); ``digest_provider`` returns the
+    night summary (``/digest.json``, shown in the Night tab).
     """
     broker = FrameBroker()
     pump = threading.Thread(target=_pump, args=(source, broker), daemon=True)
     pump.start()
-    handler = _make_handler(broker, token, title, readings_provider, history_provider)
+    handler = _make_handler(
+        broker, token, title, readings_provider, history_provider, digest_provider
+    )
     httpd = ThreadingHTTPServer((host, port), handler)
     try:
         httpd.serve_forever()
