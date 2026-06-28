@@ -239,6 +239,40 @@ def test_serve_live_view_serves_readings_when_provider_given() -> None:
         source.close()
 
 
+def test_serve_live_view_dual_camera_switches_on_mode() -> None:
+    day = _FakeFrameSource([JPEG_A])
+    night = _FakeFrameSource([JPEG_B])
+    token = "tk"
+    port = _free_port()
+    mode = {"v": "day"}
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "sources": {"day": day, "night": night},
+            "mode_getter": lambda: mode["v"],
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        stream = urllib.request.urlopen(f"{base}/stream.mjpg?token={token}", timeout=2)
+        assert b"AAAA" in stream.read(120)  # day eye
+        stream.close()
+        mode["v"] = "night"
+        time.sleep(0.2)
+        stream2 = urllib.request.urlopen(f"{base}/stream.mjpg?token={token}", timeout=2)
+        assert b"BBBBBB" in stream2.read(120)  # night eye
+        stream2.close()
+    finally:
+        day.close()
+        night.close()
+
+
 def test_serve_live_view_serves_history_json() -> None:
     source = _FakeFrameSource([JPEG_A])
     token = "tk"

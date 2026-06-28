@@ -221,6 +221,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live.add_argument("--port", type=int, default=8088)
     live.add_argument("--camera-num", type=int, default=0)
+    live.add_argument(
+        "--night-camera-num",
+        type=int,
+        default=None,
+        help="Second camera used as a long-exposure 'night eye'; enables the "
+        "day-eye/night-eye split auto-switched on the day/night light level",
+    )
     live.add_argument("--width", type=int, default=640)
     live.add_argument("--height", type=int, default=480)
     live.add_argument("--fps", type=int, default=15)
@@ -1181,15 +1188,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         raise SystemExit("--port, --width, --height and --fps must be positive")
 
     token = _resolve_live_view_token(args.token)
-    command = rpicam_vid_command(
-        camera=args.camera_num,
-        width=args.width,
-        height=args.height,
-        fps=args.fps,
-        night=args.night,
-    )
-    source = RpicamFrameSource(command)
 
+    # Sensors + providers first, so the night-eye switch can read the day/night mode.
     sampler: _SensorSampler | None = None
     readings_provider = None
     history_provider = None
@@ -1228,13 +1228,45 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
+    def _make_source(camera: int, night: bool) -> object:
+        return RpicamFrameSource(
+            rpicam_vid_command(
+                camera=camera,
+                width=args.width,
+                height=args.height,
+                fps=args.fps,
+                night=night,
+            )
+        )
+
+    dual = args.night_camera_num is not None
+    if dual:
+        # Day eye (normal) + night eye (long exposure), shown by the day/night mode.
+        sources: dict[str, object] | None = {
+            "day": _make_source(args.camera_num, args.night),
+            "night": _make_source(args.night_camera_num, True),
+        }
+        single_source = None
+        mode_getter = sampler.mode if sampler is not None else (lambda: "day")
+    else:
+        sources = None
+        single_source = _make_source(args.camera_num, args.night)
+        mode_getter = None
+
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     url = f"http://{shown_ip}:{args.port}/?token={token}"
-
-    mode = " (night / low-light)" if args.night else ""
     overlay = "video + live room readings" if readings_provider else "video only"
+
     print("Lullaby live view — LAN only, no Internet, no recording, no audio.")
-    print(f"  Camera {args.camera_num}{mode} at {args.width}x{args.height}, ~{args.fps} fps ({overlay})")
+    if dual:
+        print(
+            f"  Day eye = camera {args.camera_num}, night eye = camera "
+            f"{args.night_camera_num} (long exposure), auto-switched on light"
+        )
+    else:
+        mode = " (night / low-light)" if args.night else ""
+        print(f"  Camera {args.camera_num}{mode}")
+    print(f"  {args.width}x{args.height}, ~{args.fps} fps ({overlay})")
     print(f"  Open on your phone (same WiFi):  {url}")
     print("  The token is required. Keep this on a trusted network; do not")
     print("  port-forward this port. Press Ctrl-C to stop.")
@@ -1243,7 +1275,9 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             host=args.bind,
             port=args.port,
             token=token,
-            source=source,
+            source=single_source,
+            sources=sources,
+            mode_getter=mode_getter,
             readings_provider=readings_provider,
             history_provider=history_provider,
             digest_provider=digest_provider,
@@ -1251,7 +1285,6 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     except KeyboardInterrupt:
         print("\nLive view stopped.")
     finally:
-        source.close()
         if sampler is not None:
             sampler.stop()
     return 0

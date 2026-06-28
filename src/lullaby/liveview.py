@@ -522,28 +522,75 @@ def _make_handler(
     return _LiveViewHandler
 
 
+class _ModeBroker:
+    """Routes the stream to whichever per-mode FrameBroker matches the current
+    mode, so the live view follows the day-eye / night-eye switch."""
+
+    def __init__(
+        self, brokers: dict[str, FrameBroker], mode_getter: Callable[[], str]
+    ) -> None:
+        self._brokers = brokers
+        self._mode_getter = mode_getter
+
+    def _active(self) -> FrameBroker:
+        return self._brokers.get(self._mode_getter()) or next(iter(self._brokers.values()))
+
+    def wait_for_frame(self, last_seq: int, timeout: float = 5.0) -> tuple[int, bytes | None]:
+        return self._active().wait_for_frame(last_seq, timeout)
+
+    @property
+    def closed(self) -> bool:
+        return all(broker.closed for broker in self._brokers.values())
+
+    def close(self) -> None:
+        for broker in self._brokers.values():
+            broker.close()
+
+
 def serve_live_view(
     *,
     host: str,
     port: int,
     token: str,
-    source: object,
+    source: object | None = None,
+    sources: dict[str, object] | None = None,
+    mode_getter: Callable[[], str] | None = None,
     title: str = "Lullaby live view",
     readings_provider: Callable[[], dict[str, object]] | None = None,
     history_provider: Callable[[], dict[str, object]] | None = None,
     digest_provider: Callable[[], dict[str, object]] | None = None,
 ) -> None:
-    """Serve the live view until interrupted. ``source`` must expose
-    ``frames() -> Iterator[bytes]`` and ``close()`` (RpicamFrameSource or a fake).
+    """Serve the live view until interrupted.
 
-    ``readings_provider`` returns the latest readings (``/readings.json``, shown in
-    the overlay); ``history_provider`` returns the per-sensor time series
-    (``/history.json``, drawn in the graph tabs); ``digest_provider`` returns the
-    night summary (``/digest.json``, shown in the Night tab).
+    Pass a single ``source`` (``frames()`` + ``close()``), or ``sources`` — a
+    {mode: source} map plus a ``mode_getter`` — to follow the day-eye / night-eye
+    switch. ``*_provider`` callables back ``/readings.json``, ``/history.json`` and
+    ``/digest.json``.
     """
-    broker = FrameBroker()
-    pump = threading.Thread(target=_pump, args=(source, broker), daemon=True)
-    pump.start()
+    if sources:
+        brokers: dict[str, FrameBroker] = {}
+        for mode, src in sources.items():
+            mode_broker = FrameBroker()
+            threading.Thread(target=_pump, args=(src, mode_broker), daemon=True).start()
+            brokers[mode] = mode_broker
+        getter = mode_getter or (lambda: next(iter(brokers)))
+        broker: object = _ModeBroker(brokers, getter)
+
+        def _close_sources() -> None:
+            for src in sources.values():
+                src.close()  # type: ignore[attr-defined]
+
+    elif source is not None:
+        single = FrameBroker()
+        threading.Thread(target=_pump, args=(source, single), daemon=True).start()
+        broker = single
+
+        def _close_sources() -> None:
+            source.close()  # type: ignore[attr-defined]
+
+    else:
+        raise ValueError("serve_live_view needs a source or sources")
+
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider
     )
@@ -552,5 +599,5 @@ def serve_live_view(
         httpd.serve_forever()
     finally:
         httpd.server_close()
-        source.close()  # type: ignore[attr-defined]
+        _close_sources()
         broker.close()
