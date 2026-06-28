@@ -29,6 +29,15 @@ def test_extract_question_tolerates_mishearing() -> None:
     assert extract_wake_question("badington how warm is it") == "how warm is it"
 
 
+def test_extract_question_beddington_wake() -> None:
+    # "Hi Beddington" triggers the brain too.
+    assert (
+        extract_wake_question("hi beddington what is the humidity")
+        == "what is the humidity"
+    )
+    assert extract_wake_question("hey beddington how warm is it") == "how warm is it"
+
+
 def test_extract_none_without_wake_word() -> None:
     assert extract_wake_question("just two parents chatting about dinner") is None
 

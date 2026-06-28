@@ -218,6 +218,9 @@ if(d.mode){const m=document.createElement("span");m.className="mode";m.style.cur
 m.textContent=(d.mode==="night"?"🌙 Night":"☀️ Day")+(d.mode_auto?" ·auto":" ·manual");
 m.title="tap: auto → day → night";m.onclick=cycleMode;el.appendChild(m);
 LASTMODE={mode:d.mode,mode_auto:d.mode_auto};}
+const rb=document.createElement("span");rb.className="mode";rb.id="rotbtn";
+rb.style.cursor="pointer";rb.textContent="⟳ "+curRot+"°";rb.title="rotate video";
+rb.onclick=cycleRot;el.appendChild(rb);
 ORDER.forEach(function(k){if(d[k]){const s=document.createElement("span");
 s.textContent=d[k];el.appendChild(s);}});
 const nn=document.getElementById("nightnote");
@@ -252,7 +255,11 @@ ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1
 ctx.strokeStyle="#4ea1ff";ctx.lineWidth=4;ctx.beginPath();
 p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
 ctx.stroke();}
-if(ROTATE){var ci=document.querySelector("#cam img");if(ci)ci.className="rot"+ROTATE;}
+let curRot=parseInt(localStorage.getItem("lullabyRotate"));if(isNaN(curRot))curRot=ROTATE;
+function applyRot(){var ci=document.querySelector("#cam img");if(ci)ci.className=curRot?("rot"+curRot):"";}
+function cycleRot(){curRot=(curRot+90)%360;try{localStorage.setItem("lullabyRotate",curRot);}catch(e){}
+applyRot();var rb=document.getElementById("rotbtn");if(rb)rb.textContent="⟳ "+curRot+"°";}
+applyRot();
 show("cam");poll();load();setInterval(load,5000);
 </script></body></html>"""
 

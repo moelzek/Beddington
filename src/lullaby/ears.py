@@ -23,6 +23,8 @@ from dataclasses import dataclass
 # the near-variants of each, so a slightly-misheard wake word still triggers.
 WAKE_WORDS: tuple[str, ...] = (
     "paddington",
+    "beddington",
+    "bedington",
     "badington",
     "bangton",
     "padington",

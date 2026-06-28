@@ -525,8 +525,8 @@ def _transcribe(model: object, audio: object) -> str:
         # Bias decoding toward the wake word + topics so marginal audio mangles
         # them less ("Paddington" not "Vatican", "temperature" not "up virtual").
         initial_prompt=(
-            "Hey Paddington. What is the temperature, humidity, air pressure, "
-            "brightness, or air quality? How was the night?"
+            "Hey Paddington. Hi Beddington. What is the temperature, humidity, "
+            "air pressure, brightness, or air quality? How was the night?"
         ),
     )
     return " ".join(segment.text for segment in segments).strip()
