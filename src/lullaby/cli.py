@@ -241,6 +241,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Video only; do not overlay the live room readings on the page",
     )
     live.add_argument("--sensor-interval", type=float, default=3.0)
+    live.add_argument(
+        "--history-db",
+        default="~/.local/share/lullaby/sensors.db",
+        help="SQLite file persisting derived sensor history (graphs survive restarts)",
+    )
+    live.add_argument(
+        "--history-hours",
+        type=float,
+        default=12.0,
+        help="How many hours of history the graphs show",
+    )
+    live.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Keep only in-memory history (do not persist to disk)",
+    )
     return parser
 
 
@@ -970,13 +986,23 @@ class _SensorSampler:
     """Owns the sensor readers and refreshes a cached snapshot in the background,
     so the live-view HTTP handler can serve readings without blocking on I/O."""
 
-    def __init__(self, readers: list, interval: float, history_seconds: float = 1800) -> None:
+    def __init__(
+        self,
+        readers: list,
+        interval: float,
+        history_seconds: float = 1800,
+        store: object | None = None,
+        retention_seconds: float = 7 * 24 * 3600,
+    ) -> None:
         self._readers = readers
         self._interval = max(0.5, interval)
         self._latest: dict[str, object] = {}
         self._history: deque[tuple[float, dict[str, object]]] = deque(
             maxlen=max(60, int(history_seconds / self._interval))
         )
+        self._store = store
+        self._retention = retention_seconds
+        self._ticks = 0
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -990,9 +1016,19 @@ class _SensorSampler:
             except Exception:
                 snapshot = {}
             if snapshot:
+                now = time.time()
                 with self._lock:
                     self._latest = snapshot
-                    self._history.append((time.time(), snapshot))
+                    self._history.append((now, snapshot))
+                if self._store is not None:
+                    try:
+                        self._store.append(now, snapshot)
+                        # prune old rows roughly once an hour of ticks
+                        self._ticks += 1
+                        if self._ticks % max(1, int(3600 / self._interval)) == 0:
+                            self._store.prune(now - self._retention)
+                    except Exception:
+                        pass
             self._stop.wait(self._interval)
 
     def latest(self) -> dict[str, object]:
@@ -1099,14 +1135,30 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     readings_provider = None
     history_provider = None
     if not args.no_sensors:
+        import os
+
         from .liveview import history_series
 
         readers = build_sensor_readers(config.sensors)
         if readers:
-            sampler = _SensorSampler(readers, args.sensor_interval)
+            store = None
+            if not args.no_history:
+                try:
+                    from .sensor_store import SensorStore
+
+                    store = SensorStore(os.path.expanduser(args.history_db))
+                except Exception:
+                    store = None
+            sampler = _SensorSampler(readers, args.sensor_interval, store=store)
             sampler.start()
             readings_provider = lambda: _dashboard_fields(sampler.latest())  # noqa: E731
-            history_provider = lambda: history_series(sampler.history())  # noqa: E731
+            if store is not None:
+                window = max(0.1, args.history_hours) * 3600
+                history_provider = (  # noqa: E731
+                    lambda: store.series(time.time() - window)
+                )
+            else:
+                history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     url = f"http://{shown_ip}:{args.port}/?token={token}"
