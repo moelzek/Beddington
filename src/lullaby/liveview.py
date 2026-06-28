@@ -160,6 +160,7 @@ canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-r
 padding:14px 18px;font-size:15px}
 .sbtn.on{background:#2F8F5B;border-color:#2F8F5B}
 .sbtn.stop{background:#5a2330;border-color:#7a3340}
+.sbtn.cry{background:#7a3340;border-color:#9a4350;font-weight:700;width:100%}
 .note{color:#777;padding:12px 14px;font-size:12px}
 </style></head><body>
 <div id="tabs"></div>
@@ -202,6 +203,10 @@ if(id==="night")loadDigest();else if(id==="soothe")loadSoothe();else if(id!=="ca
 function renderSoothe(d){const now=document.getElementById("soothe-now");
 if(now)now.textContent=d.playing?("▶ playing "+String(d.playing).replace(/_/g," ")):"Nothing playing";
 const box=document.getElementById("soothe-btns");if(!box)return;box.innerHTML="";
+if(d.default){const cb=document.createElement("button");cb.className="sbtn cry";
+cb.textContent="👶 Baby crying — comfort now";
+cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default))};
+box.appendChild(cb);}
 (d.presets||[]).forEach(function(p){const b=document.createElement("button");b.className="sbtn";
 b.textContent=p.label;if(d.playing===p.key)b.classList.add("on");
 b.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(p.key))};box.appendChild(b);});
@@ -551,7 +556,11 @@ def _make_handler(
                 self._send_json(payload)
             elif path == "/soothe.json":
                 payload = (
-                    {"presets": soothe.presets(), "playing": soothe.playing()}
+                    {
+                        "presets": soothe.presets(),
+                        "playing": soothe.playing(),
+                        "default": soothe.default(),
+                    }
                     if soothe is not None
                     else {"presets": [], "playing": None}
                 )
@@ -603,6 +612,7 @@ def _make_handler(
                 else:
                     state = {"ok": False, "playing": soothe.playing()}
                 state["presets"] = soothe.presets()
+                state["default"] = soothe.default()
                 self._send_json(state)
             elif path == "/mode" and mode_setter is not None:
                 query = parse_qs(urlparse(self.path).query)

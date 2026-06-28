@@ -15,7 +15,7 @@ from .audio import (
     RealtimeWavFileAudioSource,
     WavFileAudioSource,
 )
-from .assistant import answer_question, is_night_question
+from .assistant import answer_question, is_night_question, match_soothe_command
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
@@ -692,7 +692,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         print(f'  [debug] transcript="{text}" -> question={question!r}')
                     if question is None:
                         continue  # no wake word — ignore silently
-                    if is_night_question(question) and night_store is not None:
+                    soothe_cmd = match_soothe_command(question)
+                    if soothe_cmd is not None:
+                        answer = _soothe_via_dashboard(soothe_cmd)
+                    elif is_night_question(question) and night_store is not None:
                         from .night_digest import summarise_night
 
                         digest = summarise_night(
@@ -1175,16 +1178,22 @@ class _DashboardSoothe:
     """Plays a chosen soothe preset on a loop through the Pi speaker, for the
     dashboard's soothe controls. One sound at a time; stop ends it."""
 
-    def __init__(self, presets: dict[str, SootheStepConfig]) -> None:
+    def __init__(
+        self, presets: dict[str, SootheStepConfig], default: str | None = None
+    ) -> None:
         from .soothe import SubprocessSoothePlayer
 
         self._player = SubprocessSoothePlayer()
         self._presets = presets
+        self._default = default if default in presets else next(iter(presets), None)
         self._playing: str | None = None
         self._lock = threading.Lock()
 
     def presets(self) -> list[dict[str, str]]:
         return [{"key": key, "label": step.name or key} for key, step in self._presets.items()]
+
+    def default(self) -> str | None:
+        return self._default
 
     def playing(self) -> str | None:
         with self._lock:
@@ -1237,6 +1246,36 @@ def _resolve_live_view_token(explicit: str | None) -> str:
     except OSError:
         pass
     return token
+
+
+def _soothe_via_dashboard(cmd: dict[str, str], port: int = 8088) -> str:
+    """Trigger the live-view soothe player over local HTTP so the voice command
+    and the dashboard share ONE player (single source of truth)."""
+    import os
+    import urllib.request
+
+    try:
+        with open(
+            os.path.expanduser("~/.config/lullaby/liveview.token"), encoding="utf-8"
+        ) as handle:
+            token = handle.read().strip()
+    except OSError:
+        return "Sorry, I can't reach the soothe player right now."
+    if cmd.get("action") == "stop":
+        query = f"token={token}&action=stop"
+        spoken = "Okay, stopping the sound."
+    else:
+        preset = cmd.get("preset", "white_noise")
+        query = f"token={token}&action=play&preset={preset}"
+        spoken = f"Playing {preset.replace('_', ' ')}."
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/soothe?{query}", method="POST"
+        )
+        urllib.request.urlopen(request, timeout=3).read()
+        return spoken
+    except Exception:
+        return "Sorry, I couldn't reach the soothe player."
 
 
 def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:
@@ -1305,7 +1344,11 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
     _soothe_presets = _build_soothe_presets(config)
-    soothe = _DashboardSoothe(_soothe_presets) if _soothe_presets else None
+    soothe = (
+        _DashboardSoothe(_soothe_presets, config.soothe.preset)
+        if _soothe_presets
+        else None
+    )
 
     def _make_source(camera: int, night: bool) -> object:
         return RpicamFrameSource(

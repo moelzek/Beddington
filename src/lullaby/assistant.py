@@ -254,6 +254,38 @@ def is_night_question(question: str) -> bool:
     return _mentions(normalize_transcript(question), *_NIGHT_WORDS)
 
 
+# Soothe voice control: "play white noise", "soothe the baby", "stop the sound".
+_SOOTHE_STOP_WORDS = ("stop", "silence", "turn off", "switch off", "enough", "no more", "shush")
+_SOOTHE_PLAY_WORDS = ("play", "put on", "soothe", "comfort", "calm")
+
+
+def _soothe_preset_from(q: str) -> str | None:
+    if _mentions(q, "heartbeat", "heart beat"):
+        return "heartbeat"
+    if _mentions(q, "music", "song", "melody", "lullaby"):
+        return "soothing_music"
+    if _mentions(q, "whoosh", "womb", "uterine", "ocean"):
+        return "uterine_whoosh"
+    if _mentions(q, "white", "noise", "static", "hush"):
+        return "white_noise"
+    return None
+
+
+def match_soothe_command(question: str) -> dict[str, str] | None:
+    """Detect a soothe play/stop command, or None. Returns e.g.
+    {"action": "play", "preset": "white_noise"} or {"action": "stop"}."""
+    q = normalize_transcript(question)
+    preset = _soothe_preset_from(q)
+    context = preset is not None or _mentions(
+        q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying", "cry"
+    )
+    if _mentions(q, *_SOOTHE_STOP_WORDS) and context:
+        return {"action": "stop"}
+    if _mentions(q, *_SOOTHE_PLAY_WORDS):
+        return {"action": "play", "preset": preset or "white_noise"}
+    return None
+
+
 def answer_question(question: str, snapshot: dict[str, object]) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
     q = normalize_transcript(question)

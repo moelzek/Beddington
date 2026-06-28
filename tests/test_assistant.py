@@ -272,6 +272,30 @@ def test_answer_tolerates_misheard_keywords() -> None:
     assert "49 percent" in answer_question("tell me the humdity", SNAPSHOT)
 
 
+def test_match_soothe_command() -> None:
+    from lullaby.assistant import match_soothe_command
+
+    assert match_soothe_command("play white noise") == {
+        "action": "play", "preset": "white_noise"
+    }
+    assert match_soothe_command("put on the heartbeat") == {
+        "action": "play", "preset": "heartbeat"
+    }
+    assert match_soothe_command("play some music") == {
+        "action": "play", "preset": "soothing_music"
+    }
+    # generic comfort -> default preset
+    assert match_soothe_command("soothe the baby") == {
+        "action": "play", "preset": "white_noise"
+    }
+    assert match_soothe_command("stop the sound") == {"action": "stop"}
+    assert match_soothe_command("turn off the music") == {"action": "stop"}
+    # not soothe commands
+    assert match_soothe_command("what is the temperature") is None
+    assert match_soothe_command("is anyone there") is None
+    assert match_soothe_command("what's her heart rate") is None
+
+
 def test_answer_falls_back_on_unrelated_word() -> None:
     # A garbled word that is not close to any topic must NOT false-match.
     assert "say it again" in answer_question("western", SNAPSHOT)

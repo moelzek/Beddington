@@ -187,6 +187,9 @@ class _FakeSoothe:
             {"key": "heartbeat", "label": "Heartbeat"},
         ]
 
+    def default(self) -> str:
+        return "white_noise"
+
     def playing(self) -> str | None:
         return self._playing
 
