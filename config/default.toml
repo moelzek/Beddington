@@ -67,6 +67,18 @@ i2c_address = 0x76
 enabled = false
 gpio_pin = 4
 
+[sensors.radar]
+# Seeed MR60BHA2 60GHz mmWave kit (XIAO ESP32C6) on WiFi, read over the ESPHome
+# native API. Off by default. Only non-medical fields are used (presence, room
+# brightness, distance, target count). Respiratory/heart rate are never read —
+# the radar's vital signs stay bench-only, with no medical or vital-sign claims.
+enabled = false
+host = ""
+port = 6053
+password = ""
+include_distance = true
+include_target_count = true
+
 [llm]
 enabled = false
 base_url = ""

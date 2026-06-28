@@ -13,7 +13,17 @@ from .config import NarratorConfig
 from .models import Event, NightReport
 from .soothe import _playback_command, _player_name
 
-_BANNED_NARRATION_WORDS = ("safe", "asleep", "healthy", "fine", "breathing", "tantrum")
+_BANNED_NARRATION_WORDS = (
+    "safe",
+    "asleep",
+    "healthy",
+    "fine",
+    "breathing",
+    "tantrum",
+    "heart",
+    "respiratory",
+    "pulse",
+)
 
 
 def build_narration_prompt(report: NightReport) -> str:
@@ -55,10 +65,17 @@ def build_narration_prompt(report: NightReport) -> str:
         "morning recap. Write 2 to 3 short, plain British English sentences and then stop.\n"
         "State only the derived facts below. Do not interpret, guess causes, judge, "
         "comfort, or comment on any numbers or scores. Mention the crying, the soothing "
-        "and its outcome, and any room temperature, humidity, and movement count given.\n"
-        "Treat the room temperature, humidity, and movement as best-guess context only.\n"
+        "and its outcome, and any room temperature, humidity, brightness, presence, and "
+        "movement count given.\n"
+        "Treat the room temperature, humidity, brightness, presence, and movement as "
+        "best-guess context only.\n"
+        "Do not invent, add, or guess any value. If a temperature, humidity, brightness, "
+        "presence, or movement value is not listed below, do not mention it at all. Write "
+        "only the recap as plain prose: no preamble, no greeting headers, no lists, no "
+        "labels, no field names.\n"
         'Say "crying"; do not say "tantrum". Never say the baby is safe, asleep, healthy, '
-        "fine, or breathing. Do not give medical advice.\n"
+        "fine, or breathing. Never mention heart rate, breathing rate, or any vital sign. "
+        "Do not give medical advice.\n"
         "No raw audio or video is included here. Do not ask for or mention raw media.\n\n"
         "Derived facts:\n"
         f"{fact_lines}"
@@ -96,6 +113,9 @@ def narrate(report: NightReport, config: NarratorConfig, digest_fallback: str) -
     except Exception:
         return digest_fallback
 
+    # Small local models sometimes append a stray, contradictory line after a
+    # blank line. The faithful recap is the first paragraph, so keep only that.
+    text = text.split("\n\n", 1)[0].strip()
     if not text or _contains_banned_word(text):
         return digest_fallback
     return text
@@ -178,23 +198,33 @@ def _environment_facts(events: tuple[Event, ...]) -> list[str]:
     facts: list[str] = []
     latest_temperature: float | None = None
     latest_humidity: float | None = None
+    latest_illuminance: float | None = None
     motion_count = 0
     saw_environment_sample = False
     saw_motion = False
+    saw_presence = False
+    presence_detected = False
     for event in events:
         if event.kind != "environment_sample":
             continue
         saw_environment_sample = True
         temperature = _number(event.details.get("room_temperature_c"))
         humidity = _number(event.details.get("room_humidity_pct"))
+        illuminance = _number(event.details.get("room_illuminance_lx"))
         if temperature is not None:
             latest_temperature = temperature
         if humidity is not None:
             latest_humidity = humidity
+        if illuminance is not None:
+            latest_illuminance = illuminance
         if "motion_detected" in event.details:
             saw_motion = True
             if event.details["motion_detected"] is True:
                 motion_count += 1
+        if "person_present" in event.details:
+            saw_presence = True
+            if event.details["person_present"] is True:
+                presence_detected = True
     if latest_temperature is not None:
         facts.append(
             f"Best-guess room temperature context: {_format_measure(latest_temperature)} C."
@@ -203,9 +233,19 @@ def _environment_facts(events: tuple[Event, ...]) -> list[str]:
         facts.append(
             f"Best-guess room humidity context: {_format_measure(latest_humidity)}%."
         )
+    if latest_illuminance is not None:
+        facts.append(
+            f"Best-guess room brightness context: {_format_measure(latest_illuminance)} lux."
+        )
     if saw_environment_sample and saw_motion:
         facts.append(
             f"Movement noticed {motion_count} time{'' if motion_count == 1 else 's'}."
+        )
+    if saw_presence:
+        facts.append(
+            "Best-guess presence context: someone was detected in the room."
+            if presence_detected
+            else "Best-guess presence context: no one was detected in the room."
         )
     return facts
 

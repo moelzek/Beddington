@@ -97,6 +97,24 @@ def test_narrate_returns_ollama_response(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "Crying episode count: 1" in payload["prompt"]
 
 
+def test_narrate_trims_trailing_ramble(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(request, timeout):
+        return FakeResponse(
+            {
+                "response": (
+                    "Crying was detected once for 18 seconds.\n\n"
+                    "Crying ceased after three quiet checks."
+                )
+            }
+        )
+
+    monkeypatch.setattr("lullaby.narrator.urllib.request.urlopen", fake_urlopen)
+
+    text = narrate(_sample_report(), NarratorConfig(enabled=True), "fallback digest")
+
+    assert text == "Crying was detected once for 18 seconds."
+
+
 def test_narrate_returns_fallback_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     def fail_urlopen(request, timeout):
         raise AssertionError("urlopen should not be called")
@@ -139,6 +157,35 @@ def test_build_narration_prompt_uses_only_derived_facts() -> None:
     assert 'do not say "tantrum"' in prompt
     assert "raw.wav" not in prompt
     assert "/private/recordings" not in prompt
+
+
+def test_build_narration_prompt_includes_radar_context() -> None:
+    started = datetime(2026, 6, 28, tzinfo=UTC)
+    events = (
+        Event(
+            kind="environment_sample",
+            occurred_at=started + timedelta(seconds=2),
+            offset_seconds=2.0,
+            details={"person_present": True, "room_illuminance_lx": 96.2},
+        ),
+    )
+    report = NightReport(
+        started_at=started,
+        finished_at=started + timedelta(seconds=10),
+        source="/private/recordings/raw.wav",
+        detector="fake",
+        threshold=0.4,
+        sustained_seconds=1.0,
+        windows_processed=20,
+        peak_score=0.0,
+        events=events,
+    )
+
+    prompt = build_narration_prompt(report)
+
+    assert "Best-guess room brightness context: 96.2 lux." in prompt
+    assert "someone was detected in the room" in prompt
+    assert "Never mention heart rate, breathing rate, or any vital sign." in prompt
 
 
 def test_speak_uses_piper_and_supported_player(

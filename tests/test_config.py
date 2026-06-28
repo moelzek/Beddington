@@ -215,3 +215,34 @@ def test_motion_sensor_gpio_pin_must_be_non_negative(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="sensors.motion.gpio_pin"):
         load_config(path)
+
+
+def test_load_config_reads_radar_values(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[sensors.radar]
+enabled = true
+host = "192.168.1.146"
+port = 6053
+include_distance = false
+include_target_count = true
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.sensors.radar.enabled is True
+    assert config.sensors.radar.host == "192.168.1.146"
+    assert config.sensors.radar.port == 6053
+    assert config.sensors.radar.include_distance is False
+    assert config.sensors.radar.include_target_count is True
+
+
+def test_radar_requires_host_when_enabled(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[sensors.radar]\nenabled = true\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sensors.radar.host"):
+        load_config(path)

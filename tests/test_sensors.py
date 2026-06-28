@@ -13,14 +13,18 @@ import numpy as np
 from lullaby.config import (
     AppConfig,
     DetectionConfig,
+    RadarSensorConfig,
     SensorsConfig,
 )
 from lullaby.models import AudioWindow
 from lullaby.pipeline import run_pipeline
 from lullaby.sensors import (
     Bme680AirReader,
+    Mr60RadarReader,
     NullSensorReader,
     PirMotionReader,
+    _coerce_radar_value,
+    _radar_field_for_name,
     build_sensor_readers,
 )
 
@@ -177,6 +181,62 @@ def test_pir_motion_reader_degrades_when_pinctrl_missing(monkeypatch) -> None:
     reader = PirMotionReader(gpio_pin=4)
     assert reader.read() == {}
     assert reader.read() == {}
+
+
+def test_radar_field_routing_drops_vitals_and_keeps_context() -> None:
+    # Vital-sign entities must never be routed into narration.
+    assert _radar_field_for_name("Real-time respiratory rate") is None
+    assert _radar_field_for_name("Real-time heart rate") is None
+    # Non-medical context fields are kept.
+    assert _radar_field_for_name("Person Information") == "person_present"
+    assert _radar_field_for_name("Seeed MR60BHA2 Illuminance") == "room_illuminance_lx"
+    assert _radar_field_for_name("Distance to detection object") == "target_distance_cm"
+    assert _radar_field_for_name("Target Number") == "target_count"
+    # The controllable RGB light is not a sensor we narrate.
+    assert _radar_field_for_name("Seeed MR60BHA2 RGB Light") is None
+
+
+def test_radar_field_routing_respects_include_flags() -> None:
+    assert _radar_field_for_name("Distance to detection object", include_distance=False) is None
+    assert (
+        _radar_field_for_name("Target Number", include_target_count=False) is None
+    )
+
+
+def test_coerce_radar_value() -> None:
+    assert _coerce_radar_value("person_present", True) is True
+    assert _coerce_radar_value("person_present", False) is False
+    assert _coerce_radar_value("target_count", 2.0) == 2
+    assert _coerce_radar_value("room_illuminance_lx", 96.2106) == 96.2
+    assert _coerce_radar_value("target_distance_cm", None) is None
+    assert _coerce_radar_value("room_illuminance_lx", "not-a-number") is None
+
+
+def test_build_sensor_readers_includes_radar_when_enabled() -> None:
+    readers = build_sensor_readers(
+        SensorsConfig(radar=RadarSensorConfig(enabled=True, host="192.168.1.146"))
+    )
+    assert len(readers) == 1
+    assert isinstance(readers[0], Mr60RadarReader)
+    assert readers[0].host == "192.168.1.146"
+
+
+def test_build_sensor_readers_skips_radar_without_host() -> None:
+    assert (
+        build_sensor_readers(
+            SensorsConfig(radar=RadarSensorConfig(enabled=True, host=""))
+        )
+        == []
+    )
+
+
+def test_radar_reader_degrades_when_library_missing(monkeypatch) -> None:
+    # With aioesphomeapi absent, the reader stays offline and never blocks.
+    monkeypatch.setitem(sys.modules, "aioesphomeapi", None)
+    reader = Mr60RadarReader("192.0.2.10")
+    assert reader.read() == {}
+    assert reader.read() == {}
+    assert reader._thread is None
 
 
 def test_pipeline_appends_environment_samples_without_changing_detection_events(

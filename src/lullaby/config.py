@@ -54,9 +54,20 @@ class MotionSensorConfig:
 
 
 @dataclass(frozen=True)
+class RadarSensorConfig:
+    enabled: bool = False
+    host: str = ""
+    port: int = 6053
+    password: str = ""
+    include_distance: bool = True
+    include_target_count: bool = True
+
+
+@dataclass(frozen=True)
 class SensorsConfig:
     air: AirSensorConfig = AirSensorConfig()
     motion: MotionSensorConfig = MotionSensorConfig()
+    radar: RadarSensorConfig = RadarSensorConfig()
     sample_interval_seconds: float = 10.0
 
 
@@ -319,9 +330,11 @@ def _load_sensors(
         return default
     raw_air = raw_sensors.get("air", {})
     raw_motion = raw_sensors.get("motion", {})
+    raw_radar = raw_sensors.get("radar", {})
     return SensorsConfig(
         air=_load_air_sensor(raw_air, default.air),
         motion=_load_motion_sensor(raw_motion, default.motion),
+        radar=_load_radar_sensor(raw_radar, default.radar),
         sample_interval_seconds=float(
             raw_sensors.get(
                 "sample_interval_seconds",
@@ -352,6 +365,26 @@ def _load_motion_sensor(
     return MotionSensorConfig(
         enabled=bool(raw_motion.get("enabled", default.enabled)),
         gpio_pin=int(raw_motion.get("gpio_pin", default.gpio_pin)),
+    )
+
+
+def _load_radar_sensor(
+    raw_radar: object,
+    default: RadarSensorConfig,
+) -> RadarSensorConfig:
+    if not isinstance(raw_radar, dict):
+        return default
+    return RadarSensorConfig(
+        enabled=bool(raw_radar.get("enabled", default.enabled)),
+        host=str(raw_radar.get("host", default.host)),
+        port=int(raw_radar.get("port", default.port)),
+        password=str(raw_radar.get("password", default.password)),
+        include_distance=bool(
+            raw_radar.get("include_distance", default.include_distance)
+        ),
+        include_target_count=bool(
+            raw_radar.get("include_target_count", default.include_target_count)
+        ),
     )
 
 
@@ -425,3 +458,7 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("sensors.air.i2c_address must be a 7-bit I2C address")
     if sensors.motion.gpio_pin < 0:
         raise ValueError("sensors.motion.gpio_pin must be non-negative")
+    if sensors.radar.enabled and not sensors.radar.host.strip():
+        raise ValueError("sensors.radar.host must be set when sensors.radar.enabled")
+    if not 1 <= sensors.radar.port <= 65535:
+        raise ValueError("sensors.radar.port must be a valid TCP port")
