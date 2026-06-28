@@ -1043,6 +1043,7 @@ class _SensorSampler:
         self._retention = retention_seconds
         self._ticks = 0
         self._mode = "day"
+        self._override: str | None = None  # "day"/"night" forces; None = auto (lux)
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -1082,7 +1083,18 @@ class _SensorSampler:
 
     def mode(self) -> str:
         with self._lock:
-            return self._mode
+            return self._override or self._mode
+
+    def override(self) -> str | None:
+        with self._lock:
+            return self._override
+
+    def set_override(self, value: str | None) -> str:
+        """Force day/night, or None to return to auto (light-driven). Returns the
+        resulting effective mode."""
+        with self._lock:
+            self._override = value if value in ("day", "night") else None
+            return self._override or self._mode
 
     def history(self) -> list[tuple[float, dict[str, object]]]:
         with self._lock:
@@ -1270,6 +1282,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             readings_provider = lambda: {  # noqa: E731
                 **_dashboard_fields(sampler.latest()),
                 "mode": sampler.mode(),
+                "mode_auto": sampler.override() is None,
             }
             if store is not None:
                 from .night_digest import summarise_night
@@ -1341,6 +1354,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             history_provider=history_provider,
             digest_provider=digest_provider,
             soothe=soothe,
+            mode_setter=(sampler.set_override if sampler is not None else None),
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")

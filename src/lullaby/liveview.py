@@ -206,14 +206,21 @@ if(r.ok)renderSoothe(await r.json());}catch(e){}}
 async function loadSoothe(){try{const r=await fetch(SOOTHE.replace("/soothe?","/soothe.json?"),{cache:"no-store"});
 if(r.ok)renderSoothe(await r.json());}catch(e){}}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
-async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
-if(r.ok){const d=await r.json();const el=document.getElementById("readings");el.innerHTML="";
-if(d.mode){const m=document.createElement("span");m.className="mode";
-m.textContent=d.mode==="night"?"🌙 Night":"☀️ Day";el.appendChild(m);}
+const MODEURL=READINGS.replace("/readings.json","/mode");let LASTMODE={};
+function renderReadings(d){const el=document.getElementById("readings");el.innerHTML="";
+if(d.mode){const m=document.createElement("span");m.className="mode";m.style.cursor="pointer";
+m.textContent=(d.mode==="night"?"🌙 Night":"☀️ Day")+(d.mode_auto?" ·auto":" ·manual");
+m.title="tap: auto → day → night";m.onclick=cycleMode;el.appendChild(m);
+LASTMODE={mode:d.mode,mode_auto:d.mode_auto};}
 ORDER.forEach(function(k){if(d[k]){const s=document.createElement("span");
 s.textContent=d[k];el.appendChild(s);}});
 const nn=document.getElementById("nightnote");
-if(nn)nn.style.display=(d.mode==="night")?"block":"none";}}catch(e){}setTimeout(poll,3000);}
+if(nn)nn.style.display=(d.mode==="night")?"block":"none";}
+async function cycleMode(){const set=LASTMODE.mode_auto?"day":(LASTMODE.mode==="day"?"night":"");
+try{await fetch(MODEURL+"&set="+set,{method:"POST",cache:"no-store"});}catch(e){}
+try{const r=await fetch(READINGS,{cache:"no-store"});if(r.ok)renderReadings(await r.json());}catch(e){}}
+async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
+if(r.ok)renderReadings(await r.json());}catch(e){}setTimeout(poll,3000);}
 async function load(){try{const r=await fetch(HISTORY,{cache:"no-store"});
 if(r.ok)HIST=await r.json();}catch(e){}
 SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
@@ -470,6 +477,7 @@ def _make_handler(
     history_provider: Callable[[], dict[str, object]] | None = None,
     digest_provider: Callable[[], dict[str, object]] | None = None,
     soothe: object | None = None,
+    mode_setter: Callable[[str | None], str] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "LullabyLiveView/1"
@@ -576,6 +584,12 @@ def _make_handler(
                     state = {"ok": False, "playing": soothe.playing()}
                 state["presets"] = soothe.presets()
                 self._send_json(state)
+            elif path == "/mode" and mode_setter is not None:
+                query = parse_qs(urlparse(self.path).query)
+                requested = (query.get("set") or [""])[0]
+                value = requested if requested in ("day", "night") else None
+                mode = mode_setter(value)
+                self._send_json({"mode": mode, "mode_auto": value is None})
             else:
                 self.send_error(404)
 
@@ -623,6 +637,7 @@ def serve_live_view(
     history_provider: Callable[[], dict[str, object]] | None = None,
     digest_provider: Callable[[], dict[str, object]] | None = None,
     soothe: object | None = None,
+    mode_setter: Callable[[str | None], str] | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
@@ -657,7 +672,8 @@ def serve_live_view(
         raise ValueError("serve_live_view needs a source or sources")
 
     handler = _make_handler(
-        broker, token, title, readings_provider, history_provider, digest_provider, soothe
+        broker, token, title, readings_provider, history_provider, digest_provider,
+        soothe, mode_setter,
     )
     httpd = ThreadingHTTPServer((host, port), handler)
     try:

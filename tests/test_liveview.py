@@ -346,6 +346,42 @@ def test_serve_live_view_soothe_play_and_stop() -> None:
         source.close()
 
 
+def test_serve_live_view_mode_override() -> None:
+    source = _FakeFrameSource([JPEG_A])
+    token = "tk"
+    port = _free_port()
+    forced = {"v": None}
+
+    def setter(value: str | None) -> str:
+        forced["v"] = value
+        return value or "night"
+
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "source": source,
+            "mode_setter": setter,
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        day = urllib.request.Request(f"{base}/mode?token={token}&set=day", method="POST")
+        d = json.loads(urllib.request.urlopen(day, timeout=2).read())
+        assert d["mode"] == "day" and d["mode_auto"] is False
+
+        auto = urllib.request.Request(f"{base}/mode?token={token}&set=", method="POST")
+        d2 = json.loads(urllib.request.urlopen(auto, timeout=2).read())
+        assert d2["mode_auto"] is True
+    finally:
+        source.close()
+
+
 def test_serve_live_view_serves_history_json() -> None:
     source = _FakeFrameSource([JPEG_A])
     token = "tk"
