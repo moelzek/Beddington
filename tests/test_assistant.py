@@ -9,8 +9,8 @@ SNAPSHOT = {
     "room_gas_resistance_ohms": 120000,
     "room_illuminance_lx": 80.0,
     "person_present": True,
-    # Presence is motion-driven (radar_person_present): real movement is the only
-    # trusted presence signal while the buried radar is unreliable.
+    # Presence is radar-driven (radar_person_present): the person flag corroborated
+    # by a real target / breathing lock. motion_detected is legacy (PIR removed).
     "motion_detected": True,
     "target_distance_cm": 120.0,
     "radar_respiratory_rate": 16.0,
@@ -80,18 +80,25 @@ def test_answer_presence_plainly() -> None:
     )
 
 
-def test_phantom_radar_presence_is_not_trusted() -> None:
-    # The buried radar reports "present" constantly with plausible-looking vitals,
-    # so presence is motion-driven: a present-flag and/or a breathing value with
-    # no actual motion must NOT be reported as someone in the room.
+def test_radar_presence_requires_corroboration() -> None:
+    # Radar-driven presence (the PIR has been removed): trust the "present" flag
+    # only when a real target or a plausible breathing lock corroborates it, so
+    # bare-flag micro-vibration clutter is never reported as someone in the room.
     from lullaby.assistant import radar_person_present
 
-    phantom = {"person_present": True, "motion_detected": False, "radar_respiratory_rate": 8.0}
-    assert radar_person_present(phantom) is False
-    assert answer_question("is anyone there", phantom).startswith("No")
-    # Only actual motion is trusted as presence.
-    assert radar_person_present({"motion_detected": True}) is True
-    assert radar_person_present({"person_present": True, "radar_respiratory_rate": 16.0}) is False
+    # Flag + a real target (distance / count) or a breathing lock → present.
+    assert radar_person_present({"person_present": True, "target_distance_cm": 90.0})
+    assert radar_person_present({"person_present": True, "target_count": 1.0})
+    assert radar_person_present({"person_present": True, "radar_respiratory_rate": 16.0})
+    # Bare present flag with nothing behind it (clutter) → not trusted.
+    bare = {"person_present": True}
+    assert radar_person_present(bare) is False
+    assert answer_question("is anyone there", bare).startswith("No")
+    assert radar_person_present({"person_present": True, "target_count": 0.0}) is False
+    # A false flag, the removed PIR's motion, and an empty snapshot never assert it.
+    assert radar_person_present({"person_present": False, "target_distance_cm": 90.0}) is False
+    assert radar_person_present({"motion_detected": True}) is False
+    assert radar_person_present({}) is False
 
 
 def test_natural_presence_phrasing() -> None:

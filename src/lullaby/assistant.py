@@ -155,30 +155,44 @@ def _brightness_phrase(lux: float) -> str:
 # --- presence and people ---
 
 
-def radar_person_present(snapshot: dict[str, object]) -> bool:
-    """Trusted presence — currently real movement (PIR) only.
+def _radar_breathing_lock(snapshot: dict[str, object]) -> bool:
+    """A plausible breathing lock. The radar's vitals keys are only present when it
+    has a genuine still-and-close lock (sensors.py drops implausible values to
+    None), so a breathing value here means a real, still person — not clutter."""
+    return _num(snapshot, "radar_respiratory_rate") is not None
 
-    The 60GHz radar buried in the plush is unreliable here: it locks onto micro-
-    vibration/clutter and reports a phantom person *with plausible-looking vitals*
-    (e.g. a steady breathing ~8/min in an empty room), so neither its bare
-    'present' flag nor its breathing lock can be trusted. Until the radar is
-    re-aimed/desensitised or the camera (Hailo) provides vision-based presence,
-    only actual motion is trusted — which never false-fires in an empty room.
+
+def _radar_target_detected(snapshot: dict[str, object]) -> bool:
+    """The radar reports a physical target — a measured distance or a target count
+    of at least one — i.e. a real reflector in the beam, not just the bare flag."""
+    count = _num(snapshot, "target_count")
+    if count is not None and count >= 1:
+        return True
+    return _num(snapshot, "target_distance_cm") is not None
+
+
+def radar_person_present(snapshot: dict[str, object]) -> bool:
+    """Radar-driven presence (the PIR motion sensor has been removed).
+
+    Trust the 60GHz radar's "person present" flag, but only when it is corroborated
+    by a real target (a measured distance / target count) or a plausible breathing
+    lock — so micro-vibration clutter can't read as a phantom person from the bare
+    flag alone. The radar is the room's only presence sensor now.
     """
-    return snapshot.get("motion_detected") is True
+    if snapshot.get("person_present") is not True:
+        return False
+    return _radar_target_detected(snapshot) or _radar_breathing_lock(snapshot)
 
 
 def _presence_phrase(snapshot: dict[str, object]) -> str:
     if radar_person_present(snapshot):
         return "Yes, I can detect someone in the room."
-    present = snapshot.get("person_present")
-    motion = snapshot.get("motion_detected")
-    # No radar presence reading and no motion — hedge rather than claim the room
-    # is empty from a missing reading.
-    if present is None and motion is None:
+    # No radar reading at all (e.g. it is briefly offline / reconnecting) — hedge
+    # rather than claim the room is empty from a missing reading.
+    if snapshot.get("person_present") is None:
         return "I don't have a clear presence reading right now."
-    # A reading exists (radar present but no real lock, or explicitly empty) and
-    # nothing is moving: not a trustworthy person.
+    # The radar is reporting but without a trustworthy person (flag false, or true
+    # but uncorroborated clutter): no one.
     return "No, I don't detect anyone in the room right now."
 
 

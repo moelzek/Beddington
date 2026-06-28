@@ -1150,16 +1150,12 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
     lux = _num(snapshot, "room_illuminance_lx")
     if lux is not None:
         fields["light"] = _bright_label(lux)
-    # Trusted presence only: the buried radar's bare "present" flag reads true
-    # constantly, so require a real breathing lock or actual motion (see
-    # radar_person_present). A bare reading with neither shows "no one detected".
-    has_presence_reading = (
-        snapshot.get("person_present") is not None
-        or snapshot.get("motion_detected") is not None
-    )
+    # Radar-driven presence (the PIR has been removed): trust the radar's "present"
+    # flag only when corroborated by a real target or breathing lock (see
+    # radar_person_present), so bare-flag clutter never shows a phantom person.
     if radar_person_present(snapshot):
         fields["presence"] = "● someone present"
-    elif has_presence_reading:
+    elif snapshot.get("person_present") is not None:
         fields["presence"] = "○ no one detected"
     resp = _num(snapshot, "radar_respiratory_rate")
     heart = _num(snapshot, "radar_heart_rate_bpm")
