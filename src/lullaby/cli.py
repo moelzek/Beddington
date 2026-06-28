@@ -514,25 +514,25 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         ):
             if args.energy_threshold is not None:
                 threshold = args.energy_threshold
+                adapt = False
+                noise_floor = threshold
             else:
-                # Auto-calibrate: sample ~2 s of room noise and set the speech
-                # threshold just above it, so it adapts to the fan being on/off.
+                # Seed the noise floor from ~1.5 s of room noise, then keep
+                # tracking it live in the loop (below) so the bar follows the room
+                # without ever needing a restart.
                 levels: list[float] = []
-                calib_until = time.monotonic() + 2.0
+                calib_until = time.monotonic() + 1.5
                 while time.monotonic() < calib_until:
                     try:
                         f = frames_q.get(timeout=0.5)
                     except queue.Empty:
                         continue
                     levels.append(float(np.sqrt(np.mean(f**2))))
-                if levels:
-                    levels.sort()
-                    noise = levels[min(len(levels) - 1, int(len(levels) * 0.9))]
-                    # Cap at 0.024: a noisy startup must never set the bar so high
-                    # it can't hear a normal close voice (which peaks ~0.04+).
-                    threshold = max(0.015, min(0.024, round(noise * 1.5, 4)))
-                else:
-                    threshold = 0.02
+                levels.sort()
+                noise_floor = levels[len(levels) // 2] if levels else 0.012
+                # Cap at 0.024 so a normal close voice (~0.04+) always clears it.
+                threshold = max(0.015, min(0.024, round(noise_floor * 1.6, 4)))
+                adapt = True
             print(
                 f"Listening (speech threshold {threshold:.4f}) — say "
                 f'"{wake_words[0].title()}, what is the temperature?" (Ctrl-C to stop).'
@@ -547,6 +547,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     continue
                 pre_roll.append(frame)
                 rms = float(np.sqrt(np.mean(frame**2)))
+                if adapt and not in_utterance and rms < threshold:
+                    # Track the noise floor from quiet frames and keep the bar
+                    # just above it (capped, so a close voice always clears it).
+                    noise_floor = 0.97 * noise_floor + 0.03 * rms
+                    threshold = max(0.015, min(0.024, round(noise_floor * 1.6, 4)))
                 is_speech = rms > threshold
                 if args.debug:
                     frames_seen += 1
