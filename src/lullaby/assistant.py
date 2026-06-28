@@ -10,6 +10,7 @@ health reading.
 from __future__ import annotations
 
 from .context import describe_presence_scene
+from .ears import _edit_distance
 
 _FALLBACK = (
     "I can tell you about the room: temperature, humidity, air pressure, "
@@ -24,26 +25,43 @@ def _num(snapshot: dict[str, object], key: str) -> float | None:
     return float(value)
 
 
+def _mentions(question: str, *keywords: str, fuzzy: tuple[str, ...] = ()) -> bool:
+    """True if the question contains a keyword, or a word that is a near-miss of a
+    fuzzy target (so a slightly-misheard 'temprature' still matches 'temperature')."""
+    if any(keyword in question for keyword in keywords):
+        return True
+    words = question.split()
+    for target in fuzzy:
+        for word in words:
+            if abs(len(word) - len(target)) <= 2 and _edit_distance(word, target) <= 2:
+                return True
+    return False
+
+
 def answer_question(question: str, snapshot: dict[str, object]) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
     q = question.lower()
 
-    if "humid" in q:
+    if _mentions(q, "humid", fuzzy=("humidity",)):
         value = _num(snapshot, "room_humidity_pct")
         if value is not None:
             return f"The humidity is about {value:g} percent."
 
-    if any(word in q for word in ("temperature", "warm", "hot", "cold", "degree")):
+    if _mentions(
+        q, "temperature", "warm", "hot", "cold", "degree", fuzzy=("temperature",)
+    ):
         value = _num(snapshot, "room_temperature_c")
         if value is not None:
             return f"The room is about {value:g} degrees Celsius."
 
-    if "pressure" in q:
+    if _mentions(q, "pressure", fuzzy=("pressure",)):
         value = _num(snapshot, "room_pressure_hpa")
         if value is not None:
             return f"The air pressure is about {value:g} hectopascals."
 
-    if any(word in q for word in ("air quality", "gas", "smell", "voc", "stuffy", "nappy")):
+    if _mentions(
+        q, "air quality", "gas", "smell", "voc", "stuffy", "nappy", fuzzy=("quality",)
+    ):
         value = _num(snapshot, "room_gas_resistance_ohms")
         if value is not None:
             return (
@@ -51,20 +69,17 @@ def answer_question(question: str, snapshot: dict[str, object]) -> str:
                 "Higher means cleaner air."
             )
 
-    if any(word in q for word in ("light", "bright", "dark", "lux")):
+    if _mentions(q, "light", "bright", "dark", "lux", fuzzy=("brightness",)):
         value = _num(snapshot, "room_illuminance_lx")
         if value is not None:
             return f"The room brightness is about {value:g} lux."
 
-    if any(word in q for word in ("how far", "distance", "close")):
+    if _mentions(q, "how far", "distance", "close", fuzzy=("distance",)):
         value = _num(snapshot, "target_distance_cm")
         if value is not None:
             return f"The nearest person is about {value:g} centimetres away."
 
-    if any(
-        word in q
-        for word in ("present", "anyone", "someone", "is there", "nearby")
-    ):
+    if _mentions(q, "present", "anyone", "someone", "is there", "nearby"):
         scene = describe_presence_scene(
             snapshot.get("person_present"), snapshot.get("motion_detected")
         )

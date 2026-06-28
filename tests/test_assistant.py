@@ -60,6 +60,17 @@ def test_answer_fallback_when_value_missing() -> None:
     )
 
 
+def test_answer_tolerates_misheard_keywords() -> None:
+    # Whisper slips on the topic word at marginal audio; fuzzy matching recovers it.
+    assert "21.4 degrees" in answer_question("what's the temprature", SNAPSHOT)
+    assert "49 percent" in answer_question("tell me the humdity", SNAPSHOT)
+
+
+def test_answer_falls_back_on_unrelated_word() -> None:
+    # A garbled word that is not close to any topic must NOT false-match.
+    assert "I can tell you about the room" in answer_question("western", SNAPSHOT)
+
+
 def test_vitals_are_never_answered() -> None:
     snapshot = {"radar_heart_rate_bpm": 90.0, "radar_respiratory_rate": 16.0}
     answer = answer_question("what is the baby's heart rate?", snapshot)
