@@ -154,7 +154,7 @@ canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-r
 <div id="tabs"></div>
 <div id="cam" class="panel active">
   <img src="__STREAM__" alt="Live camera view">
-  <div id="nightnote" class="nightnote">🌙 It's dark — the radar and motion sensor are watching.</div>
+  <div id="nightnote" class="nightnote">🌙 Night eye — long-exposure low-light view. Radar &amp; motion are watching too.</div>
   <div id="readings"></div>
 </div>
 <div id="charts"></div>
