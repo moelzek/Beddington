@@ -22,6 +22,11 @@ def test_extract_question_tolerates_mishearing() -> None:
         == "what is the temperature"
     )
     assert extract_wake_question("padington temperature") == "temperature"
+    # The exact mishearings Whisper produced on the Pi are wake words now.
+    assert (
+        extract_wake_question("a bangton water temperature") == "water temperature"
+    )
+    assert extract_wake_question("badington how warm is it") == "how warm is it"
 
 
 def test_extract_none_without_wake_word() -> None:

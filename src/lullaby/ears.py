@@ -18,7 +18,16 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
-WAKE_WORDS: tuple[str, ...] = ("hi paddington", "hey paddington", "paddington")
+# "paddington" plus the common ways Whisper mangles it on marginal/far audio
+# (badington, bangton, padington...). Fuzzy matching (edit distance <= 2) catches
+# the near-variants of each, so a slightly-misheard wake word still triggers.
+WAKE_WORDS: tuple[str, ...] = (
+    "paddington",
+    "badington",
+    "bangton",
+    "padington",
+    "patington",
+)
 
 
 @dataclass(frozen=True)
