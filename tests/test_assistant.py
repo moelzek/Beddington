@@ -71,6 +71,11 @@ def test_answer_falls_back_on_unrelated_word() -> None:
     assert "say it again" in answer_question("western", SNAPSHOT)
 
 
+def test_answer_ignores_substring_false_match() -> None:
+    # "shot" must not trigger the temperature branch by containing "hot".
+    assert "say it again" in answer_question("lets go to the mid shot", SNAPSHOT)
+
+
 def test_vitals_are_never_answered() -> None:
     snapshot = {"radar_heart_rate_bpm": 90.0, "radar_respiratory_rate": 16.0}
     answer = answer_question("what is the baby's heart rate?", snapshot)

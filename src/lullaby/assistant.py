@@ -10,7 +10,7 @@ health reading.
 from __future__ import annotations
 
 from .context import describe_presence_scene
-from .ears import _edit_distance
+from .ears import _edit_distance, normalize_transcript
 
 _FALLBACK = "Sorry, I didn't catch that. Please say it again."
 
@@ -23,11 +23,16 @@ def _num(snapshot: dict[str, object], key: str) -> float | None:
 
 
 def _mentions(question: str, *keywords: str, fuzzy: tuple[str, ...] = ()) -> bool:
-    """True if the question contains a keyword, or a word that is a near-miss of a
-    fuzzy target (so a slightly-misheard 'temprature' still matches 'temperature')."""
-    if any(keyword in question for keyword in keywords):
-        return True
+    """True if the question contains a keyword (whole word for single words, so
+    'shot' does not match 'hot'; substring for phrases), or a word that is a
+    near-miss of a fuzzy target ('temprature' still matches 'temperature')."""
     words = question.split()
+    for keyword in keywords:
+        if " " in keyword:
+            if keyword in question:
+                return True
+        elif keyword in words:
+            return True
     for target in fuzzy:
         for word in words:
             if abs(len(word) - len(target)) <= 2 and _edit_distance(word, target) <= 2:
@@ -37,7 +42,7 @@ def _mentions(question: str, *keywords: str, fuzzy: tuple[str, ...] = ()) -> boo
 
 def answer_question(question: str, snapshot: dict[str, object]) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
-    q = question.lower()
+    q = normalize_transcript(question)
 
     if _mentions(q, "humid", fuzzy=("humidity",)):
         value = _num(snapshot, "room_humidity_pct")
