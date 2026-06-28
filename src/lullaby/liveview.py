@@ -1,0 +1,274 @@
+"""LAN-only live camera view for Lullaby.
+
+Serves a Motion-JPEG stream over plain HTTP so a phone on the *same WiFi* can
+watch the camera in a browser. Privacy-first by construction:
+
+  * **LAN only** — nothing is sent to the Internet; the Pi simply listens on the
+    home network. Keep the home router from port-forwarding this port.
+  * **Token required** — every request must carry the shared token, so a random
+    device on the network can't open the stream.
+  * **No recording** — frames are streamed to connected viewers and never written
+    to disk. No audio is captured or served.
+
+The camera frames come from ``rpicam-vid --codec mjpeg`` (the standard Pi tool),
+read behind a small ``FrameSource`` adapter so the HTTP logic is testable with a
+fake source and no hardware. The pure helpers (JPEG framing, multipart wrapping,
+the viewer page, the auth check, the rpicam command) are all unit-tested.
+"""
+
+from __future__ import annotations
+
+import hmac
+import subprocess
+import threading
+from collections.abc import Iterable, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+_SOI = b"\xff\xd8"  # JPEG start-of-image
+_EOI = b"\xff\xd9"  # JPEG end-of-image
+_BOUNDARY = b"frame"
+
+
+def iter_jpeg_frames(chunks: Iterable[bytes]) -> Iterator[bytes]:
+    """Split a Motion-JPEG byte stream into complete JPEG frames.
+
+    ``rpicam-vid --codec mjpeg`` writes back-to-back JPEGs; each starts with
+    ``FF D8`` and ends with ``FF D9``. Yields one ``bytes`` per complete frame,
+    buffering partial data across chunk boundaries.
+    """
+    buf = bytearray()
+    for chunk in chunks:
+        buf.extend(chunk)
+        while True:
+            start = buf.find(_SOI)
+            if start < 0:
+                # No frame start in view; keep only a trailing byte (a split FF).
+                if len(buf) > 1:
+                    del buf[:-1]
+                break
+            end = buf.find(_EOI, start + 2)
+            if end < 0:
+                # Incomplete frame — drop leading junk, wait for more bytes.
+                if start > 0:
+                    del buf[:start]
+                break
+            yield bytes(buf[start : end + 2])
+            del buf[: end + 2]
+
+
+def multipart_frame(jpeg: bytes, boundary: bytes = _BOUNDARY) -> bytes:
+    """Wrap one JPEG as a multipart/x-mixed-replace chunk for the browser."""
+    return (
+        b"--" + boundary + b"\r\n"
+        b"Content-Type: image/jpeg\r\n"
+        b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n"
+    )
+
+
+def is_authorised(provided: str, expected: str) -> bool:
+    """Constant-time token check. An empty expected token never authorises."""
+    if not expected:
+        return False
+    return hmac.compare_digest(provided, expected)
+
+
+def build_viewer_html(stream_path: str, title: str = "Lullaby live view") -> str:
+    """A minimal full-screen viewer page that shows the MJPEG stream."""
+    return (
+        "<!doctype html><html><head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{title}</title>"
+        "<style>html,body{margin:0;background:#000;height:100%;}"
+        "img{width:100vw;height:100vh;object-fit:contain;display:block;}</style>"
+        "</head><body>"
+        f'<img src="{stream_path}" alt="Live camera view">'
+        "</body></html>"
+    )
+
+
+def rpicam_vid_command(
+    *,
+    camera: int = 0,
+    width: int = 640,
+    height: int = 480,
+    fps: int = 15,
+    night: bool = False,
+    binary: str = "rpicam-vid",
+) -> list[str]:
+    """Build the rpicam-vid argv that streams MJPEG to stdout.
+
+    ``night`` enables a low-light mode (longer shutter + higher gain) that helps
+    when a dim night-light is on; a fully dark room still needs a NoIR camera and
+    IR light. The longer shutter naturally lowers the achievable frame rate.
+    """
+    cmd = [
+        binary,
+        "--camera", str(camera),
+        "-t", "0",
+        "--codec", "mjpeg",
+        "--width", str(width),
+        "--height", str(height),
+        "--framerate", str(fps),
+        "--nopreview",
+        "--inline",
+        "-o", "-",
+    ]
+    if night:
+        cmd += ["--shutter", "120000", "--gain", "8.0", "--denoise", "cdn_off"]
+    return cmd
+
+
+class FrameBroker:
+    """Fan-out of the latest frame to any number of connected viewers."""
+
+    def __init__(self) -> None:
+        self._frame: bytes | None = None
+        self._seq = 0
+        self._cond = threading.Condition()
+        self._closed = False
+
+    def publish(self, frame: bytes) -> None:
+        with self._cond:
+            self._frame = frame
+            self._seq += 1
+            self._cond.notify_all()
+
+    def close(self) -> None:
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+
+    @property
+    def closed(self) -> bool:
+        with self._cond:
+            return self._closed
+
+    def wait_for_frame(
+        self, last_seq: int, timeout: float = 5.0
+    ) -> tuple[int, bytes | None]:
+        """Block until a frame newer than ``last_seq`` is published (or timeout)."""
+        with self._cond:
+            if self._seq == last_seq and not self._closed:
+                self._cond.wait(timeout)
+            if self._closed:
+                return self._seq, None
+            return self._seq, self._frame
+
+
+class RpicamFrameSource:
+    """Live frames from rpicam-vid. Yields complete JPEGs from its stdout."""
+
+    def __init__(self, command: list[str]) -> None:
+        self._command = command
+        self._proc: subprocess.Popen[bytes] | None = None
+
+    def frames(self) -> Iterator[bytes]:
+        self._proc = subprocess.Popen(
+            self._command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+        stdout = self._proc.stdout
+        assert stdout is not None
+
+        def _chunks() -> Iterator[bytes]:
+            while True:
+                data = stdout.read(8192)
+                if not data:
+                    return
+                yield data
+
+        yield from iter_jpeg_frames(_chunks())
+
+    def close(self) -> None:
+        if self._proc is not None and self._proc.poll() is None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+
+
+def _pump(source: object, broker: FrameBroker) -> None:
+    try:
+        for frame in source.frames():  # type: ignore[attr-defined]
+            broker.publish(frame)
+    finally:
+        broker.close()
+
+
+def _make_handler(broker: FrameBroker, token: str, title: str) -> type[BaseHTTPRequestHandler]:
+    class _LiveViewHandler(BaseHTTPRequestHandler):
+        server_version = "LullabyLiveView/1"
+
+        def _provided_token(self) -> str:
+            query = parse_qs(urlparse(self.path).query)
+            return (query.get("token") or [""])[0]
+
+        def _deny(self) -> None:
+            self.send_response(401)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"unauthorised")
+
+        def do_GET(self) -> None:  # noqa: N802 (stdlib naming)
+            path = urlparse(self.path).path
+            if not is_authorised(self._provided_token(), token):
+                self._deny()
+                return
+            if path == "/":
+                body = build_viewer_html(f"/stream.mjpg?token={token}", title).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif path == "/stream.mjpg":
+                self.send_response(200)
+                self.send_header(
+                    "Content-Type",
+                    f"multipart/x-mixed-replace; boundary={_BOUNDARY.decode()}",
+                )
+                self.send_header("Cache-Control", "no-cache, private")
+                self.end_headers()
+                seq = 0
+                try:
+                    while True:
+                        seq, frame = broker.wait_for_frame(seq)
+                        if frame is None:
+                            if broker.closed:
+                                break
+                            continue
+                        self.wfile.write(multipart_frame(frame))
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            else:
+                self.send_error(404)
+
+        def log_message(self, *_args: object) -> None:  # keep the console quiet
+            return
+
+    return _LiveViewHandler
+
+
+def serve_live_view(
+    *,
+    host: str,
+    port: int,
+    token: str,
+    source: object,
+    title: str = "Lullaby live view",
+) -> None:
+    """Serve the live view until interrupted. ``source`` must expose
+    ``frames() -> Iterator[bytes]`` and ``close()`` (RpicamFrameSource or a fake)."""
+    broker = FrameBroker()
+    pump = threading.Thread(target=_pump, args=(source, broker), daemon=True)
+    pump.start()
+    handler = _make_handler(broker, token, title)
+    httpd = ThreadingHTTPServer((host, port), handler)
+    try:
+        httpd.serve_forever()
+    finally:
+        httpd.server_close()
+        source.close()  # type: ignore[attr-defined]
+        broker.close()

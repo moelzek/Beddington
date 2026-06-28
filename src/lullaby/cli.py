@@ -213,6 +213,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep the two raw BMP test frames locally in the output directory",
     )
+    live = subparsers.add_parser(
+        "live-view",
+        help="Serve a LAN-only live camera view (MJPEG) for a phone browser",
+    )
+    live.add_argument("--port", type=int, default=8088)
+    live.add_argument("--camera-num", type=int, default=0)
+    live.add_argument("--width", type=int, default=640)
+    live.add_argument("--height", type=int, default=480)
+    live.add_argument("--fps", type=int, default=15)
+    live.add_argument(
+        "--night",
+        action="store_true",
+        help="Low-light mode (longer shutter + higher gain; needs some ambient light)",
+    )
+    live.add_argument("--token", default=None, help="Access token; generated if unset")
+    live.add_argument(
+        "--bind",
+        default="0.0.0.0",
+        help="Interface to bind. Default binds the LAN; do not port-forward this.",
+    )
     return parser
 
 
@@ -265,6 +285,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _visual_change_command(args)
     if args.command == "camera-change":
         return _camera_change_command(args)
+    if args.command == "live-view":
+        return _live_view_command(args)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -918,6 +940,56 @@ def _camera_change_command(args: argparse.Namespace) -> int:
         print(f"Warnings: {' | '.join(report.warnings[:2])}")
     print("This is a local visual-change metric only, not a safety assessment.")
     print(f"Report: {report_path}")
+    return 0
+
+
+def _lan_ip(fallback: str) -> str:
+    """Best-effort local LAN address for the printed URL. Sends no packets — a
+    UDP socket 'connect' only resolves the local routing interface."""
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("192.168.0.1", 9))
+        return sock.getsockname()[0]
+    except OSError:
+        return fallback
+    finally:
+        sock.close()
+
+
+def _live_view_command(args: argparse.Namespace) -> int:
+    import secrets
+
+    from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
+
+    if args.port <= 0 or args.width <= 0 or args.height <= 0 or args.fps <= 0:
+        raise SystemExit("--port, --width, --height and --fps must be positive")
+
+    token = args.token or secrets.token_urlsafe(9)
+    command = rpicam_vid_command(
+        camera=args.camera_num,
+        width=args.width,
+        height=args.height,
+        fps=args.fps,
+        night=args.night,
+    )
+    source = RpicamFrameSource(command)
+    shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
+    url = f"http://{shown_ip}:{args.port}/?token={token}"
+
+    mode = " (night / low-light)" if args.night else ""
+    print("Lullaby live view — LAN only, no Internet, no recording, no audio.")
+    print(f"  Camera {args.camera_num}{mode} at {args.width}x{args.height}, ~{args.fps} fps")
+    print(f"  Open on your phone (same WiFi):  {url}")
+    print("  The token is required. Keep this on a trusted network; do not")
+    print("  port-forward this port. Press Ctrl-C to stop.")
+    try:
+        serve_live_view(host=args.bind, port=args.port, token=token, source=source)
+    except KeyboardInterrupt:
+        print("\nLive view stopped.")
+    finally:
+        source.close()
     return 0
 
 
