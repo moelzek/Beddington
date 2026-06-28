@@ -17,7 +17,7 @@ from .assistant import answer_question
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
-from .ears import extract_wake_question
+from .ears import WAKE_WORDS, extract_wake_question
 from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
@@ -143,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     listen_assistant = subparsers.add_parser(
         "listen-assistant",
-        help='Wake-word voice Q&A: say "Hi Lullaby, what is the humidity?"',
+        help='Wake-word voice Q&A: say "Hi Paddington, what is the humidity?"',
     )
     listen_assistant.add_argument("--device")
     listen_assistant.add_argument(
@@ -152,6 +152,11 @@ def build_parser() -> argparse.ArgumentParser:
     listen_assistant.add_argument("--model-size", default="tiny.en")
     listen_assistant.add_argument("--compute-type", default="int8")
     listen_assistant.add_argument("--energy-threshold", type=float, default=0.02)
+    listen_assistant.add_argument(
+        "--wake-word",
+        action="append",
+        help="Override the wake word(s); repeatable (default: Paddington)",
+    )
     listen_assistant.add_argument(
         "--no-speak", action="store_true", help="Print answers only, do not speak"
     )
@@ -465,6 +470,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         except Exception:
             pass
     speak_config = replace(config.narrator, voice_enabled=True)
+    wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
 
     frames_q: queue.Queue = queue.Queue()
 
@@ -477,7 +483,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     speech_run = 0
     silence_run = 0
     deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
-    print('Listening — say "Hi Lullaby, what is the humidity?" (Ctrl-C to stop).')
+    print(
+        f'Listening — say "{wake_words[0].title()}, what is the humidity?"'
+        " (Ctrl-C to stop)."
+    )
     try:
         with sd.InputStream(
             samplerate=native_rate,
@@ -522,7 +531,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             np.arange(len(audio)),
                             audio,
                         ).astype(np.float32)
-                    question = extract_wake_question(_transcribe(model, audio))
+                    question = extract_wake_question(
+                        _transcribe(model, audio), wake_words
+                    )
                     if question is None:
                         continue  # no wake word — ignore silently
                     snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)

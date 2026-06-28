@@ -18,7 +18,7 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
-WAKE_WORDS: tuple[str, ...] = ("hi lullaby", "hey lullaby", "lullaby")
+WAKE_WORDS: tuple[str, ...] = ("hi paddington", "hey paddington", "paddington")
 
 
 @dataclass(frozen=True)

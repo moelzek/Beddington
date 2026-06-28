@@ -6,22 +6,22 @@ from lullaby.ears import extract_wake_question, iter_utterances
 
 def test_extract_question_after_wake() -> None:
     assert (
-        extract_wake_question("Hi Lullaby, what is the humidity?")
+        extract_wake_question("Hi Paddington, what is the humidity?")
         == "what is the humidity"
     )
 
 
-def test_extract_question_hey_lullaby() -> None:
-    assert extract_wake_question("hey lullaby is anyone there") == "is anyone there"
+def test_extract_question_hey_paddington() -> None:
+    assert extract_wake_question("hey paddington is anyone there") == "is anyone there"
 
 
 def test_extract_question_tolerates_mishearing() -> None:
     # Whisper often slips on the wake word; fuzzy matching absorbs it.
     assert (
-        extract_wake_question("lullabye what is the temperature")
+        extract_wake_question("paddingten what is the temperature")
         == "what is the temperature"
     )
-    assert extract_wake_question("lulluby temperature") == "temperature"
+    assert extract_wake_question("padington temperature") == "temperature"
 
 
 def test_extract_none_without_wake_word() -> None:
@@ -30,12 +30,12 @@ def test_extract_none_without_wake_word() -> None:
 
 def test_extract_bare_wake_returns_empty_string() -> None:
     # Wake word with no question — distinct from None so the loop can still react.
-    assert extract_wake_question("lullaby") == ""
+    assert extract_wake_question("paddington") == ""
 
 
 def test_vitals_question_routes_to_safe_fallback() -> None:
     # The ears produce text only; the deterministic brain refuses vital signs.
-    question = extract_wake_question("lullaby what is her breathing rate")
+    question = extract_wake_question("paddington what is her breathing rate")
     assert question == "what is her breathing rate"
     answer = answer_question(question, {"radar_heart_rate_bpm": 90.0})
     assert "I can tell you about the room" in answer
