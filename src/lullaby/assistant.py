@@ -29,7 +29,7 @@ _FALLBACK = "Sorry, I didn't catch that. Please say it again."
 # paired with reassurance, and says "no reading" honestly when the radar has no
 # lock — see _vitals_phrase. It asserts nothing about the baby's wellbeing.
 # Supported vitals: breathing and heart rate are the only signals the radar
-# estimates, so only these route to the labelled readout.
+# estimates, so only these route to the radar readout.
 _VITALS_WORDS = (
     "breathing", "breath", "breaths", "breathe", "chest", "heart", "heartbeat",
     "heartrate", "pulse", "respiratory", "respiration", "bpm", "vital", "vitals",
@@ -42,17 +42,13 @@ _UNSUPPORTED_VITALS = (
     "oxygen", "saturation", "spo2", "sats", "blood", "apnea", "apnoea", "fever",
 )
 
-# Wellbeing-check phrasings about the baby (not the room) — surface the labelled
-# radar vitals. Deliberately narrow phrases, not a bare "baby", so "is the baby
+# Wellbeing-check phrasings about the baby (not the room) — surface the radar
+# vitals. Deliberately narrow phrases, not a bare "baby", so "is the baby
 # asleep / crying / hungry" do NOT get answered with vitals numbers.
 _BABY_VITALS_PHRASES = (
     "how is the baby", "how s the baby", "the baby okay", "the baby alright",
     "the baby doing", "check the baby", "check on the baby",
 )
-
-# Spoken bench-vitals disclaimer. Kept on every vitals answer so the reading can
-# never be mistaken for a medical or safety assessment.
-_VITALS_DISCLAIMER = "this is a rough radar estimate, not a medical or safety reading"
 
 
 def _num(snapshot: dict[str, object], key: str) -> float | None:
@@ -188,37 +184,37 @@ def _people_phrase(snapshot: dict[str, object]) -> str:
 
 
 def _vitals_phrase(snapshot: dict[str, object]) -> str:
-    """A deterministic, clearly-labelled readout of the radar's breathing/heart
-    bench data — or an honest "no reading" when the radar has no lock.
+    """A deterministic readout of the radar's breathing/heart values — or an
+    honest "no reading" when the radar has no lock.
 
-    Never interprets the numbers, never reassures, and never asserts the baby is
-    well. The vitals keys are only present in the snapshot when bench_vitals is
-    enabled AND the radar has a valid lock (still + close), so a missing reading
-    naturally yields the honest no-lock message rather than a fabricated value.
+    Per Mo's preference the spoken answer carries no medical/safety disclaimer
+    (this is a personal bench device, not a medical product). It still never
+    interprets the numbers, never reassures, and never asserts the baby is well;
+    and it never fabricates — the vitals keys are only present when bench_vitals
+    is enabled AND the radar has a valid lock (still + close), so a missing
+    reading yields the honest no-lock message.
     """
     resp = _num(snapshot, "radar_respiratory_rate")
     heart = _num(snapshot, "radar_heart_rate_bpm")
     if resp is None and heart is None:
         return (
-            "I don't have a clear vitals reading right now. The radar only picks "
-            "up breathing and heart rate when the baby is very still and close, "
-            "and even then it's a rough estimate, not a medical or safety reading."
+            "I don't have a clear reading right now. The radar only picks up "
+            "breathing and heart rate when the baby is very still and close."
         )
     bits: list[str] = []
     if resp is not None:
         bits.append(f"breathing about {resp:.0f} breaths a minute")
     if heart is not None:
         bits.append(f"heart rate about {heart:.0f} beats per minute")
-    return f"{_VITALS_DISCLAIMER.capitalize()}: " + ", and ".join(bits) + "."
+    return "From the radar, " + ", and ".join(bits) + "."
 
 
 def _unsupported_vitals_phrase() -> str:
     """For vital signs the device cannot measure (oxygen, blood pressure, fever):
     say so honestly rather than answering with the breathing/heart estimate."""
     return (
-        "I can only estimate breathing and heart rate from the radar, and even "
-        "those are a rough estimate, not a medical or safety reading. I don't "
-        "have that particular reading."
+        "I can only read breathing and heart rate from the radar. I don't have "
+        "that particular reading."
     )
 
 
@@ -255,10 +251,9 @@ def answer_question(question: str, snapshot: dict[str, object]) -> str:
         return _unsupported_vitals_phrase()
 
     # Supported vitals next: an explicit breathing/heart/pulse question is answered
-    # from the radar's labelled bench data, routed before any other branch can
-    # capture a vitals-flavoured question (even one with an incidental "still"/
-    # "moving"/"warm" in it). The answer is always a labelled estimate, never
-    # reassurance.
+    # from the radar's bench data, routed before any other branch can capture a
+    # vitals-flavoured question (even one with an incidental "still"/"moving"/
+    # "warm" in it). The answer never reassures and never claims wellbeing.
     if _mentions(q, *_VITALS_WORDS):
         return _vitals_phrase(snapshot)
 

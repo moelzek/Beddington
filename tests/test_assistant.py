@@ -152,9 +152,10 @@ def _no_reassurance(text: str) -> bool:
     )
 
 
-def test_vitals_questions_answered_as_labelled_bench_data() -> None:
-    # Vitals questions are answered from the radar — but always labelled, never
-    # captured by people/presence/motion, and never reassuring.
+def test_vitals_questions_answered_without_reassurance() -> None:
+    # Vitals questions are answered from the radar (no medical disclaimer, per
+    # Mo's preference) — but still never reassuring and never captured by
+    # people/presence/motion.
     loaded = {
         "target_count": 2,
         "person_present": True,
@@ -173,7 +174,7 @@ def test_vitals_questions_answered_as_labelled_bench_data() -> None:
         "how is the baby",
     ):
         answer = answer_question(question, loaded)
-        assert "not a medical or safety reading" in answer.lower(), question
+        assert "90" in answer or "16" in answer, question  # the radar numbers
         assert _no_reassurance(answer), question
         assert "2 people" not in answer, question  # not captured by people-count
 
@@ -182,16 +183,15 @@ def test_vitals_no_lock_is_honest() -> None:
     # No vitals in the snapshot (radar not locked / bench_vitals off): say so,
     # never fabricate, never reassure.
     answer = answer_question("what is her heart rate", {})
-    assert "don't have a clear vitals reading" in answer.lower()
+    assert "don't have a clear reading" in answer.lower()
     assert _no_reassurance(answer)
 
 
-def test_vitals_surface_the_numbers_with_label() -> None:
+def test_vitals_surface_the_numbers() -> None:
     answer = answer_question(
         "what is her breathing rate", {"radar_respiratory_rate": 16.0}
     )
     assert "16" in answer
-    assert "not a medical or safety reading" in answer.lower()
     assert _no_reassurance(answer)
 
 
@@ -219,8 +219,8 @@ def test_chest_movement_is_vitals_not_motion() -> None:
         "is the baby's chest moving",
         {"radar_respiratory_rate": 16.0, "motion_detected": True},
     )
-    assert "not a medical or safety reading" in answer.lower()
-    assert "16" in answer
+    assert "16" in answer  # radar breathing, not "there's movement in the room"
+    assert _no_reassurance(answer)
 
 
 def test_non_vitals_baby_questions_do_not_speak_vitals() -> None:
@@ -270,9 +270,8 @@ def test_answer_ignores_substring_false_match() -> None:
     assert "say it again" in answer_question("lets go to the mid shot", SNAPSHOT)
 
 
-def test_vitals_answer_is_labelled_and_unreassuring() -> None:
+def test_vitals_answer_is_unreassuring() -> None:
     snapshot = {"radar_heart_rate_bpm": 90.0, "radar_respiratory_rate": 16.0}
     answer = answer_question("what is the baby's heart rate?", snapshot)
     assert "90" in answer and "16" in answer
-    assert "not a medical or safety reading" in answer.lower()
     assert _no_reassurance(answer)
