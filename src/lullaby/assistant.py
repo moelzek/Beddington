@@ -22,15 +22,37 @@ from .ears import _edit_distance, normalize_transcript
 
 _FALLBACK = "Sorry, I didn't catch that. Please say it again."
 
-# Vital-sign words. Any question containing one is refused outright (returns the
-# fallback) before any branch can answer it — the medical-claim boundary. Checked
-# first so "how many breaths" / "is she still breathing" / "heart rate" never
-# reach the people-count, presence, or motion branches.
+# Vital-sign words. A question containing one is answered from the radar's bench
+# data (Mo, the owner/physician, authorised this), routed first so a vitals
+# question is never captured by the people-count, presence, motion, or overview
+# branches. The answer is always a clearly-labelled rough radar estimate, never
+# paired with reassurance, and says "no reading" honestly when the radar has no
+# lock — see _vitals_phrase. It asserts nothing about the baby's wellbeing.
+# Supported vitals: breathing and heart rate are the only signals the radar
+# estimates, so only these route to the labelled readout.
 _VITALS_WORDS = (
-    "breathing", "breath", "breaths", "breathe", "heart", "heartbeat",
-    "heartrate", "pulse", "respiratory", "respiration", "bpm", "vital",
-    "vitals", "oxygen", "apnea", "apnoea", "saturation",
+    "breathing", "breath", "breaths", "breathe", "chest", "heart", "heartbeat",
+    "heartrate", "pulse", "respiratory", "respiration", "bpm", "vital", "vitals",
 )
+
+# Vital signs the device does NOT measure. Routed first (before the room-pressure
+# branch, so "blood pressure" never returns air pressure) to an honest "I don't
+# have that reading", never a fabricated or mismatched value.
+_UNSUPPORTED_VITALS = (
+    "oxygen", "saturation", "spo2", "sats", "blood", "apnea", "apnoea", "fever",
+)
+
+# Wellbeing-check phrasings about the baby (not the room) — surface the labelled
+# radar vitals. Deliberately narrow phrases, not a bare "baby", so "is the baby
+# asleep / crying / hungry" do NOT get answered with vitals numbers.
+_BABY_VITALS_PHRASES = (
+    "how is the baby", "how s the baby", "the baby okay", "the baby alright",
+    "the baby doing", "check the baby", "check on the baby",
+)
+
+# Spoken bench-vitals disclaimer. Kept on every vitals answer so the reading can
+# never be mistaken for a medical or safety assessment.
+_VITALS_DISCLAIMER = "this is a rough radar estimate, not a medical or safety reading"
 
 
 def _num(snapshot: dict[str, object], key: str) -> float | None:
@@ -165,6 +187,41 @@ def _people_phrase(snapshot: dict[str, object]) -> str:
     return f"I detect about {n} people in the room."
 
 
+def _vitals_phrase(snapshot: dict[str, object]) -> str:
+    """A deterministic, clearly-labelled readout of the radar's breathing/heart
+    bench data — or an honest "no reading" when the radar has no lock.
+
+    Never interprets the numbers, never reassures, and never asserts the baby is
+    well. The vitals keys are only present in the snapshot when bench_vitals is
+    enabled AND the radar has a valid lock (still + close), so a missing reading
+    naturally yields the honest no-lock message rather than a fabricated value.
+    """
+    resp = _num(snapshot, "radar_respiratory_rate")
+    heart = _num(snapshot, "radar_heart_rate_bpm")
+    if resp is None and heart is None:
+        return (
+            "I don't have a clear vitals reading right now. The radar only picks "
+            "up breathing and heart rate when the baby is very still and close, "
+            "and even then it's a rough estimate, not a medical or safety reading."
+        )
+    bits: list[str] = []
+    if resp is not None:
+        bits.append(f"breathing about {resp:.0f} breaths a minute")
+    if heart is not None:
+        bits.append(f"heart rate about {heart:.0f} beats per minute")
+    return f"{_VITALS_DISCLAIMER.capitalize()}: " + ", and ".join(bits) + "."
+
+
+def _unsupported_vitals_phrase() -> str:
+    """For vital signs the device cannot measure (oxygen, blood pressure, fever):
+    say so honestly rather than answering with the breathing/heart estimate."""
+    return (
+        "I can only estimate breathing and heart rate from the radar, and even "
+        "those are a rough estimate, not a medical or safety reading. I don't "
+        "have that particular reading."
+    )
+
+
 def _room_overview(snapshot: dict[str, object]) -> str:
     parts: list[str] = []
     t = _num(snapshot, "room_temperature_c")
@@ -191,11 +248,19 @@ def answer_question(question: str, snapshot: dict[str, object]) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
     q = normalize_transcript(question)
 
-    # Safety first: refuse anything that sounds like a vital sign, before any
-    # branch (people-count, presence, motion...) can capture a vitals-flavoured
-    # question — even one with an incidental "still"/"moving"/"warm" in it.
+    # Unsupported vitals first (oxygen, blood pressure, fever...): say we don't
+    # measure them — routed before the room-pressure branch so "blood pressure"
+    # never returns air pressure.
+    if _mentions(q, *_UNSUPPORTED_VITALS):
+        return _unsupported_vitals_phrase()
+
+    # Supported vitals next: an explicit breathing/heart/pulse question is answered
+    # from the radar's labelled bench data, routed before any other branch can
+    # capture a vitals-flavoured question (even one with an incidental "still"/
+    # "moving"/"warm" in it). The answer is always a labelled estimate, never
+    # reassurance.
     if _mentions(q, *_VITALS_WORDS):
-        return _FALLBACK
+        return _vitals_phrase(snapshot)
 
     # Specific readings first, so "how warm is the room" routes to temperature
     # rather than the general overview.
@@ -253,6 +318,14 @@ def answer_question(question: str, snapshot: dict[str, object]) -> str:
         value = _num(snapshot, "target_distance_cm")
         if value is not None:
             return f"The nearest person is about {value:.0f} centimetres away."
+
+    # A wellbeing check about the baby (not the room) surfaces the labelled radar
+    # vitals, checked after the specific room/presence/motion branches so "is the
+    # baby too warm" still answers temperature and "is the baby moving" still
+    # answers motion. Narrow phrases only, so "is the baby asleep/crying/hungry"
+    # fall through to the fallback rather than being answered with vitals numbers.
+    if _mentions(q, *_BABY_VITALS_PHRASES):
+        return _vitals_phrase(snapshot)
 
     # General "how is the room?" — a whole-room overview, checked last so specific
     # questions win.

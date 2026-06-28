@@ -358,7 +358,17 @@ def _format_sensor_line(reading: dict[str, object]) -> str:
     )
     if scene is not None:
         parts.append(f"scene: {scene}")
-    return " | ".join(parts) if parts else "no readings yet"
+    line = " | ".join(parts) if parts else "no readings yet"
+    # Keep the non-medical label on any line that shows a breathing/heart value,
+    # so a single line read out of context can never look like a vital sign
+    # (mirrors radar_vitals.format_radar_reading).
+    has_vital = any(
+        isinstance(reading.get(key), (int, float)) and not isinstance(reading.get(key), bool)
+        for key in ("radar_respiratory_rate", "radar_heart_rate_bpm")
+    )
+    if has_vital:
+        line += "  [raw bench data, not a medical or safety reading]"
+    return line
 
 
 def _sensors_live_command(args: argparse.Namespace, config: AppConfig) -> int:

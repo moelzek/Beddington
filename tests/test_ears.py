@@ -38,13 +38,14 @@ def test_extract_bare_wake_returns_empty_string() -> None:
     assert extract_wake_question("paddington") == ""
 
 
-def test_vitals_question_routes_to_safe_fallback() -> None:
-    # The ears produce text only; the deterministic brain refuses vital signs.
+def test_vitals_question_answered_as_labelled_bench_data() -> None:
+    # The ears produce text only; the deterministic brain answers vitals from the
+    # radar as a clearly-labelled rough estimate (never reassurance).
     question = extract_wake_question("paddington what is her breathing rate")
     assert question == "what is her breathing rate"
     answer = answer_question(question, {"radar_heart_rate_bpm": 90.0})
-    assert "say it again" in answer
-    assert "90" not in answer
+    assert "90" in answer
+    assert "not a medical or safety reading" in answer.lower()
 
 
 def test_iter_utterances_segments_one_sentence() -> None:
