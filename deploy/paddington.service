@@ -25,7 +25,9 @@ Type=simple
 WorkingDirectory=/home/lab/Labie
 Environment=SDL_AUDIODRIVER=pulse
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/lab/Labie/.venv/bin/python -m lullaby --config /home/lab/Labie/config/demo.toml listen-assistant
+# --model-size base.en: more accurate than tiny.en on marginal/distant audio
+# (fewer "I can tell you about..." fallbacks), ~2s slower per question. RAM ok.
+ExecStart=/home/lab/Labie/.venv/bin/python -m lullaby --config /home/lab/Labie/config/demo.toml listen-assistant --model-size base.en
 StandardOutput=append:/home/lab/paddington.log
 StandardError=append:/home/lab/paddington.log
 Restart=on-failure
