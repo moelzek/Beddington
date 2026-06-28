@@ -432,7 +432,7 @@ def _transcribe(model: object, audio: object) -> str:
         audio,
         language="en",
         beam_size=1,
-        vad_filter=True,  # drop noise-only clips so they don't hallucinate text
+        vad_filter=False,  # keep all the speech; VAD-trimming garbled marginal audio
         condition_on_previous_text=False,
         no_speech_threshold=0.6,
         temperature=0.0,
