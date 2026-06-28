@@ -149,6 +149,11 @@ background:rgba(20,24,48,.72);display:none}
 .cur{font-size:24px;font-weight:700;margin:4px 0 12px}
 canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-radius:8px}
 .digest{white-space:pre-wrap;font-size:15px;line-height:1.7;color:#ddd;margin:0}
+.sbtns{display:flex;flex-wrap:wrap;gap:10px}
+.sbtn{background:#26304a;color:#fff;border:1px solid #3a4668;border-radius:10px;
+padding:14px 18px;font-size:15px}
+.sbtn.on{background:#2F8F5B;border-color:#2F8F5B}
+.sbtn.stop{background:#5a2330;border-color:#7a3340}
 .note{color:#777;padding:12px 14px;font-size:12px}
 </style></head><body>
 <div id="tabs"></div>
@@ -160,7 +165,7 @@ canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-r
 <div id="charts"></div>
 <div class="note">LAN only · no recording · no audio</div>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SENSORS=__SENSORS__;
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",SENSORS=__SENSORS__;
 let active="cam",HIST={};
 const tabs=document.getElementById("tabs"),charts=document.getElementById("charts");
 function tab(id,label){const b=document.createElement("button");b.textContent=label;
@@ -170,6 +175,10 @@ if(DIGEST){tab("night","Night");
 const np=document.createElement("div");np.className="panel";np.id="p-night";
 np.innerHTML='<div class="chartwrap"><pre id="digest-text" class="digest">Loading…</pre></div>';
 charts.appendChild(np);}
+if(SOOTHE){tab("soothe","Soothe");
+const sp=document.createElement("div");sp.className="panel";sp.id="p-soothe";
+sp.innerHTML='<div class="chartwrap"><div class="cur" id="soothe-now">—</div>'
++'<div id="soothe-btns" class="sbtns"></div></div>';charts.appendChild(sp);}
 SENSORS.forEach(function(s){tab(s.key,s.label);
 const p=document.createElement("div");p.className="panel";p.id="p-"+s.key;
 p.innerHTML='<div class="chartwrap"><div class="cur" id="cur-'+s.key+'">collecting…</div>'
@@ -183,7 +192,19 @@ document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("acti
 document.getElementById(id==="cam"?"cam":"p-"+id).classList.add("active");
 document.querySelectorAll("#tabs button").forEach(function(b){
 b.classList.toggle("active",b.dataset.tab===id)});
-if(id==="night")loadDigest();else if(id!=="cam")draw();}
+if(id==="night")loadDigest();else if(id==="soothe")loadSoothe();else if(id!=="cam")draw();}
+function renderSoothe(d){const now=document.getElementById("soothe-now");
+if(now)now.textContent=d.playing?("▶ playing "+String(d.playing).replace(/_/g," ")):"Nothing playing";
+const box=document.getElementById("soothe-btns");if(!box)return;box.innerHTML="";
+(d.presets||[]).forEach(function(p){const b=document.createElement("button");b.className="sbtn";
+b.textContent=p.label;if(d.playing===p.key)b.classList.add("on");
+b.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(p.key))};box.appendChild(b);});
+const st=document.createElement("button");st.className="sbtn stop";st.textContent="⏹ Stop";
+st.onclick=function(){soothePost("action=stop")};box.appendChild(st);}
+async function soothePost(qs){try{const r=await fetch(SOOTHE+"&"+qs,{method:"POST",cache:"no-store"});
+if(r.ok)renderSoothe(await r.json());}catch(e){}}
+async function loadSoothe(){try{const r=await fetch(SOOTHE.replace("/soothe?","/soothe.json?"),{cache:"no-store"});
+if(r.ok)renderSoothe(await r.json());}catch(e){}}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
 async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
 if(r.ok){const d=await r.json();const el=document.getElementById("readings");el.innerHTML="";
@@ -242,6 +263,7 @@ def _dashboard_page(
     readings_path: str,
     history_path: str,
     digest_path: str,
+    soothe_path: str,
     sensors: tuple[dict[str, object], ...],
     title: str,
 ) -> str:
@@ -262,6 +284,7 @@ def _dashboard_page(
         .replace("__READINGS__", readings_path)
         .replace("__HISTORY__", history_path)
         .replace("__DIGEST__", digest_path)
+        .replace("__SOOTHE__", soothe_path)
         .replace("__SENSORS__", spec)
     )
 
@@ -272,18 +295,25 @@ def build_viewer_html(
     readings_path: str | None = None,
     history_path: str | None = None,
     digest_path: str | None = None,
+    soothe_path: str | None = None,
     sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
     With ``history_path`` it renders the full tabbed dashboard (a Camera tab plus
-    one graph tab per sensor, and a Night tab when ``digest_path`` is given). With
-    only ``readings_path`` it renders the simple bottom-overlay. With neither it
-    is video only.
+    one graph tab per sensor, a Night tab when ``digest_path`` is given, and a
+    Soothe tab when ``soothe_path`` is given). With only ``readings_path`` it
+    renders the simple bottom-overlay. With neither it is video only.
     """
     if history_path:
         return _dashboard_page(
-            stream_path, readings_path or "", history_path, digest_path or "", sensors, title
+            stream_path,
+            readings_path or "",
+            history_path,
+            digest_path or "",
+            soothe_path or "",
+            sensors,
+            title,
         )
     overlay = ""
     script = ""
@@ -433,12 +463,13 @@ def _pump(source: object, broker: FrameBroker) -> None:
 
 
 def _make_handler(
-    broker: FrameBroker,
+    broker: object,
     token: str,
     title: str,
     readings_provider: Callable[[], dict[str, object]] | None = None,
     history_provider: Callable[[], dict[str, object]] | None = None,
     digest_provider: Callable[[], dict[str, object]] | None = None,
+    soothe: object | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "LullabyLiveView/1"
@@ -468,12 +499,14 @@ def _make_handler(
                 digest_path = (
                     f"/digest.json?token={token}" if digest_provider else None
                 )
+                soothe_path = f"/soothe?token={token}" if soothe is not None else None
                 body = build_viewer_html(
                     f"/stream.mjpg?token={token}",
                     title,
                     readings_path,
                     history_path,
                     digest_path=digest_path,
+                    soothe_path=soothe_path,
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -487,13 +520,14 @@ def _make_handler(
                     "/digest.json": digest_provider,
                 }[path]
                 payload = provider() if provider else {}
-                body = json.dumps(payload).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(body)
+                self._send_json(payload)
+            elif path == "/soothe.json":
+                payload = (
+                    {"presets": soothe.presets(), "playing": soothe.playing()}
+                    if soothe is not None
+                    else {"presets": [], "playing": None}
+                )
+                self._send_json(payload)
             elif path == "/stream.mjpg":
                 self.send_response(200)
                 self.send_header(
@@ -513,6 +547,35 @@ def _make_handler(
                         self.wfile.write(multipart_frame(frame))
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+            else:
+                self.send_error(404)
+
+        def _send_json(self, payload: object) -> None:
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:  # noqa: N802 (stdlib naming)
+            path = urlparse(self.path).path
+            if not is_authorised(self._provided_token(), token):
+                self._deny()
+                return
+            if path == "/soothe" and soothe is not None:
+                query = parse_qs(urlparse(self.path).query)
+                action = (query.get("action") or [""])[0]
+                preset = (query.get("preset") or [""])[0]
+                if action == "play":
+                    state = dict(soothe.play(preset))
+                elif action == "stop":
+                    state = dict(soothe.stop())
+                else:
+                    state = {"ok": False, "playing": soothe.playing()}
+                state["presets"] = soothe.presets()
+                self._send_json(state)
             else:
                 self.send_error(404)
 
@@ -559,13 +622,15 @@ def serve_live_view(
     readings_provider: Callable[[], dict[str, object]] | None = None,
     history_provider: Callable[[], dict[str, object]] | None = None,
     digest_provider: Callable[[], dict[str, object]] | None = None,
+    soothe: object | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
     Pass a single ``source`` (``frames()`` + ``close()``), or ``sources`` — a
     {mode: source} map plus a ``mode_getter`` — to follow the day-eye / night-eye
     switch. ``*_provider`` callables back ``/readings.json``, ``/history.json`` and
-    ``/digest.json``.
+    ``/digest.json``; ``soothe`` (presets()/playing()/play()/stop()) backs the
+    Soothe tab.
     """
     if sources:
         brokers: dict[str, FrameBroker] = {}
@@ -592,7 +657,7 @@ def serve_live_view(
         raise ValueError("serve_live_view needs a source or sources")
 
     handler = _make_handler(
-        broker, token, title, readings_provider, history_provider, digest_provider
+        broker, token, title, readings_provider, history_provider, digest_provider, soothe
     )
     httpd = ThreadingHTTPServer((host, port), handler)
     try:

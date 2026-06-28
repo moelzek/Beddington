@@ -31,6 +31,8 @@ After=default.target network-online.target
 Type=simple
 WorkingDirectory=/home/lab/Labie
 Environment=PYTHONUNBUFFERED=1
+# So the dashboard soothe controls can play through the speaker (ffplay via SDL).
+Environment=SDL_AUDIODRIVER=pulse
 ExecStart=/home/lab/Labie/.venv/bin/python -m lullaby --config /home/lab/Labie/config/demo.toml live-view --port 8088 --width 640 --height 480 --fps 12 --night-camera-num 1
 StandardOutput=append:/home/lab/liveview.log
 StandardError=append:/home/lab/liveview.log

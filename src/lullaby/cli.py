@@ -1137,6 +1137,47 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
     return fields
 
 
+class _DashboardSoothe:
+    """Plays a chosen soothe preset on a loop through the Pi speaker, for the
+    dashboard's soothe controls. One sound at a time; stop ends it."""
+
+    def __init__(self, presets: dict[str, SootheStepConfig]) -> None:
+        from .soothe import SubprocessSoothePlayer
+
+        self._player = SubprocessSoothePlayer()
+        self._presets = presets
+        self._playing: str | None = None
+        self._lock = threading.Lock()
+
+    def presets(self) -> list[dict[str, str]]:
+        return [{"key": key, "label": step.name or key} for key, step in self._presets.items()]
+
+    def playing(self) -> str | None:
+        with self._lock:
+            return self._playing
+
+    def play(self, name: str) -> dict[str, object]:
+        step = self._presets.get(name)
+        if step is None:
+            return {"ok": False, "playing": self.playing()}
+        with self._lock:
+            # Loop for hours so it keeps soothing until the parent taps stop.
+            loop_step = replace(step, play_seconds=6 * 3600)
+            result = self._player.play(loop_step)
+            self._playing = name if result.get("played") else None
+            return {
+                "ok": bool(result.get("played")),
+                "playing": self._playing,
+                "reason": result.get("reason"),
+            }
+
+    def stop(self) -> dict[str, object]:
+        with self._lock:
+            self._player.stop_all()
+            self._playing = None
+            return {"ok": True, "playing": None}
+
+
 def _resolve_live_view_token(explicit: str | None) -> str:
     """Return a stable access token. An explicit --token wins; otherwise reuse a
     persisted one (so the phone URL survives restarts/reboots) or create it."""
@@ -1228,6 +1269,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
+    soothe = _DashboardSoothe(dict(config.soothe.presets)) if config.soothe.presets else None
+
     def _make_source(camera: int, night: bool) -> object:
         return RpicamFrameSource(
             rpicam_vid_command(
@@ -1281,12 +1324,15 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             readings_provider=readings_provider,
             history_provider=history_provider,
             digest_provider=digest_provider,
+            soothe=soothe,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")
     finally:
         if sampler is not None:
             sampler.stop()
+        if soothe is not None:
+            soothe.stop()
     return 0
 
 

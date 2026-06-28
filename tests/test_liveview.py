@@ -161,6 +161,28 @@ class _FakeFrameSource:
         self._stop.set()
 
 
+class _FakeSoothe:
+    def __init__(self) -> None:
+        self._playing: str | None = None
+
+    def presets(self) -> list[dict[str, str]]:
+        return [
+            {"key": "white_noise", "label": "White noise"},
+            {"key": "heartbeat", "label": "Heartbeat"},
+        ]
+
+    def playing(self) -> str | None:
+        return self._playing
+
+    def play(self, name: str) -> dict[str, object]:
+        self._playing = name
+        return {"ok": True, "playing": name}
+
+    def stop(self) -> dict[str, object]:
+        self._playing = None
+        return {"ok": True, "playing": None}
+
+
 def _free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -271,6 +293,57 @@ def test_serve_live_view_dual_camera_switches_on_mode() -> None:
     finally:
         day.close()
         night.close()
+
+
+def test_build_viewer_html_has_soothe_tab() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        soothe_path="/soothe?token=t",
+    )
+    assert "Soothe" in html
+    assert "soothePost" in html
+    assert "/soothe?token=t" in html
+
+
+def test_serve_live_view_soothe_play_and_stop() -> None:
+    source = _FakeFrameSource([JPEG_A])
+    token = "tk"
+    port = _free_port()
+    soothe = _FakeSoothe()
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "source": source,
+            "soothe": soothe,
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        state = json.loads(
+            urllib.request.urlopen(f"{base}/soothe.json?token={token}", timeout=2).read()
+        )
+        assert any(p["key"] == "white_noise" for p in state["presets"])
+        assert state["playing"] is None
+
+        play = urllib.request.Request(
+            f"{base}/soothe?token={token}&action=play&preset=white_noise", method="POST"
+        )
+        assert json.loads(urllib.request.urlopen(play, timeout=2).read())["playing"] == "white_noise"
+
+        stop = urllib.request.Request(
+            f"{base}/soothe?token={token}&action=stop", method="POST"
+        )
+        assert json.loads(urllib.request.urlopen(stop, timeout=2).read())["playing"] is None
+    finally:
+        source.close()
 
 
 def test_serve_live_view_serves_history_json() -> None:
