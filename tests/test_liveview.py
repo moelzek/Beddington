@@ -109,6 +109,16 @@ def test_history_series_skips_missing_values() -> None:
     assert series["room_temperature_c"]["points"] == [[2.0, 20.0]]
 
 
+def test_day_night_mode_hysteresis() -> None:
+    from lullaby.liveview import day_night_mode
+
+    assert day_night_mode(2.0, "day") == "night"  # clearly dark
+    assert day_night_mode(200.0, "night") == "day"  # clearly lit
+    # in the dusk band the mode holds (no flapping)
+    assert day_night_mode(20.0, "day") == "day"
+    assert day_night_mode(20.0, "night") == "night"
+
+
 def test_rpicam_vid_command_basic() -> None:
     cmd = rpicam_vid_command(camera=1, width=320, height=240, fps=10)
     assert cmd[0] == "rpicam-vid"

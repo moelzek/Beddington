@@ -141,6 +141,10 @@ height:calc(100vh - 48px);height:calc(100dvh - 48px);background:#000}
 #readings{position:absolute;left:0;right:0;bottom:0;display:flex;gap:14px;flex-wrap:wrap;
 padding:10px 14px;background:rgba(0,0,0,.5)}
 #readings span{white-space:nowrap}
+#readings .mode{font-weight:700}
+.nightnote{position:absolute;left:12px;right:12px;top:38%;text-align:center;
+padding:14px 16px;border-radius:10px;color:#dde;font-size:16px;
+background:rgba(20,24,48,.72);display:none}
 .chartwrap{padding:14px}
 .cur{font-size:24px;font-weight:700;margin:4px 0 12px}
 canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-radius:8px}
@@ -150,6 +154,7 @@ canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-r
 <div id="tabs"></div>
 <div id="cam" class="panel active">
   <img src="__STREAM__" alt="Live camera view">
+  <div id="nightnote" class="nightnote">🌙 It's dark — the radar and motion sensor are watching.</div>
   <div id="readings"></div>
 </div>
 <div id="charts"></div>
@@ -182,8 +187,12 @@ if(id==="night")loadDigest();else if(id!=="cam")draw();}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
 async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
 if(r.ok){const d=await r.json();const el=document.getElementById("readings");el.innerHTML="";
+if(d.mode){const m=document.createElement("span");m.className="mode";
+m.textContent=d.mode==="night"?"🌙 Night":"☀️ Day";el.appendChild(m);}
 ORDER.forEach(function(k){if(d[k]){const s=document.createElement("span");
-s.textContent=d[k];el.appendChild(s);}});}}catch(e){}setTimeout(poll,3000);}
+s.textContent=d[k];el.appendChild(s);}});
+const nn=document.getElementById("nightnote");
+if(nn)nn.style.display=(d.mode==="night")?"block":"none";}}catch(e){}setTimeout(poll,3000);}
 async function load(){try{const r=await fetch(HISTORY,{cache:"no-store"});
 if(r.ok)HIST=await r.json();}catch(e){}
 SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
@@ -211,6 +220,21 @@ p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x
 ctx.stroke();}
 show("cam");poll();load();setInterval(load,5000);
 </script></body></html>"""
+
+
+def day_night_mode(
+    lux: float,
+    previous: str = "day",
+    *,
+    dark_below: float = 10.0,
+    light_above: float = 30.0,
+) -> str:
+    """Day or night from the light level, with hysteresis so it does not flap at
+    dusk: switch to night only when clearly dark, back to day only when clearly
+    lit. Returns ``previous`` while the lux sits in the in-between band."""
+    if previous == "night":
+        return "day" if lux > light_above else "night"
+    return "night" if lux < dark_below else "day"
 
 
 def _dashboard_page(

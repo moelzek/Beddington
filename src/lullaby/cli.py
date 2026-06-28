@@ -1035,6 +1035,7 @@ class _SensorSampler:
         self._store = store
         self._retention = retention_seconds
         self._ticks = 0
+        self._mode = "day"
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -1042,6 +1043,8 @@ class _SensorSampler:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
+        from .liveview import day_night_mode
+
         while not self._stop.is_set():
             try:
                 snapshot = _read_sensor_snapshot(self._readers)
@@ -1049,9 +1052,12 @@ class _SensorSampler:
                 snapshot = {}
             if snapshot:
                 now = time.time()
+                lux = snapshot.get("room_illuminance_lx")
                 with self._lock:
                     self._latest = snapshot
                     self._history.append((now, snapshot))
+                    if isinstance(lux, (int, float)) and not isinstance(lux, bool):
+                        self._mode = day_night_mode(float(lux), self._mode)
                 if self._store is not None:
                     try:
                         self._store.append(now, snapshot)
@@ -1066,6 +1072,10 @@ class _SensorSampler:
     def latest(self) -> dict[str, object]:
         with self._lock:
             return dict(self._latest)
+
+    def mode(self) -> str:
+        with self._lock:
+            return self._mode
 
     def history(self) -> list[tuple[float, dict[str, object]]]:
         with self._lock:
@@ -1201,7 +1211,10 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
                     store = None
             sampler = _SensorSampler(readers, args.sensor_interval, store=store)
             sampler.start()
-            readings_provider = lambda: _dashboard_fields(sampler.latest())  # noqa: E731
+            readings_provider = lambda: {  # noqa: E731
+                **_dashboard_fields(sampler.latest()),
+                "mode": sampler.mode(),
+            }
             if store is not None:
                 from .night_digest import summarise_night
 
