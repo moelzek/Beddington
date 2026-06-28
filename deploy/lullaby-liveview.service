@@ -33,6 +33,10 @@ WorkingDirectory=/home/lab/Labie
 Environment=PYTHONUNBUFFERED=1
 # So the dashboard soothe controls can play through the speaker (ffplay via SDL).
 Environment=SDL_AUDIODRIVER=pulse
+# At cold boot the cameras (CSI) and I2C/WiFi can lag behind the service start,
+# which left rpicam zombied and the air sensor unread until a manual restart.
+# Wait for the subsystems to settle first.
+ExecStartPre=/bin/sleep 25
 ExecStart=/home/lab/Labie/.venv/bin/python -m lullaby --config /home/lab/Labie/config/demo.toml live-view --port 8088 --width 640 --height 480 --fps 12 --night-camera-num 1
 StandardOutput=append:/home/lab/liveview.log
 StandardError=append:/home/lab/liveview.log
