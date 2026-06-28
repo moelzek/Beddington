@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 import time
 from dataclasses import replace
 from datetime import datetime
@@ -233,6 +234,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="0.0.0.0",
         help="Interface to bind. Default binds the LAN; do not port-forward this.",
     )
+    live.add_argument(
+        "--no-sensors",
+        action="store_true",
+        help="Video only; do not overlay the live room readings on the page",
+    )
+    live.add_argument("--sensor-interval", type=float, default=3.0)
     return parser
 
 
@@ -286,7 +293,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "camera-change":
         return _camera_change_command(args)
     if args.command == "live-view":
-        return _live_view_command(args)
+        return _live_view_command(args, config)
 
     detector = YamNetTFLiteDetector(args.model)
     if args.soothe:
@@ -958,7 +965,69 @@ def _lan_ip(fallback: str) -> str:
         sock.close()
 
 
-def _live_view_command(args: argparse.Namespace) -> int:
+class _SensorSampler:
+    """Owns the sensor readers and refreshes a cached snapshot in the background,
+    so the live-view HTTP handler can serve readings without blocking on I/O."""
+
+    def __init__(self, readers: list, interval: float) -> None:
+        self._readers = readers
+        self._interval = max(0.5, interval)
+        self._latest: dict[str, object] = {}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                snapshot = _read_sensor_snapshot(self._readers)
+            except Exception:
+                snapshot = {}
+            if snapshot:
+                with self._lock:
+                    self._latest = snapshot
+            self._stop.wait(self._interval)
+
+    def latest(self) -> dict[str, object]:
+        with self._lock:
+            return dict(self._latest)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
+def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
+    """Build short display strings for the live-view dashboard overlay, reusing
+    the assistant's comfort interpretations for consistency."""
+    from .assistant import _humid_label, _num, _temp_label
+
+    fields: dict[str, object] = {}
+    temp = _num(snapshot, "room_temperature_c")
+    if temp is not None:
+        fields["temperature"] = f"{temp:.0f}°C · {_temp_label(temp)}"
+    humidity = _num(snapshot, "room_humidity_pct")
+    if humidity is not None:
+        fields["humidity"] = f"{humidity:.0f}% · {_humid_label(humidity)}"
+    present = snapshot.get("person_present")
+    if present is True:
+        fields["presence"] = "● someone present"
+    elif present is False:
+        fields["presence"] = "○ no one detected"
+    resp = _num(snapshot, "radar_respiratory_rate")
+    heart = _num(snapshot, "radar_heart_rate_bpm")
+    if resp is not None or heart is not None:
+        bits = []
+        if resp is not None:
+            bits.append(f"breathing ~{resp:.0f}")
+        if heart is not None:
+            bits.append(f"heart ~{heart:.0f}")
+        fields["vitals"] = "from radar: " + ", ".join(bits)
+    return fields
+
+
+def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     import secrets
 
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
@@ -975,21 +1044,40 @@ def _live_view_command(args: argparse.Namespace) -> int:
         night=args.night,
     )
     source = RpicamFrameSource(command)
+
+    sampler: _SensorSampler | None = None
+    readings_provider = None
+    if not args.no_sensors:
+        readers = build_sensor_readers(config.sensors)
+        if readers:
+            sampler = _SensorSampler(readers, args.sensor_interval)
+            sampler.start()
+            readings_provider = lambda: _dashboard_fields(sampler.latest())  # noqa: E731
+
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     url = f"http://{shown_ip}:{args.port}/?token={token}"
 
     mode = " (night / low-light)" if args.night else ""
+    overlay = "video + live room readings" if readings_provider else "video only"
     print("Lullaby live view — LAN only, no Internet, no recording, no audio.")
-    print(f"  Camera {args.camera_num}{mode} at {args.width}x{args.height}, ~{args.fps} fps")
+    print(f"  Camera {args.camera_num}{mode} at {args.width}x{args.height}, ~{args.fps} fps ({overlay})")
     print(f"  Open on your phone (same WiFi):  {url}")
     print("  The token is required. Keep this on a trusted network; do not")
     print("  port-forward this port. Press Ctrl-C to stop.")
     try:
-        serve_live_view(host=args.bind, port=args.port, token=token, source=source)
+        serve_live_view(
+            host=args.bind,
+            port=args.port,
+            token=token,
+            source=source,
+            readings_provider=readings_provider,
+        )
     except KeyboardInterrupt:
         print("\nLive view stopped.")
     finally:
         source.close()
+        if sampler is not None:
+            sampler.stop()
     return 0
 
 

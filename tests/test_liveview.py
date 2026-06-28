@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import socket
 import threading
 import time
@@ -54,6 +55,16 @@ def test_build_viewer_html_embeds_stream() -> None:
     assert "/stream.mjpg?token=abc" in html
     assert "<img" in html
     assert "Cot cam" in html
+    assert "readings.json" not in html  # no dashboard unless asked
+
+
+def test_build_viewer_html_dashboard_overlay() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t", readings_path="/readings.json?token=t"
+    )
+    assert "/readings.json?token=t" in html
+    assert 'class="panel"' in html
+    assert "poll()" in html  # polling script present
 
 
 def test_rpicam_vid_command_basic() -> None:
@@ -135,5 +146,42 @@ def test_serve_live_view_requires_token_and_streams() -> None:
         data = stream.read(160)
         assert b"image/jpeg" in data
         stream.close()
+    finally:
+        source.close()
+
+
+def test_serve_live_view_serves_readings_when_provider_given() -> None:
+    source = _FakeFrameSource([JPEG_A])
+    token = "tok"
+    port = _free_port()
+    readings = {"temperature": "21°C · comfortable", "presence": "someone present"}
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "source": source,
+            "readings_provider": lambda: readings,
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        # readings require the token too
+        try:
+            urllib.request.urlopen(f"{base}/readings.json", timeout=2)
+            raise AssertionError("expected 401 without token")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401
+
+        body = urllib.request.urlopen(f"{base}/readings.json?token={token}", timeout=2).read()
+        assert json.loads(body)["temperature"] == "21°C · comfortable"
+
+        # the viewer page now references the readings endpoint (dashboard mode)
+        page = urllib.request.urlopen(f"{base}/?token={token}", timeout=2).read()
+        assert b"readings.json" in page
     finally:
         source.close()

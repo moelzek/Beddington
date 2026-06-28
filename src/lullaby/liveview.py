@@ -19,9 +19,10 @@ the viewer page, the auth check, the rpicam command) are all unit-tested.
 from __future__ import annotations
 
 import hmac
+import json
 import subprocess
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -73,17 +74,51 @@ def is_authorised(provided: str, expected: str) -> bool:
     return hmac.compare_digest(provided, expected)
 
 
-def build_viewer_html(stream_path: str, title: str = "Lullaby live view") -> str:
-    """A minimal full-screen viewer page that shows the MJPEG stream."""
+def build_viewer_html(
+    stream_path: str,
+    title: str = "Lullaby live view",
+    readings_path: str | None = None,
+) -> str:
+    """A full-screen viewer page for the MJPEG stream.
+
+    When ``readings_path`` is given, a translucent panel along the bottom polls
+    that JSON endpoint every few seconds and shows the live room readings over
+    the video — turning the page into a one-screen baby-monitor dashboard.
+    """
+    overlay = ""
+    script = ""
+    if readings_path:
+        overlay = (
+            '<div class="panel">'
+            '<span id="r-temp"></span><span id="r-hum"></span>'
+            '<span id="r-presence"></span><span id="r-vitals"></span>'
+            "</div>"
+        )
+        script = (
+            "<script>"
+            f'const RP="{readings_path}";'
+            "function set(id,v){var e=document.getElementById(id);"
+            "e.textContent=v||'';e.style.display=v?'inline':'none';}"
+            "async function poll(){try{const r=await fetch(RP,{cache:'no-store'});"
+            "if(r.ok){const d=await r.json();set('r-temp',d.temperature);"
+            "set('r-hum',d.humidity);set('r-presence',d.presence);"
+            "set('r-vitals',d.vitals);}}catch(e){}setTimeout(poll,3000);}poll();"
+            "</script>"
+        )
     return (
         "<!doctype html><html><head>"
         '<meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{title}</title>"
         "<style>html,body{margin:0;background:#000;height:100%;}"
-        "img{width:100vw;height:100vh;object-fit:contain;display:block;}</style>"
+        "img{width:100vw;height:100vh;object-fit:contain;display:block;}"
+        ".panel{position:fixed;left:0;right:0;bottom:0;display:flex;gap:16px;"
+        "flex-wrap:wrap;padding:10px 14px;background:rgba(0,0,0,.55);color:#fff;"
+        "font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}"
+        ".panel span{white-space:nowrap;}</style>"
         "</head><body>"
         f'<img src="{stream_path}" alt="Live camera view">'
+        f"{overlay}{script}"
         "</body></html>"
     )
 
@@ -197,7 +232,12 @@ def _pump(source: object, broker: FrameBroker) -> None:
         broker.close()
 
 
-def _make_handler(broker: FrameBroker, token: str, title: str) -> type[BaseHTTPRequestHandler]:
+def _make_handler(
+    broker: FrameBroker,
+    token: str,
+    title: str,
+    readings_provider: Callable[[], dict[str, object]] | None = None,
+) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "LullabyLiveView/1"
 
@@ -217,10 +257,24 @@ def _make_handler(broker: FrameBroker, token: str, title: str) -> type[BaseHTTPR
                 self._deny()
                 return
             if path == "/":
-                body = build_viewer_html(f"/stream.mjpg?token={token}", title).encode()
+                readings_path = (
+                    f"/readings.json?token={token}" if readings_provider else None
+                )
+                body = build_viewer_html(
+                    f"/stream.mjpg?token={token}", title, readings_path
+                ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif path == "/readings.json":
+                payload = readings_provider() if readings_provider else {}
+                body = json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
             elif path == "/stream.mjpg":
@@ -258,13 +312,18 @@ def serve_live_view(
     token: str,
     source: object,
     title: str = "Lullaby live view",
+    readings_provider: Callable[[], dict[str, object]] | None = None,
 ) -> None:
     """Serve the live view until interrupted. ``source`` must expose
-    ``frames() -> Iterator[bytes]`` and ``close()`` (RpicamFrameSource or a fake)."""
+    ``frames() -> Iterator[bytes]`` and ``close()`` (RpicamFrameSource or a fake).
+
+    ``readings_provider`` (optional) returns the latest readings dict served at
+    ``/readings.json`` and shown in the dashboard overlay.
+    """
     broker = FrameBroker()
     pump = threading.Thread(target=_pump, args=(source, broker), daemon=True)
     pump.start()
-    handler = _make_handler(broker, token, title)
+    handler = _make_handler(broker, token, title, readings_provider)
     httpd = ThreadingHTTPServer((host, port), handler)
     try:
         httpd.serve_forever()
