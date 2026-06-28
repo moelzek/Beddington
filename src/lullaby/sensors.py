@@ -44,6 +44,7 @@ class Bme680AirReader:
             reading: dict[str, object] = {
                 "room_temperature_c": round(float(sensor.data.temperature), 1),
                 "room_humidity_pct": round(float(sensor.data.humidity), 1),
+                "room_pressure_hpa": round(float(sensor.data.pressure), 1),
             }
             # Gas resistance is only valid once the heater is warmed up. Read it
             # defensively so a gas hiccup can never drop temperature/humidity.
@@ -292,7 +293,12 @@ def _coerce_radar_value(field: str, value: object) -> object | None:
         return None
     if field == "target_count":
         return int(round(number))
-    return round(number, 1)
+    rounded = round(number, 1)
+    if field in (RADAR_RESPIRATORY_KEY, RADAR_HEART_RATE_KEY) and rounded <= 0:
+        # A 0 (or negative) breathing/heart rate is the radar's "no lock"
+        # sentinel, not a real measurement — omit it like NaN.
+        return None
+    return rounded
 
 
 def _enable_bme680_gas(sensor: Any, bme680: Any) -> None:

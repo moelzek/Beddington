@@ -18,6 +18,7 @@ def test_format_sensor_line_combines_all_sensors() -> None:
         {
             "room_temperature_c": 25.2,
             "room_humidity_pct": 50.0,
+            "room_pressure_hpa": 1013.0,
             "room_gas_resistance_ohms": 123456,
             "person_present": True,
             "motion_detected": False,
@@ -30,6 +31,7 @@ def test_format_sensor_line_combines_all_sensors() -> None:
     )
     assert "25.2 C" in line
     assert "50% RH" in line
+    assert "1013 hPa" in line
     assert "123 kohm gas" in line
     assert "present" in line
     assert "still" in line

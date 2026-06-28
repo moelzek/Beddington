@@ -269,7 +269,11 @@ def _format_sensor_line(reading: dict[str, object]) -> str:
         return f"{value:g}{suffix}"
 
     parts: list[str] = []
-    for key, suffix in (("room_temperature_c", " C"), ("room_humidity_pct", "% RH")):
+    for key, suffix in (
+        ("room_temperature_c", " C"),
+        ("room_humidity_pct", "% RH"),
+        ("room_pressure_hpa", " hPa"),
+    ):
         rendered = num(key, suffix)
         if rendered is not None:
             parts.append(rendered)

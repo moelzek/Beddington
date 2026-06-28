@@ -82,7 +82,7 @@ def test_bme680_reader_returns_temperature_and_humidity(monkeypatch) -> None:
     calls: list[int] = []
 
     class FakeBmeSensor:
-        data = SimpleNamespace(temperature=21.34, humidity=47.04)
+        data = SimpleNamespace(temperature=21.34, humidity=47.04, pressure=1012.81)
 
         def __init__(self, i2c_addr: int):
             calls.append(i2c_addr)
@@ -103,6 +103,7 @@ def test_bme680_reader_returns_temperature_and_humidity(monkeypatch) -> None:
     assert Bme680AirReader(0x76).read() == {
         "room_temperature_c": 21.3,
         "room_humidity_pct": 47.0,
+        "room_pressure_hpa": 1012.8,
     }
     assert calls == [0x76]
 
@@ -111,7 +112,7 @@ def test_bme680_reader_tries_secondary_address(monkeypatch) -> None:
     calls: list[int] = []
 
     class FakeBmeSensor:
-        data = SimpleNamespace(temperature=20.0, humidity=50.0)
+        data = SimpleNamespace(temperature=20.0, humidity=50.0, pressure=1010.0)
 
         def __init__(self, i2c_addr: int):
             calls.append(i2c_addr)
@@ -134,6 +135,7 @@ def test_bme680_reader_tries_secondary_address(monkeypatch) -> None:
     assert Bme680AirReader().read() == {
         "room_temperature_c": 20.0,
         "room_humidity_pct": 50.0,
+        "room_pressure_hpa": 1010.0,
     }
     assert calls == [0x76, 0x77]
 
@@ -151,6 +153,7 @@ def _install_fake_bme680(monkeypatch, *, gas_resistance: float, heat_stable: boo
         data = SimpleNamespace(
             temperature=22.0,
             humidity=48.0,
+            pressure=1011.0,
             gas_resistance=gas_resistance,
             heat_stable=heat_stable,
         )
@@ -196,6 +199,7 @@ def test_bme680_reader_includes_gas_when_enabled_and_stable(monkeypatch) -> None
     assert reading == {
         "room_temperature_c": 22.0,
         "room_humidity_pct": 48.0,
+        "room_pressure_hpa": 1011.0,
         "room_gas_resistance_ohms": 123456,
     }
     assert configured == ["status", "temp", "duration", "profile"]
@@ -317,6 +321,10 @@ def test_coerce_radar_value() -> None:
     assert _coerce_radar_value("radar_heart_rate_bpm", float("nan")) is None
     assert _coerce_radar_value("radar_respiratory_rate", float("inf")) is None
     assert _coerce_radar_value("radar_heart_rate_bpm", 92.0) == 92.0
+    # A 0 vital is the radar's "no lock" sentinel — omit it (but count 0 is valid).
+    assert _coerce_radar_value("radar_heart_rate_bpm", 0.0) is None
+    assert _coerce_radar_value("radar_respiratory_rate", 0.0) is None
+    assert _coerce_radar_value("target_count", 0.0) == 0
 
 
 def test_build_sensor_readers_includes_radar_when_enabled() -> None:
