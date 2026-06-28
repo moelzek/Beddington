@@ -585,6 +585,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         night_store = None
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
+    auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms)
 
     frames_q: queue.Queue = queue.Queue()
 
@@ -640,6 +641,12 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 except queue.Empty:
                     continue
                 pre_roll.append(frame)
+                auto_preset = auto_watcher.feed(frame, time.monotonic())
+                if auto_preset:
+                    auto_result = _soothe_via_dashboard(
+                        {"action": "play", "preset": auto_preset}
+                    )
+                    print(f"  [auto-soothe] sustained crying -> {auto_result}")
                 rms = float(np.sqrt(np.mean(frame**2)))
                 if adapt and not in_utterance and rms < threshold:
                     # Track the noise floor from quiet frames and keep the bar
@@ -1195,6 +1202,17 @@ class _DashboardSoothe:
     def default(self) -> str | None:
         return self._default
 
+    def autosoothe(self) -> dict[str, object]:
+        from .autosoothe import read_state
+
+        return read_state()
+
+    def set_autosoothe(self, enabled: bool, preset: str) -> dict[str, object]:
+        from .autosoothe import write_state
+
+        chosen = preset if preset in self._presets else (self._default or "")
+        return write_state(enabled, chosen)
+
     def playing(self) -> str | None:
         with self._lock:
             return self._playing
@@ -1276,6 +1294,92 @@ def _soothe_via_dashboard(cmd: dict[str, str], port: int = 8088) -> str:
         return spoken
     except Exception:
         return "Sorry, I couldn't reach the soothe player."
+
+
+class _AutoSootheWatcher:
+    """Watches the assistant's mic for sustained crying and returns the preset to
+    auto-play when the shared auto-soothe toggle is on. While off it loads no
+    detector and does no work, so the wake-word loop is unaffected."""
+
+    # YAMNet's fixed input window (0.975 s at 16 kHz).
+    _WINDOW = 15600
+
+    def __init__(self, config: AppConfig, native_rate: int, frame_ms: int = 30) -> None:
+        self._config = config
+        self._native = native_rate
+        self._buf: deque = deque(maxlen=max(1, round(1000 / frame_ms)))  # ~1 s
+        self._watcher: object | None = None
+        self._building = False
+        self._start: float | None = None
+        self._last_check = 0.0
+        self._last_state = -10.0
+        self._state: dict[str, object] = {"enabled": False, "preset": ""}
+
+    def feed(self, frame: object, now: float) -> str | None:
+        from .autosoothe import read_state
+
+        if now - self._last_state >= 2.0:
+            self._state = read_state()
+            self._last_state = now
+        if not self._state.get("enabled"):
+            self._buf.clear()
+            return None
+        self._buf.append(frame)
+        if now - self._last_check < 1.0 or len(self._buf) < self._buf.maxlen:
+            return None
+        self._last_check = now
+        if self._watcher is None:
+            # Build the YAMNet detector off the audio thread so the first enable
+            # never blocks the wake-word loop (load is ~1.5 s). Skip until ready.
+            self._ensure_building()
+            return None
+        import numpy as np
+
+        audio = np.concatenate(list(self._buf))
+        if self._native != 16000:
+            count = int(len(audio) * 16000 / self._native)
+            audio = np.interp(
+                np.linspace(0, len(audio), count, endpoint=False),
+                np.arange(len(audio)),
+                audio,
+            ).astype(np.float32)
+        # Trim/pad to YAMNet's fixed window so .score() never raises on length.
+        if len(audio) >= self._WINDOW:
+            audio = audio[-self._WINDOW :]
+        else:
+            audio = np.concatenate(
+                [np.zeros(self._WINDOW - len(audio), dtype=np.float32), audio]
+            )
+        if self._watcher.observe(now - (self._start or now), audio):  # type: ignore[attr-defined]
+            return str(self._state.get("preset") or "") or None
+        return None
+
+    def _ensure_building(self) -> None:
+        if self._building:
+            return
+        self._building = True
+        threading.Thread(target=self._do_build, daemon=True).start()
+
+    def _do_build(self) -> None:
+        try:
+            watcher = self._build()
+            self._start = time.monotonic()
+            self._watcher = watcher
+        except Exception:
+            pass
+        finally:
+            self._building = False
+
+    def _build(self) -> object:
+        from datetime import UTC, datetime
+
+        from .autosoothe import CryWatcher
+        from .detector import YamNetTFLiteDetector
+        from .state import CryEventTracker
+
+        detector = YamNetTFLiteDetector()
+        tracker = CryEventTracker(self._config.detection, datetime.now(UTC))
+        return CryWatcher(detector, tracker)
 
 
 def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:

@@ -211,7 +211,19 @@ box.appendChild(cb);}
 b.textContent=p.label;if(d.playing===p.key)b.classList.add("on");
 b.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(p.key))};box.appendChild(b);});
 const st=document.createElement("button");st.className="sbtn stop";st.textContent="⏹ Stop";
-st.onclick=function(){soothePost("action=stop")};box.appendChild(st);}
+st.onclick=function(){soothePost("action=stop")};box.appendChild(st);
+const as=d.autosoothe||{enabled:false,preset:""};
+const hr=document.createElement("div");hr.style.cssText="width:100%;border-top:1px solid #333;margin:14px 0 4px";box.appendChild(hr);
+const lbl=document.createElement("div");lbl.style.cssText="width:100%;color:#bcd;font-size:13px;margin-bottom:8px";
+lbl.textContent="🔁 Auto-soothe: listen for crying, then play this sound automatically";box.appendChild(lbl);
+const tg=document.createElement("button");tg.className="sbtn"+(as.enabled?" on":"");
+tg.textContent=as.enabled?("Auto-soothe ON — "+String(as.preset||"").replace(/_/g," ")):"Auto-soothe OFF";
+tg.onclick=function(){autoPost(as.enabled?0:1, as.preset||d.default||"")};box.appendChild(tg);
+(d.presets||[]).forEach(function(p){const pb=document.createElement("button");
+pb.className="sbtn"+(as.preset===p.key?" on":"");pb.textContent="🔁 "+p.label;
+pb.onclick=function(){autoPost(1, p.key)};box.appendChild(pb);});}
+async function autoPost(enabled,preset){try{await fetch(SOOTHE.replace("/soothe?","/autosoothe?")
++"&enabled="+enabled+"&preset="+encodeURIComponent(preset),{method:"POST",cache:"no-store"});}catch(e){}loadSoothe();}
 async function soothePost(qs){try{const r=await fetch(SOOTHE+"&"+qs,{method:"POST",cache:"no-store"});
 if(r.ok)renderSoothe(await r.json());}catch(e){}}
 async function loadSoothe(){try{const r=await fetch(SOOTHE.replace("/soothe?","/soothe.json?"),{cache:"no-store"});
@@ -560,6 +572,7 @@ def _make_handler(
                         "presets": soothe.presets(),
                         "playing": soothe.playing(),
                         "default": soothe.default(),
+                        "autosoothe": soothe.autosoothe(),
                     }
                     if soothe is not None
                     else {"presets": [], "playing": None}
@@ -620,6 +633,13 @@ def _make_handler(
                 value = requested if requested in ("day", "night") else None
                 mode = mode_setter(value)
                 self._send_json({"mode": mode, "mode_auto": value is None})
+            elif path == "/autosoothe" and soothe is not None:
+                query = parse_qs(urlparse(self.path).query)
+                enabled = (query.get("enabled") or ["0"])[0] in ("1", "true", "on")
+                preset = (query.get("preset") or [""])[0]
+                state = dict(soothe.set_autosoothe(enabled, preset))
+                state["presets"] = soothe.presets()
+                self._send_json(state)
             else:
                 self.send_error(404)
 

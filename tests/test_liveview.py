@@ -190,6 +190,12 @@ class _FakeSoothe:
     def default(self) -> str:
         return "white_noise"
 
+    def autosoothe(self) -> dict[str, object]:
+        return {"enabled": False, "preset": ""}
+
+    def set_autosoothe(self, enabled: bool, preset: str) -> dict[str, object]:
+        return {"enabled": enabled, "preset": preset}
+
     def playing(self) -> str | None:
         return self._playing
 
