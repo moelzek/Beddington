@@ -49,13 +49,13 @@ def test_answer_distance() -> None:
 
 
 def test_answer_fallback_when_unknown() -> None:
-    assert "I can tell you about the room" in answer_question(
+    assert "say it again" in answer_question(
         "what is the meaning of life?", SNAPSHOT
     )
 
 
 def test_answer_fallback_when_value_missing() -> None:
-    assert "I can tell you about the room" in answer_question(
+    assert "say it again" in answer_question(
         "what is the humidity?", {}
     )
 
@@ -68,7 +68,7 @@ def test_answer_tolerates_misheard_keywords() -> None:
 
 def test_answer_falls_back_on_unrelated_word() -> None:
     # A garbled word that is not close to any topic must NOT false-match.
-    assert "I can tell you about the room" in answer_question("western", SNAPSHOT)
+    assert "say it again" in answer_question("western", SNAPSHOT)
 
 
 def test_vitals_are_never_answered() -> None:

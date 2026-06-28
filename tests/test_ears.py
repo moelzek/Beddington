@@ -43,7 +43,7 @@ def test_vitals_question_routes_to_safe_fallback() -> None:
     question = extract_wake_question("paddington what is her breathing rate")
     assert question == "what is her breathing rate"
     answer = answer_question(question, {"radar_heart_rate_bpm": 90.0})
-    assert "I can tell you about the room" in answer
+    assert "say it again" in answer
     assert "90" not in answer
 
 

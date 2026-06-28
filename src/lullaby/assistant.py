@@ -13,8 +13,8 @@ from .context import describe_presence_scene
 from .ears import _edit_distance
 
 _FALLBACK = (
-    "I can tell you about the room: temperature, humidity, air pressure, "
-    "air quality, brightness, or whether someone is nearby."
+    "Sorry, I didn't catch that. Please say it again — you can ask me the "
+    "temperature, humidity, brightness, or air quality."
 )
 
 
