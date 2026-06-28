@@ -16,6 +16,7 @@ from .audio import (
     WavFileAudioSource,
 )
 from .assistant import answer_question, is_night_question, match_soothe_command
+from .persona import paddingtonise
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
@@ -586,6 +587,14 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
     auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms)
+    # Warm the persona model so the first real reply isn't cold-start slow. Off the
+    # critical path: a throwaway restyle whose result we discard. Harmless if the
+    # model/Ollama is unavailable (paddingtonise just returns the input).
+    if speak_config.persona_enabled:
+        try:
+            paddingtonise("The room is about 20 degrees Celsius, comfortable.", speak_config)
+        except Exception:
+            pass
 
     frames_q: queue.Queue = queue.Queue()
 
@@ -712,6 +721,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     else:
                         snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
                         answer = answer_question(question, snapshot)
+                    # Re-voice the deterministic answer as Beddington (grounded +
+                    # validated; medically-sensitive vitals are spoken verbatim).
+                    # One chokepoint, so every spoken surface is covered.
+                    answer = paddingtonise(answer, speak_config)
                     print(f'  heard: "{question}"  ->  {answer}')
                     if not args.no_speak:
                         spoken = speak(answer, speak_config)

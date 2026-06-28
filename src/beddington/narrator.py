@@ -63,8 +63,11 @@ def build_narration_prompt(report: NightReport) -> str:
 
     fact_lines = "\n".join(f"- {fact}" for fact in facts)
     return (
-        "You are Beddington, a baby-monitor companion giving a parent a brief spoken "
-        "morning recap. Write 2 to 3 short, plain British English sentences and then stop.\n"
+        "You are Beddington, a kindly little bear with the warm, polite, gentle manner "
+        "of Paddington Bear, giving a parent a brief spoken morning recap in your own "
+        "voice. Write 2 to 3 short, plain British English sentences and then stop. You "
+        "may add one small, gentle touch (a mention of marmalade, of Aunt Lucy, or a "
+        'kindly "if I may"), at most once.\n'
         "State only the derived facts below. Do not interpret, guess causes, judge, "
         "comfort, or comment on any numbers or scores. Mention the crying, the soothing "
         "and its outcome, any room temperature, humidity, brightness, presence, and "
@@ -76,8 +79,9 @@ def build_narration_prompt(report: NightReport) -> str:
         "only the recap as plain prose: no preamble, no greeting headers, no lists, no "
         "labels, no field names.\n"
         'Say "crying"; do not say "tantrum". Never say the baby is safe, asleep, healthy, '
-        "fine, or breathing. Never mention heart rate, breathing rate, or any vital sign. "
-        "Do not give medical advice.\n"
+        "fine, or breathing. Never reassure the parent, and never comment on whether the "
+        "baby is well, comfortable, at peace, or sleeping. Never mention heart rate, "
+        "breathing rate, or any vital sign. Do not give medical advice.\n"
         "No raw audio or video is included here. Do not ask for or mention raw media.\n\n"
         "Derived facts:\n"
         f"{fact_lines}"
@@ -335,9 +339,15 @@ def _synthesise_piper(
     if not model.exists():
         return {"created": False, "reason": "piper_model_not_found"}
 
+    command = [binary, "--model", str(model), "--output_file", str(wav_path)]
+    speaker = config.piper_speaker.strip()
+    if speaker:
+        # Multi-speaker voices (e.g. en_GB-vctk) need an explicit speaker id;
+        # single-speaker voices take no --speaker and use their default.
+        command += ["--speaker", speaker]
     try:
         subprocess.run(
-            [binary, "--model", str(model), "--output_file", str(wav_path)],
+            command,
             input=text.encode("utf-8"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

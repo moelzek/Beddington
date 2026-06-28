@@ -52,7 +52,12 @@ temperature = 0.2
 voice_enabled = true
 voice_engine = "piper"
 piper_binary = "~/piper/piper"
-piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
+piper_model = "~/piper-voices/en_GB-vctk-medium.onnx"
+piper_speaker = "259"
+persona_enabled = true
+persona_temperature = 0.5
+persona_num_predict = 64
+persona_timeout = 6.0
 
 [sensors]
 sample_interval_seconds = 3.5
@@ -93,6 +98,11 @@ gpio_pin = 4
     assert config.narrator.temperature == 0.2
     assert config.narrator.voice_enabled is True
     assert config.narrator.voice_engine == "piper"
+    assert config.narrator.piper_speaker == "259"
+    assert config.narrator.persona_enabled is True
+    assert config.narrator.persona_temperature == 0.5
+    assert config.narrator.persona_num_predict == 64
+    assert config.narrator.persona_timeout == 6.0
     assert config.sounds.enabled is True
     assert config.sounds.threshold == 0.3
     assert config.sensors.sample_interval_seconds == 3.5

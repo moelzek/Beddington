@@ -301,6 +301,38 @@ def test_speak_uses_piper_and_supported_player(
     assert commands[1][0] == "aplay"
 
 
+def test_speak_passes_speaker_only_for_multispeaker_voice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    piper = tmp_path / "piper"
+    model = tmp_path / "voice.onnx"
+    piper.write_text("", encoding="utf-8")
+    model.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/bin/{command}" if command == "aplay" else None
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        commands.append(command)
+        if command[0] == str(piper):
+            Path(command[command.index("--output_file") + 1]).write_bytes(b"RIFF")
+        return object()
+
+    monkeypatch.setattr("beddington.narrator.shutil.which", fake_which)
+    monkeypatch.setattr("beddington.narrator.subprocess.run", fake_run)
+
+    base = dict(voice_enabled=True, piper_binary=str(piper), piper_model=str(model))
+    # A multi-speaker voice with an id -> --speaker is passed.
+    speak("hello", NarratorConfig(**base, piper_speaker="259"))
+    assert "--speaker" in commands[0] and "259" in commands[0]
+    # No speaker id -> no --speaker arg (single-speaker voices keep working).
+    commands.clear()
+    speak("hello", NarratorConfig(**base))
+    assert "--speaker" not in commands[0]
+
+
 def test_speak_degrades_when_binary_absent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

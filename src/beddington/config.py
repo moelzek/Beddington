@@ -47,6 +47,16 @@ class NarratorConfig:
     voice_engine: str = "piper"
     piper_binary: str = "~/piper/piper"
     piper_model: str = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
+    # Multi-speaker voices (e.g. en_GB-vctk) select a speaker by id; empty = the
+    # voice's single/default speaker (no --speaker arg passed to Piper).
+    piper_speaker: str = ""
+    # Beddington persona: a local LLM re-voices each (benign) deterministic answer
+    # in character, grounded + validated so it can never change a fact (see
+    # persona.py). Reuses model/host above. Fails closed to the plain answer.
+    persona_enabled: bool = True
+    persona_temperature: float = 0.4
+    persona_num_predict: int = 80
+    persona_timeout: float = 8.0
 
 
 @dataclass(frozen=True)
@@ -337,6 +347,19 @@ def _load_narrator(
         voice_engine=str(raw_narrator.get("voice_engine", default.voice_engine)),
         piper_binary=str(raw_narrator.get("piper_binary", default.piper_binary)),
         piper_model=str(raw_narrator.get("piper_model", default.piper_model)),
+        piper_speaker=str(raw_narrator.get("piper_speaker", default.piper_speaker)),
+        persona_enabled=bool(
+            raw_narrator.get("persona_enabled", default.persona_enabled)
+        ),
+        persona_temperature=float(
+            raw_narrator.get("persona_temperature", default.persona_temperature)
+        ),
+        persona_num_predict=int(
+            raw_narrator.get("persona_num_predict", default.persona_num_predict)
+        ),
+        persona_timeout=float(
+            raw_narrator.get("persona_timeout", default.persona_timeout)
+        ),
     )
 
 
