@@ -528,7 +528,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 if levels:
                     levels.sort()
                     noise = levels[min(len(levels) - 1, int(len(levels) * 0.9))]
-                    threshold = max(0.015, round(noise * 1.5, 4))
+                    # Cap at 0.024: a noisy startup must never set the bar so high
+                    # it can't hear a normal close voice (which peaks ~0.04+).
+                    threshold = max(0.015, min(0.024, round(noise * 1.5, 4)))
                 else:
                     threshold = 0.02
             print(
