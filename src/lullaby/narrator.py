@@ -26,8 +26,6 @@ def build_narration_prompt(report: NightReport) -> str:
     ]
 
     facts = [
-        f"Windows analysed locally: {report.windows_processed}.",
-        f"Peak baby-cry model score: {report.peak_score:.3f}.",
         f"Crying episode count: {len(episodes)}.",
     ]
     if episodes:
@@ -44,23 +42,24 @@ def build_narration_prompt(report: NightReport) -> str:
             str(event.details.get("name", "soothe preset"))
             for event in soothe_attempts
         )
-        facts.append(f"Soothe attempts: {len(soothe_attempts)} ({names}).")
+        facts.append(f"Soothing played: {names}.")
     else:
-        facts.append("Soothe attempts: 0.")
+        facts.append("Soothing played: none.")
 
     facts.append(_outcome_fact(report.events, len(notifications)))
     facts.extend(_environment_facts(report.events))
 
     fact_lines = "\n".join(f"- {fact}" for fact in facts)
     return (
-        "Write one short British English narration for a parent after a Lullaby run.\n"
-        "Use only the derived facts below. Do not infer causes, comfort, health, "
-        "sleep, safety, or breathing. Do not give medical advice.\n"
-        "Treat room readings and movement as best-guess context only.\n"
-        'Never say the baby is safe, asleep, healthy, fine, or breathing. Say "crying"; '
-        'do not say "tantrum".\n'
-        "No raw audio or video is included here. Do not ask for or mention raw media.\n"
-        "Keep it factual, calm, and brief.\n\n"
+        "You are Lullaby, a baby-monitor companion giving a parent a brief spoken "
+        "morning recap. Write 2 to 3 short, plain British English sentences and then stop.\n"
+        "State only the derived facts below. Do not interpret, guess causes, judge, "
+        "comfort, or comment on any numbers or scores. Mention the crying, the soothing "
+        "and its outcome, and any room temperature, humidity, and movement count given.\n"
+        "Treat the room temperature, humidity, and movement as best-guess context only.\n"
+        'Say "crying"; do not say "tantrum". Never say the baby is safe, asleep, healthy, '
+        "fine, or breathing. Do not give medical advice.\n"
+        "No raw audio or video is included here. Do not ask for or mention raw media.\n\n"
         "Derived facts:\n"
         f"{fact_lines}"
     )
@@ -205,7 +204,9 @@ def _environment_facts(events: tuple[Event, ...]) -> list[str]:
             f"Best-guess room humidity context: {_format_measure(latest_humidity)}%."
         )
     if saw_environment_sample and saw_motion:
-        facts.append(f"Movement noticed {motion_count} times.")
+        facts.append(
+            f"Movement noticed {motion_count} time{'' if motion_count == 1 else 's'}."
+        )
     return facts
 
 

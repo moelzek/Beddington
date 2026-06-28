@@ -128,7 +128,7 @@ def test_build_narration_prompt_uses_only_derived_facts() -> None:
 
     assert "Crying episode count: 1" in prompt
     assert "Crying episode durations: 5 seconds." in prompt
-    assert "Soothe attempts: 1 (white noise)." in prompt
+    assert "Soothing played: white noise." in prompt
     assert "crying no longer detected after 2 quiet checks" in prompt
     assert "Best-guess room temperature context: 21.5 C." in prompt
     assert "Best-guess room humidity context: 48.2%." in prompt
