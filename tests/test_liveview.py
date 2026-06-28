@@ -80,6 +80,22 @@ def test_build_viewer_html_tabbed_dashboard() -> None:
     assert "Camera" in html
 
 
+def test_build_viewer_html_rotate() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        rotate=90,
+    )
+    assert "ROTATE=90" in html
+    assert 'img.rot90' in html  # rotation CSS present
+    assert build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+    ).count("ROTATE=0")  # default no rotation
+
+
 def test_build_viewer_html_has_night_tab_when_digest() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",

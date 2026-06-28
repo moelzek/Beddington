@@ -30,36 +30,37 @@ def _white_noise(seconds: float) -> np.ndarray:
 def _heartbeat(seconds: float) -> np.ndarray:
     t = _time(seconds)
     samples = np.zeros_like(t)
-    beat_interval = 60.0 / 78.0
+    beat_interval = 60.0 / 72.0
     for start in np.arange(0.2, seconds, beat_interval):
-        samples += 0.9 * _pulse(t, start, 36.0, width=0.028)
-        samples += 0.55 * _pulse(t, start + 0.18, 48.0, width=0.038)
-    samples = _low_pass(samples, smoothing=0.96)
+        # "lub" then "dub": mid-bass thumps (~80-90 Hz) a small speaker can
+        # actually reproduce, each with a higher transient so the beat is heard.
+        samples += 1.0 * _pulse(t, start, 90.0, width=0.05)
+        samples += 0.6 * _pulse(t, start, 190.0, width=0.022)
+        samples += 0.7 * _pulse(t, start + 0.20, 80.0, width=0.06)
+        samples += 0.4 * _pulse(t, start + 0.20, 170.0, width=0.026)
+    samples = _low_pass(samples, smoothing=0.6)
     samples = _fade(samples, seconds=1.0)
-    return _normalise(samples, peak=0.16)
+    return _normalise(samples, peak=0.6)
 
 
 def _uterine_whoosh(seconds: float) -> np.ndarray:
     rng = np.random.default_rng(seed=20260622)
     t = _time(seconds)
     noise = rng.normal(0.0, 1.0, len(t))
-    deep_noise = _low_pass(noise, smoothing=0.994)
-    swell = 0.55 + 0.28 * np.sin(2 * np.pi * 0.42 * t) + 0.17 * np.sin(
-        2 * np.pi * 0.86 * t + 0.8
+    # A lighter low-pass keeps mid frequencies so a small speaker actually
+    # reproduces the whoosh (the old sub-bass rumble was inaudible on it).
+    whoosh = _low_pass(noise, smoothing=0.86)
+    swell = 0.5 + 0.35 * np.sin(2 * np.pi * 0.4 * t) + 0.15 * np.sin(
+        2 * np.pi * 0.85 * t + 0.8
     )
-    rumble = 0.55 * np.sin(2 * np.pi * 42.0 * t) + 0.22 * np.sin(
-        2 * np.pi * 67.0 * t + 0.4
-    )
-    samples = 1.25 * deep_noise * swell + 0.22 * rumble
+    samples = whoosh * swell
 
-    beat_interval = 60.0 / 72.0
+    beat_interval = 60.0 / 70.0
     for start in np.arange(0.35, seconds, beat_interval):
-        samples += 0.8 * _pulse(t, start, 32.0, width=0.055)
-        samples += 0.35 * _pulse(t, start + 0.16, 44.0, width=0.065)
+        samples += 0.5 * _pulse(t, start, 85.0, width=0.06)
 
-    samples = _low_pass(samples, smoothing=0.965)
     samples = _fade(samples, seconds=2.5)
-    return _normalise(samples, peak=0.22)
+    return _normalise(samples, peak=0.55)
 
 
 def _soothing_music(seconds: float) -> np.ndarray:

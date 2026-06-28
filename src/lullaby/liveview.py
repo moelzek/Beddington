@@ -136,12 +136,18 @@ padding:12px 14px;font-size:14px}
 .panel{display:none}
 .panel.active{display:block}
 #cam.panel.active{display:flex;align-items:center;justify-content:center;position:relative;
-height:calc(100vh - 48px);height:calc(100dvh - 48px);background:#000}
+overflow:hidden;height:calc(100vh - 48px);height:calc(100dvh - 48px);background:#000}
 #cam img{max-width:100%;max-height:100%;object-fit:contain;display:block}
 #readings{position:absolute;left:0;right:0;bottom:0;display:flex;gap:14px;flex-wrap:wrap;
-padding:10px 14px;background:rgba(0,0,0,.5)}
+align-items:center;padding:10px 14px;background:rgba(0,0,0,.5);z-index:3}
 #readings span{white-space:nowrap}
-#readings .mode{font-weight:700}
+#readings .mode{font-weight:700;background:#2a3358;border:1px solid #4a5a9a;
+border-radius:9px;padding:5px 11px}
+#cam img.rot90,#cam img.rot270{position:absolute;top:50%;left:50%;
+width:calc(100dvh - 48px);height:100vw;max-width:none;max-height:none}
+#cam img.rot90{transform:translate(-50%,-50%) rotate(90deg)}
+#cam img.rot270{transform:translate(-50%,-50%) rotate(270deg)}
+#cam img.rot180{transform:rotate(180deg)}
 .nightnote{position:absolute;left:12px;right:12px;top:38%;text-align:center;
 padding:14px 16px;border-radius:10px;color:#dde;font-size:16px;
 background:rgba(20,24,48,.72);display:none}
@@ -165,7 +171,7 @@ padding:14px 18px;font-size:15px}
 <div id="charts"></div>
 <div class="note">LAN only · no recording · no audio</div>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",SENSORS=__SENSORS__;
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
 let active="cam",HIST={};
 const tabs=document.getElementById("tabs"),charts=document.getElementById("charts");
 function tab(id,label){const b=document.createElement("button");b.textContent=label;
@@ -246,6 +252,7 @@ ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1
 ctx.strokeStyle="#4ea1ff";ctx.lineWidth=4;ctx.beginPath();
 p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
 ctx.stroke();}
+if(ROTATE){var ci=document.querySelector("#cam img");if(ci)ci.className="rot"+ROTATE;}
 show("cam");poll();load();setInterval(load,5000);
 </script></body></html>"""
 
@@ -273,6 +280,7 @@ def _dashboard_page(
     soothe_path: str,
     sensors: tuple[dict[str, object], ...],
     title: str,
+    rotate: int = 0,
 ) -> str:
     spec = json.dumps(
         [
@@ -292,6 +300,7 @@ def _dashboard_page(
         .replace("__HISTORY__", history_path)
         .replace("__DIGEST__", digest_path)
         .replace("__SOOTHE__", soothe_path)
+        .replace("__ROTATE__", str(int(rotate)))
         .replace("__SENSORS__", spec)
     )
 
@@ -304,6 +313,7 @@ def build_viewer_html(
     digest_path: str | None = None,
     soothe_path: str | None = None,
     sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
+    rotate: int = 0,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
@@ -321,6 +331,7 @@ def build_viewer_html(
             soothe_path or "",
             sensors,
             title,
+            rotate,
         )
     overlay = ""
     script = ""
@@ -478,6 +489,7 @@ def _make_handler(
     digest_provider: Callable[[], dict[str, object]] | None = None,
     soothe: object | None = None,
     mode_setter: Callable[[str | None], str] | None = None,
+    rotate: int = 0,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "LullabyLiveView/1"
@@ -515,6 +527,7 @@ def _make_handler(
                     history_path,
                     digest_path=digest_path,
                     soothe_path=soothe_path,
+                    rotate=rotate,
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -638,6 +651,7 @@ def serve_live_view(
     digest_provider: Callable[[], dict[str, object]] | None = None,
     soothe: object | None = None,
     mode_setter: Callable[[str | None], str] | None = None,
+    rotate: int = 0,
 ) -> None:
     """Serve the live view until interrupted.
 
@@ -673,7 +687,7 @@ def serve_live_view(
 
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider,
-        soothe, mode_setter,
+        soothe, mode_setter, rotate,
     )
     httpd = ThreadingHTTPServer((host, port), handler)
     try:

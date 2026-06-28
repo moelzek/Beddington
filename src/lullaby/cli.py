@@ -232,6 +232,13 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--height", type=int, default=480)
     live.add_argument("--fps", type=int, default=15)
     live.add_argument(
+        "--rotate",
+        type=int,
+        default=0,
+        choices=[0, 90, 180, 270],
+        help="Rotate the displayed video N degrees clockwise (browser-side)",
+    )
+    live.add_argument(
         "--night",
         action="store_true",
         help="Low-light mode (longer shutter + higher gain; needs some ambient light)",
@@ -1355,6 +1362,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             digest_provider=digest_provider,
             soothe=soothe,
             mode_setter=(sampler.set_override if sampler is not None else None),
+            rotate=args.rotate,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")
