@@ -61,6 +61,10 @@ class RadarSensorConfig:
     password: str = ""
     include_distance: bool = True
     include_target_count: bool = True
+    # Bench/research only: capture the radar's respiratory + heart-rate values as
+    # raw, clearly-labelled bench data. Off by default. These are never fed into
+    # the product narration and are never a medical or safety signal.
+    bench_vitals: bool = False
 
 
 @dataclass(frozen=True)
@@ -385,6 +389,7 @@ def _load_radar_sensor(
         include_target_count=bool(
             raw_radar.get("include_target_count", default.include_target_count)
         ),
+        bench_vitals=bool(raw_radar.get("bench_vitals", default.bench_vitals)),
     )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import subprocess
 import threading
@@ -99,10 +100,13 @@ class PirMotionReader:
         return {"motion_detected": value}
 
 
-# mmWave entities whose names match any of these are deliberately never routed,
-# so the radar's vital signs (respiratory/heart rate) can never reach the
-# narration. They stay bench-only — no medical or vital-sign claims.
-_RADAR_VITAL_HINTS = ("respirat", "heart", "breath", "pulse")
+# The radar's vital-sign entities (respiratory/heart rate) are routed ONLY when
+# bench_vitals is explicitly enabled, under their own namespaced keys. They are
+# never fed into the product narration (the narrator excludes and bans them) and
+# are surfaced only as clearly-labelled raw bench data — no medical or vital-sign
+# claims, never a product safety signal.
+RADAR_RESPIRATORY_KEY = "radar_respiratory_rate"
+RADAR_HEART_RATE_KEY = "radar_heart_rate_bpm"
 
 
 class Mr60RadarReader:
@@ -110,9 +114,11 @@ class Mr60RadarReader:
     ESPHome native API.
 
     A background thread keeps a live connection and updates a cached snapshot, so
-    ``read()`` is always non-blocking and never perturbs the detection loop. Only
-    non-medical fields are routed (presence, room brightness, target distance and
-    count); respiratory- and heart-rate entities are deliberately dropped.
+    ``read()`` is always non-blocking and never perturbs the detection loop. By
+    default only non-medical fields are routed (presence, room brightness, target
+    distance and count); respiratory- and heart-rate entities are dropped unless
+    ``include_vitals`` is explicitly set, in which case they are captured under
+    their own namespaced keys as raw bench data (never fed to the narration).
     """
 
     def __init__(
@@ -122,12 +128,14 @@ class Mr60RadarReader:
         password: str = "",
         include_distance: bool = True,
         include_target_count: bool = True,
+        include_vitals: bool = False,
     ) -> None:
         self.host = host
         self.port = port
         self.password = password
         self.include_distance = include_distance
         self.include_target_count = include_target_count
+        self.include_vitals = include_vitals
         self._latest: dict[str, object] = {}
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -184,6 +192,7 @@ class Mr60RadarReader:
                 str(getattr(entity, "name", "")),
                 self.include_distance,
                 self.include_target_count,
+                self.include_vitals,
             )
             if field is not None:
                 routing[key] = field
@@ -193,10 +202,13 @@ class Mr60RadarReader:
             if field is None:
                 return
             value = _coerce_radar_value(field, getattr(state, "state", None))
-            if value is None:
-                return
             with self._lock:
-                self._latest[field] = value
+                if value is None:
+                    # No valid reading (e.g. a vital with no lock reports NaN) —
+                    # drop any stale value rather than keep showing it.
+                    self._latest.pop(field, None)
+                else:
+                    self._latest[field] = value
 
         client.subscribe_states(on_state)
         while True:
@@ -217,6 +229,7 @@ def build_sensor_readers(sensors_config: SensorsConfig) -> list[SensorReader]:
                 sensors_config.radar.password,
                 sensors_config.radar.include_distance,
                 sensors_config.radar.include_target_count,
+                sensors_config.radar.bench_vitals,
             )
         )
     return readers
@@ -226,10 +239,15 @@ def _radar_field_for_name(
     name: str,
     include_distance: bool = True,
     include_target_count: bool = True,
+    include_vitals: bool = False,
 ) -> str | None:
     lowered = name.lower()
-    if any(hint in lowered for hint in _RADAR_VITAL_HINTS):
-        return None
+    # Vital signs are routed only when bench_vitals is on; otherwise dropped so
+    # they can never reach the product narration.
+    if "respirat" in lowered or "breath" in lowered:
+        return RADAR_RESPIRATORY_KEY if include_vitals else None
+    if "heart" in lowered or "pulse" in lowered:
+        return RADAR_HEART_RATE_KEY if include_vitals else None
     if "person" in lowered or "presence" in lowered:
         return "person_present"
     if "illuminance" in lowered:
@@ -246,15 +264,17 @@ def _coerce_radar_value(field: str, value: object) -> object | None:
         return None
     if field == "person_present":
         return bool(value)
-    if field == "target_count":
-        try:
-            return int(round(float(value)))
-        except (TypeError, ValueError):
-            return None
     try:
-        return round(float(value), 1)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    if math.isnan(number) or math.isinf(number):
+        # mmWave vitals report NaN when there is no lock (subject not still/close
+        # enough). Treat that as "no reading", never a fabricated value.
+        return None
+    if field == "target_count":
+        return int(round(number))
+    return round(number, 1)
 
 
 def _candidate_i2c_addresses(

@@ -227,6 +227,7 @@ host = "192.168.1.146"
 port = 6053
 include_distance = false
 include_target_count = true
+bench_vitals = true
 """,
         encoding="utf-8",
     )
@@ -238,6 +239,13 @@ include_target_count = true
     assert config.sensors.radar.port == 6053
     assert config.sensors.radar.include_distance is False
     assert config.sensors.radar.include_target_count is True
+    assert config.sensors.radar.bench_vitals is True
+
+
+def test_radar_bench_vitals_defaults_off() -> None:
+    config = load_config(Path("config/default.toml"))
+
+    assert config.sensors.radar.bench_vitals is False
 
 
 def test_radar_requires_host_when_enabled(tmp_path: Path) -> None:

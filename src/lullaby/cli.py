@@ -21,7 +21,13 @@ from .models import Event, NightReport
 from .narrator import narrate, speak
 from .notifications import LocalNotifier
 from .pipeline import run_pipeline
-from .sensors import build_sensor_readers
+from .radar_vitals import (
+    RADAR_VITALS_DISCLAIMER,
+    format_radar_reading,
+    summarise_radar_vitals,
+    summarise_radar_vitals_from_events,
+)
+from .sensors import Mr60RadarReader, build_sensor_readers
 from .soothe import build_soothe_player
 from .video import (
     capture_rpicam_still,
@@ -76,6 +82,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Print the selected preset without playing audio",
+    )
+    radar_vitals = subparsers.add_parser(
+        "radar-vitals",
+        help="Bench-only: live radar readout + labelled vital-sign period summary",
+    )
+    radar_vitals.add_argument(
+        "--host",
+        help="Radar host/IP (defaults to [sensors.radar].host from the config)",
+    )
+    radar_vitals.add_argument("--duration", type=float, default=120.0)
+    radar_vitals.add_argument("--interval", type=float, default=5.0)
+    radar_vitals.add_argument(
+        "--speak",
+        action="store_true",
+        help="Speak the labelled vitals period summary at the end",
+    )
+    radar_vitals.add_argument(
+        "--output",
+        type=Path,
+        help="Optional JSON file to write the captured labelled samples to",
     )
     camera = subparsers.add_parser(
         "camera-smoke",
@@ -156,6 +182,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _digest_command(args, config)
     if args.command == "preview-soothe":
         return _preview_soothe_command(args, config)
+    if args.command == "radar-vitals":
+        return _radar_vitals_command(args, config)
     if args.command == "camera-smoke":
         return _camera_smoke_command(args)
     if args.command == "visual-change":
@@ -198,10 +226,78 @@ def main(argv: Sequence[str] | None = None) -> int:
             speak(spoken_text, narrator_config)
     print()
     print(spoken_text)
+    # Bench/research only: a separate, deterministic, clearly-labelled vitals
+    # readout. It is never produced by the LLM and never mixed into the recap
+    # above, so the radar's breathing/heart values can never become a product
+    # claim about the baby.
+    if config.sensors.radar.bench_vitals:
+        vitals_summary = summarise_radar_vitals_from_events(result.report.events)
+        if vitals_summary:
+            print()
+            print(vitals_summary)
+            if narrator_config.voice_enabled:
+                speak(vitals_summary, narrator_config)
     print()
     print(f"Events: {result.paths.events_json}")
     print(f"Readable log: {result.paths.readable_log}")
     print(f"Morning digest: {result.paths.digest}")
+    return 0
+
+
+def _radar_vitals_command(args: argparse.Namespace, config: AppConfig) -> int:
+    host = args.host or config.sensors.radar.host
+    if not host:
+        raise SystemExit(
+            "Set a radar host via --host or [sensors.radar].host in the config"
+        )
+    if args.duration <= 0:
+        raise SystemExit("--duration must be positive")
+    if args.interval <= 0:
+        raise SystemExit("--interval must be positive")
+
+    reader = Mr60RadarReader(
+        host,
+        config.sensors.radar.port,
+        config.sensors.radar.password,
+        include_vitals=True,
+    )
+    print(f"Radar bench readout from {host} ({RADAR_VITALS_DISCLAIMER}).")
+    print("Presence, brightness, distance, breathing and heart are raw radar data.")
+    print("None of this is a medical or safety signal or a claim about the baby.")
+    reader.read()  # start the background connection
+
+    samples: list[dict[str, object]] = []
+    start = time.monotonic()
+    end = start + args.duration
+    while time.monotonic() < end:
+        reading = reader.read()
+        elapsed = int(time.monotonic() - start)
+        print(f"  [{elapsed:>4}s] {format_radar_reading(reading)}")
+        if reading:
+            samples.append(dict(reading))
+        time.sleep(args.interval)
+
+    print()
+    summary = summarise_radar_vitals(samples)
+    if summary:
+        print(summary)
+        if args.speak:
+            speak(summary, replace(config.narrator, enabled=True, voice_enabled=True))
+    else:
+        print(
+            "No breathing or heart-rate samples were captured "
+            f"({RADAR_VITALS_DISCLAIMER})."
+        )
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(
+                {"disclaimer": RADAR_VITALS_DISCLAIMER, "samples": samples},
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(f"Samples written: {args.output}")
     return 0
 
 

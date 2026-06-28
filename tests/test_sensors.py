@@ -210,6 +210,10 @@ def test_coerce_radar_value() -> None:
     assert _coerce_radar_value("room_illuminance_lx", 96.2106) == 96.2
     assert _coerce_radar_value("target_distance_cm", None) is None
     assert _coerce_radar_value("room_illuminance_lx", "not-a-number") is None
+    # mmWave vitals report NaN with no lock — never a fabricated number.
+    assert _coerce_radar_value("radar_heart_rate_bpm", float("nan")) is None
+    assert _coerce_radar_value("radar_respiratory_rate", float("inf")) is None
+    assert _coerce_radar_value("radar_heart_rate_bpm", 92.0) == 92.0
 
 
 def test_build_sensor_readers_includes_radar_when_enabled() -> None:
@@ -228,6 +232,36 @@ def test_build_sensor_readers_skips_radar_without_host() -> None:
         )
         == []
     )
+
+
+def test_radar_field_routing_captures_vitals_only_when_enabled() -> None:
+    # Off by default — vitals are dropped.
+    assert _radar_field_for_name("Real-time respiratory rate") is None
+    assert _radar_field_for_name("Real-time heart rate") is None
+    # Explicitly enabled — captured under namespaced bench keys.
+    assert (
+        _radar_field_for_name("Real-time respiratory rate", include_vitals=True)
+        == "radar_respiratory_rate"
+    )
+    assert (
+        _radar_field_for_name("Real-time heart rate", include_vitals=True)
+        == "radar_heart_rate_bpm"
+    )
+
+
+def test_build_sensor_readers_propagates_bench_vitals_flag() -> None:
+    on = build_sensor_readers(
+        SensorsConfig(
+            radar=RadarSensorConfig(enabled=True, host="h", bench_vitals=True)
+        )
+    )
+    assert isinstance(on[0], Mr60RadarReader)
+    assert on[0].include_vitals is True
+
+    off = build_sensor_readers(
+        SensorsConfig(radar=RadarSensorConfig(enabled=True, host="h"))
+    )
+    assert off[0].include_vitals is False
 
 
 def test_radar_reader_degrades_when_library_missing(monkeypatch) -> None:

@@ -188,6 +188,50 @@ def test_build_narration_prompt_includes_radar_context() -> None:
     assert "Never mention heart rate, breathing rate, or any vital sign." in prompt
 
 
+def test_narration_excludes_radar_vitals_even_when_present() -> None:
+    started = datetime(2026, 6, 28, tzinfo=UTC)
+    events = (
+        Event(
+            kind="environment_sample",
+            occurred_at=started + timedelta(seconds=2),
+            offset_seconds=2.0,
+            details={
+                "radar_respiratory_rate": 16.0,
+                "radar_heart_rate_bpm": 92.0,
+                "person_present": True,
+                "room_illuminance_lx": 80.0,
+            },
+        ),
+    )
+    report = NightReport(
+        started_at=started,
+        finished_at=started + timedelta(seconds=10),
+        source="x",
+        detector="x",
+        threshold=0.4,
+        sustained_seconds=1.0,
+        windows_processed=1,
+        peak_score=0.0,
+        events=events,
+    )
+
+    facts = " ".join(
+        line
+        for line in build_narration_prompt(report).splitlines()
+        if line.startswith("- ")
+    ).lower()
+
+    # Vital-sign values and words never enter the product narration facts.
+    assert "92" not in facts
+    assert "16" not in facts
+    assert "heart" not in facts
+    assert "respir" not in facts
+    assert "breath" not in facts
+    # Non-medical context is still present.
+    assert "someone was detected" in facts
+    assert "80 lux" in facts
+
+
 def test_speak_uses_piper_and_supported_player(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
