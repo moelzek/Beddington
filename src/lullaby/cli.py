@@ -160,6 +160,11 @@ def build_parser() -> argparse.ArgumentParser:
     listen_assistant.add_argument(
         "--no-speak", action="store_true", help="Print answers only, do not speak"
     )
+    listen_assistant.add_argument(
+        "--debug",
+        action="store_true",
+        help="Log mic energy and every transcript (for tuning/diagnostics)",
+    )
     camera = subparsers.add_parser(
         "camera-smoke",
         help="Run a local camera or image metadata smoke test",
@@ -410,11 +415,15 @@ def _read_sensor_snapshot(
     if warm_seconds > 0 and readers:
         time.sleep(warm_seconds)
     snapshot: dict[str, object] = {}
-    for reader in readers:
-        try:
-            snapshot.update(reader.read())
-        except Exception:
-            pass
+    # A few passes so a not-ready cycle (the gas-enabled BME688 returns {} on
+    # about half its reads) still fills temperature/humidity/pressure.
+    for _ in range(5):
+        for reader in readers:
+            try:
+                snapshot.update(reader.read())
+            except Exception:
+                pass
+        time.sleep(0.05)
     return snapshot
 
 
@@ -496,13 +505,28 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
             device=args.device,
             callback=on_audio,
         ):
+            frames_seen = 0
+            max_rms = 0.0
+            last_beat = time.monotonic()
             while deadline is None or time.monotonic() < deadline:
                 try:
                     frame = frames_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
                 pre_roll.append(frame)
-                is_speech = float(np.sqrt(np.mean(frame**2))) > args.energy_threshold
+                rms = float(np.sqrt(np.mean(frame**2)))
+                is_speech = rms > args.energy_threshold
+                if args.debug:
+                    frames_seen += 1
+                    max_rms = max(max_rms, rms)
+                    if time.monotonic() - last_beat >= 5.0:
+                        print(
+                            f"  [debug] frames={frames_seen} max_rms={max_rms:.4f} "
+                            f"(speech threshold {args.energy_threshold})"
+                        )
+                        frames_seen = 0
+                        max_rms = 0.0
+                        last_beat = time.monotonic()
                 if not in_utterance:
                     if is_speech:
                         speech_run += 1
@@ -531,16 +555,19 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             np.arange(len(audio)),
                             audio,
                         ).astype(np.float32)
-                    question = extract_wake_question(
-                        _transcribe(model, audio), wake_words
-                    )
+                    text = _transcribe(model, audio)
+                    question = extract_wake_question(text, wake_words)
+                    if args.debug:
+                        print(f'  [debug] transcript="{text}" -> question={question!r}')
                     if question is None:
                         continue  # no wake word — ignore silently
                     snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
                     answer = answer_question(question, snapshot)
                     print(f'  heard: "{question}"  ->  {answer}')
                     if not args.no_speak:
-                        speak(answer, speak_config)
+                        spoken = speak(answer, speak_config)
+                        if args.debug:
+                            print(f"  [debug] speak: {spoken}")
                         # Drop frames captured while we were speaking, so Lullaby
                         # never transcribes its own voice as a new command.
                         try:

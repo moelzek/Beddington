@@ -63,7 +63,7 @@ def answer_question(question: str, snapshot: dict[str, object]) -> str:
 
     if any(
         word in q
-        for word in ("present", "anyone", "someone", "is there", "nearby", "in the room")
+        for word in ("present", "anyone", "someone", "is there", "nearby")
     ):
         scene = describe_presence_scene(
             snapshot.get("person_present"), snapshot.get("motion_detected")
