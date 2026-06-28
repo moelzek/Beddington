@@ -56,6 +56,7 @@ sample_interval_seconds = 3.5
 [sensors.air]
 enabled = true
 i2c_address = 0x76
+gas = true
 
 [sensors.motion]
 enabled = true
@@ -91,6 +92,7 @@ gpio_pin = 4
     assert config.sensors.sample_interval_seconds == 3.5
     assert config.sensors.air.enabled is True
     assert config.sensors.air.i2c_address == 0x76
+    assert config.sensors.air.gas is True
     assert config.sensors.motion.enabled is True
     assert config.sensors.motion.gpio_pin == 4
 

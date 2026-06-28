@@ -45,6 +45,9 @@ class NarratorConfig:
 class AirSensorConfig:
     enabled: bool = False
     i2c_address: int = 0x76
+    # Also read the BME688 gas/VOC channel (experimental nappy-VOC best guess).
+    # The gas heater needs a few seconds to stabilise before readings appear.
+    gas: bool = False
 
 
 @dataclass(frozen=True)
@@ -357,6 +360,7 @@ def _load_air_sensor(
     return AirSensorConfig(
         enabled=bool(raw_air.get("enabled", default.enabled)),
         i2c_address=int(raw_air.get("i2c_address", default.i2c_address)),
+        gas=bool(raw_air.get("gas", default.gas)),
     )
 
 

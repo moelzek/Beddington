@@ -23,8 +23,9 @@ class NullSensorReader:
 
 
 class Bme680AirReader:
-    def __init__(self, i2c_address: int = 0x76):
+    def __init__(self, i2c_address: int = 0x76, include_gas: bool = False):
         self.i2c_address = i2c_address
+        self.include_gas = include_gas
         self._sensor: Any | None = None
         self._available = True
 
@@ -37,12 +38,24 @@ class Bme680AirReader:
             if sensor is None:
                 return {}
             if not sensor.get_sensor_data():
-                self._available = False
+                # No fresh data this cycle (common while the gas heater runs).
+                # Skip this read but keep the sensor available for the next one.
                 return {}
-            return {
+            reading: dict[str, object] = {
                 "room_temperature_c": round(float(sensor.data.temperature), 1),
                 "room_humidity_pct": round(float(sensor.data.humidity), 1),
             }
+            # Gas resistance is only valid once the heater is warmed up. Read it
+            # defensively so a gas hiccup can never drop temperature/humidity.
+            if self.include_gas:
+                try:
+                    if getattr(sensor.data, "heat_stable", False):
+                        gas = sensor.data.gas_resistance
+                        if gas is not None:
+                            reading["room_gas_resistance_ohms"] = int(gas)
+                except Exception:
+                    pass
+            return reading
         except Exception:
             self._available = False
             return {}
@@ -61,10 +74,13 @@ class Bme680AirReader:
         )
         for address in addresses:
             try:
-                self._sensor = bme680.BME680(i2c_addr=address)
-                return self._sensor
+                sensor = bme680.BME680(i2c_addr=address)
             except Exception:
                 continue
+            if self.include_gas:
+                _enable_bme680_gas(sensor, bme680)
+            self._sensor = sensor
+            return self._sensor
         self._available = False
         return None
 
@@ -218,7 +234,9 @@ class Mr60RadarReader:
 def build_sensor_readers(sensors_config: SensorsConfig) -> list[SensorReader]:
     readers: list[SensorReader] = []
     if sensors_config.air.enabled:
-        readers.append(Bme680AirReader(sensors_config.air.i2c_address))
+        readers.append(
+            Bme680AirReader(sensors_config.air.i2c_address, sensors_config.air.gas)
+        )
     if sensors_config.motion.enabled:
         readers.append(PirMotionReader(sensors_config.motion.gpio_pin))
     if sensors_config.radar.enabled and sensors_config.radar.host:
@@ -275,6 +293,17 @@ def _coerce_radar_value(field: str, value: object) -> object | None:
     if field == "target_count":
         return int(round(number))
     return round(number, 1)
+
+
+def _enable_bme680_gas(sensor: Any, bme680: Any) -> None:
+    try:
+        sensor.set_gas_status(getattr(bme680, "ENABLE_GAS_MEAS", 1))
+        sensor.set_gas_heater_temperature(320)
+        sensor.set_gas_heater_duration(150)
+        sensor.select_gas_heater_profile(0)
+    except Exception:
+        # Gas is optional; temperature/humidity still work without it.
+        pass
 
 
 def _candidate_i2c_addresses(

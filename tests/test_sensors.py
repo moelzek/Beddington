@@ -144,6 +144,109 @@ def test_bme680_reader_degrades_when_library_missing(monkeypatch) -> None:
     assert Bme680AirReader().read() == {}
 
 
+def _install_fake_bme680(monkeypatch, *, gas_resistance: float, heat_stable: bool) -> list:
+    configured: list[str] = []
+
+    class FakeBmeSensor:
+        data = SimpleNamespace(
+            temperature=22.0,
+            humidity=48.0,
+            gas_resistance=gas_resistance,
+            heat_stable=heat_stable,
+        )
+
+        def __init__(self, i2c_addr: int):
+            pass
+
+        def set_gas_status(self, value: int) -> None:
+            configured.append("status")
+
+        def set_gas_heater_temperature(self, value: int) -> None:
+            configured.append("temp")
+
+        def set_gas_heater_duration(self, value: int) -> None:
+            configured.append("duration")
+
+        def select_gas_heater_profile(self, value: int) -> None:
+            configured.append("profile")
+
+        def get_sensor_data(self) -> bool:
+            return True
+
+    monkeypatch.setitem(
+        sys.modules,
+        "bme680",
+        SimpleNamespace(
+            I2C_ADDR_PRIMARY=0x76,
+            I2C_ADDR_SECONDARY=0x77,
+            BME680=FakeBmeSensor,
+            ENABLE_GAS_MEAS=1,
+        ),
+    )
+    return configured
+
+
+def test_bme680_reader_includes_gas_when_enabled_and_stable(monkeypatch) -> None:
+    configured = _install_fake_bme680(
+        monkeypatch, gas_resistance=123456.0, heat_stable=True
+    )
+
+    reading = Bme680AirReader(0x76, include_gas=True).read()
+
+    assert reading == {
+        "room_temperature_c": 22.0,
+        "room_humidity_pct": 48.0,
+        "room_gas_resistance_ohms": 123456,
+    }
+    assert configured == ["status", "temp", "duration", "profile"]
+
+
+def test_bme680_reader_omits_gas_until_heat_stable(monkeypatch) -> None:
+    _install_fake_bme680(monkeypatch, gas_resistance=0.0, heat_stable=False)
+
+    reading = Bme680AirReader(0x76, include_gas=True).read()
+
+    assert "room_gas_resistance_ohms" not in reading
+    assert reading["room_temperature_c"] == 22.0
+
+
+def test_bme680_reader_skips_gas_when_disabled(monkeypatch) -> None:
+    configured = _install_fake_bme680(
+        monkeypatch, gas_resistance=123456.0, heat_stable=True
+    )
+
+    reading = Bme680AirReader(0x76).read()
+
+    assert "room_gas_resistance_ohms" not in reading
+    assert configured == []
+
+
+def test_bme680_reader_stays_available_when_data_not_ready(monkeypatch) -> None:
+    class FakeBmeSensor:
+        data = SimpleNamespace(temperature=22.0, humidity=48.0)
+
+        def __init__(self, i2c_addr: int):
+            pass
+
+        def get_sensor_data(self) -> bool:
+            return False
+
+    monkeypatch.setitem(
+        sys.modules,
+        "bme680",
+        SimpleNamespace(
+            I2C_ADDR_PRIMARY=0x76,
+            I2C_ADDR_SECONDARY=0x77,
+            BME680=FakeBmeSensor,
+        ),
+    )
+
+    reader = Bme680AirReader(0x76)
+    # A not-ready cycle is skipped but must not permanently disable the sensor.
+    assert reader.read() == {}
+    assert reader._available is True
+
+
 def test_pir_motion_reader_parses_high(monkeypatch) -> None:
     commands: list[list[str]] = []
 

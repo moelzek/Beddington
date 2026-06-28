@@ -273,6 +273,9 @@ def _format_sensor_line(reading: dict[str, object]) -> str:
         rendered = num(key, suffix)
         if rendered is not None:
             parts.append(rendered)
+    gas = reading.get("room_gas_resistance_ohms")
+    if isinstance(gas, (int, float)) and not isinstance(gas, bool):
+        parts.append(f"{gas / 1000:.0f} kohm gas")
     if "person_present" in reading:
         parts.append("present" if reading["person_present"] else "absent")
     if "motion_detected" in reading:
