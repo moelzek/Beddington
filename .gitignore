@@ -67,3 +67,20 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# --- Private project docs (kept local, never pushed) ---
+memory.md
+context.md
+ROADMAP.md
+DEVLOG.md
+CLAUDE.md
+AGENTS.md
+skills.md
+baby-monitor-evaluation.md
+camera-mount-plan.md
+hardware-guide.md
+tier2-video-gate.md
+Archive/
+sample_data/
+# Override the earlier !.env.example exception — keep this file local only
+.env.example
