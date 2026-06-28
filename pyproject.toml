@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mic = ["sounddevice>=0.5,<0.6"]
+ears = ["faster-whisper>=1.0,<2"]
 dev = ["pytest>=9,<10"]
 
 [project.scripts]

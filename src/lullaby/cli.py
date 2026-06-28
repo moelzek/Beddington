@@ -17,6 +17,7 @@ from .assistant import answer_question
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
+from .ears import extract_wake_question
 from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
@@ -140,6 +141,20 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument(
         "--speak", action="store_true", help="Speak the answer aloud via the voice"
     )
+    listen_assistant = subparsers.add_parser(
+        "listen-assistant",
+        help='Wake-word voice Q&A: say "Hi Lullaby, what is the humidity?"',
+    )
+    listen_assistant.add_argument("--device")
+    listen_assistant.add_argument(
+        "--seconds", type=float, default=0.0, help="0 (default) runs until Ctrl-C"
+    )
+    listen_assistant.add_argument("--model-size", default="tiny.en")
+    listen_assistant.add_argument("--compute-type", default="int8")
+    listen_assistant.add_argument("--energy-threshold", type=float, default=0.02)
+    listen_assistant.add_argument(
+        "--no-speak", action="store_true", help="Print answers only, do not speak"
+    )
     camera = subparsers.add_parser(
         "camera-smoke",
         help="Run a local camera or image metadata smoke test",
@@ -227,6 +242,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _sounds_live_command(args, config)
     if args.command == "ask":
         return _ask_command(args, config)
+    if args.command == "listen-assistant":
+        return _listen_assistant_command(args, config)
     if args.command == "camera-smoke":
         return _camera_smoke_command(args)
     if args.command == "visual-change":
@@ -394,6 +411,135 @@ def _read_sensor_snapshot(
         except Exception:
             pass
     return snapshot
+
+
+def _transcribe(model: object, audio: object) -> str:
+    segments, _ = model.transcribe(
+        audio,
+        language="en",
+        beam_size=1,
+        vad_filter=False,
+        condition_on_previous_text=False,
+        no_speech_threshold=0.6,
+        temperature=0.0,
+    )
+    return " ".join(segment.text for segment in segments).strip()
+
+
+def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> int:
+    import queue
+    from collections import deque
+
+    import numpy as np
+
+    try:
+        import sounddevice as sd
+    except Exception as exc:  # pragma: no cover - hardware path
+        raise SystemExit("sounddevice is required (pip install '.[mic]').") from exc
+    try:
+        from faster_whisper import WhisperModel
+    except Exception as exc:  # pragma: no cover - hardware path
+        raise SystemExit(
+            "faster-whisper is required (pip install faster-whisper)."
+        ) from exc
+
+    # The USB mic may not support 16 kHz natively, so capture at its native rate
+    # and resample each closed utterance to 16 kHz for Whisper.
+    try:
+        native_rate = int(sd.query_devices(args.device, "input")["default_samplerate"])
+    except Exception:
+        native_rate = 48_000
+    target_rate = 16_000
+    frame_ms = 30
+    frame_samples = max(1, round(native_rate * frame_ms / 1000))
+    start_speech_frames = 3
+    end_silence_frames = max(1, round(500 / frame_ms))  # ~0.5 s of silence closes it
+    max_frames = max(1, round(8000 / frame_ms))  # 8 s hard cap
+
+    print(f"Loading speech-to-text ({args.model_size})...")
+    model = WhisperModel(args.model_size, device="cpu", compute_type=args.compute_type)
+    readers = build_sensor_readers(config.sensors)
+    for reader in readers:  # warm background connections (e.g. the radar)
+        try:
+            reader.read()
+        except Exception:
+            pass
+    speak_config = replace(config.narrator, voice_enabled=True)
+
+    frames_q: queue.Queue = queue.Queue()
+
+    def on_audio(indata, frames, time_info, status) -> None:  # pragma: no cover
+        frames_q.put(indata[:, 0].copy())
+
+    pre_roll: deque = deque(maxlen=start_speech_frames + 2)
+    buffer: list = []
+    in_utterance = False
+    speech_run = 0
+    silence_run = 0
+    deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
+    print('Listening — say "Hi Lullaby, what is the humidity?" (Ctrl-C to stop).')
+    try:
+        with sd.InputStream(
+            samplerate=native_rate,
+            channels=1,
+            dtype="float32",
+            blocksize=frame_samples,
+            device=args.device,
+            callback=on_audio,
+        ):
+            while deadline is None or time.monotonic() < deadline:
+                try:
+                    frame = frames_q.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                pre_roll.append(frame)
+                is_speech = float(np.sqrt(np.mean(frame**2))) > args.energy_threshold
+                if not in_utterance:
+                    if is_speech:
+                        speech_run += 1
+                        if speech_run >= start_speech_frames:
+                            in_utterance = True
+                            buffer = list(pre_roll)
+                            silence_run = 0
+                    else:
+                        speech_run = 0
+                    continue
+                buffer.append(frame)
+                if is_speech:
+                    silence_run = 0
+                else:
+                    silence_run += 1
+                if silence_run >= end_silence_frames or len(buffer) >= max_frames:
+                    audio = np.concatenate(buffer)
+                    in_utterance = False
+                    speech_run = 0
+                    silence_run = 0
+                    buffer = []
+                    if native_rate != target_rate:
+                        count = int(len(audio) * target_rate / native_rate)
+                        audio = np.interp(
+                            np.linspace(0, len(audio), count, endpoint=False),
+                            np.arange(len(audio)),
+                            audio,
+                        ).astype(np.float32)
+                    question = extract_wake_question(_transcribe(model, audio))
+                    if question is None:
+                        continue  # no wake word — ignore silently
+                    snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
+                    answer = answer_question(question, snapshot)
+                    print(f'  heard: "{question}"  ->  {answer}')
+                    if not args.no_speak:
+                        speak(answer, speak_config)
+                        # Drop frames captured while we were speaking, so Lullaby
+                        # never transcribes its own voice as a new command.
+                        try:
+                            while True:
+                                frames_q.get_nowait()
+                        except queue.Empty:
+                            pass
+    except KeyboardInterrupt:
+        print("Stopped.")
+    return 0
 
 
 def _ask_command(args: argparse.Namespace, config: AppConfig) -> int:
