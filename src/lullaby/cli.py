@@ -103,6 +103,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional JSON file to write the captured labelled samples to",
     )
+    sensors_live = subparsers.add_parser(
+        "sensors-live",
+        help="Live combined readout of every enabled sensor (air, motion, radar)",
+    )
+    sensors_live.add_argument(
+        "--host",
+        help="Radar host/IP override (defaults to [sensors.radar].host)",
+    )
+    sensors_live.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="Seconds to run; 0 (default) runs until Ctrl-C",
+    )
+    sensors_live.add_argument("--interval", type=float, default=3.0)
     camera = subparsers.add_parser(
         "camera-smoke",
         help="Run a local camera or image metadata smoke test",
@@ -184,6 +199,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _preview_soothe_command(args, config)
     if args.command == "radar-vitals":
         return _radar_vitals_command(args, config)
+    if args.command == "sensors-live":
+        return _sensors_live_command(args, config)
     if args.command == "camera-smoke":
         return _camera_smoke_command(args)
     if args.command == "visual-change":
@@ -241,6 +258,82 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Events: {result.paths.events_json}")
     print(f"Readable log: {result.paths.readable_log}")
     print(f"Morning digest: {result.paths.digest}")
+    return 0
+
+
+def _format_sensor_line(reading: dict[str, object]) -> str:
+    def num(key: str, suffix: str) -> str | None:
+        value = reading.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return f"{value:g}{suffix}"
+
+    parts: list[str] = []
+    for key, suffix in (("room_temperature_c", " C"), ("room_humidity_pct", "% RH")):
+        rendered = num(key, suffix)
+        if rendered is not None:
+            parts.append(rendered)
+    if "person_present" in reading:
+        parts.append("present" if reading["person_present"] else "absent")
+    if "motion_detected" in reading:
+        parts.append("motion" if reading["motion_detected"] else "still")
+    for key, suffix in (
+        ("room_illuminance_lx", " lux"),
+        ("target_distance_cm", " cm"),
+        ("target_count", " target(s)"),
+        ("radar_respiratory_rate", "/min breathing"),
+        ("radar_heart_rate_bpm", " bpm heart"),
+    ):
+        rendered = num(key, suffix)
+        if rendered is not None:
+            parts.append(rendered)
+    return " | ".join(parts) if parts else "no readings yet"
+
+
+def _sensors_live_command(args: argparse.Namespace, config: AppConfig) -> int:
+    if args.interval <= 0:
+        raise SystemExit("--interval must be positive")
+    if args.host:
+        config = replace(
+            config,
+            sensors=replace(
+                config.sensors,
+                radar=replace(config.sensors.radar, host=args.host),
+            ),
+        )
+    readers = build_sensor_readers(config.sensors)
+    if not readers:
+        raise SystemExit(
+            "No sensors enabled. Set [sensors.air]/[sensors.motion]/[sensors.radar]"
+            " enabled = true in the config."
+        )
+
+    for reader in readers:  # kick any background connections (e.g. the radar)
+        try:
+            reader.read()
+        except Exception:
+            pass
+
+    forever = args.duration <= 0
+    print(
+        f"Live readout of {len(readers)} sensor reader(s)"
+        + (" — Ctrl-C to stop." if forever else f" for {args.duration:g}s.")
+    )
+    start = time.monotonic()
+    end = start + args.duration
+    try:
+        while forever or time.monotonic() < end:
+            merged: dict[str, object] = {}
+            for reader in readers:
+                try:
+                    merged.update(reader.read())
+                except Exception:
+                    pass
+            elapsed = int(time.monotonic() - start)
+            print(f"  [{elapsed:>5}s] {_format_sensor_line(merged)}")
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("Stopped.")
     return 0
 
 

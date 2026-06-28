@@ -7,10 +7,36 @@ from types import SimpleNamespace
 
 import pytest
 
-from lullaby.cli import main
+from lullaby.cli import _format_sensor_line, main
 from lullaby.logging import OutputPaths
 from lullaby.models import NightReport
 from lullaby.video import ImageInfo, VisualChangeReport
+
+
+def test_format_sensor_line_combines_all_sensors() -> None:
+    line = _format_sensor_line(
+        {
+            "room_temperature_c": 25.2,
+            "room_humidity_pct": 50.0,
+            "person_present": True,
+            "motion_detected": False,
+            "room_illuminance_lx": 31.9,
+            "target_distance_cm": 57.4,
+            "target_count": 2,
+            "radar_respiratory_rate": 18.0,
+            "radar_heart_rate_bpm": 87.0,
+        }
+    )
+    assert "25.2 C" in line
+    assert "50% RH" in line
+    assert "present" in line
+    assert "still" in line
+    assert "31.9 lux" in line
+    assert "87 bpm heart" in line
+
+
+def test_format_sensor_line_empty() -> None:
+    assert _format_sensor_line({}) == "no readings yet"
 
 
 def test_preview_soothe_dry_run_uses_selected_preset(
