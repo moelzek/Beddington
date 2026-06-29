@@ -1,44 +1,71 @@
+<div align="center">
+
 # Beddington
 
-Beddington is a privacy-first baby-monitor companion. Tier 0 processes audio locally, records sustained crying events, writes a readable night log, and produces a morning digest. Tier 1 may try one selected soothe preset before escalating. It is an assistive notebook, not a medical guardian: raw audio/video never leaves the device, uncertain interpretations are labelled best guesses, and the complete app works with cloud features disabled.
+**A privacy-first baby cry monitor that runs entirely on your own device. No cloud, no streaming, no account.**
 
-## What works now
+<br />
 
-- Laptop `.wav` input and optional live microphone input.
-- Official YAMNet TFLite `Baby cry, infant cry` model score.
-- Deterministic confidence threshold, sustained-duration debounce, release delay, and notification cooldown.
-- Optional Tier 1 dry-run soothe preset before parent notification.
-- Optional deterministic quiet-check windows during soothing.
-- Short selected-preset soothe preview, including confirmed Pi Bluetooth playback.
-- Pi USB microphone capture through Beddington's microphone adapter.
-- Pi Camera Module 3 hardware smoke test and Tier 2A bench-only camera metadata command.
-- Tier 2A local visual-change and camera-linked visual-change smoke tests, with raw frames deleted by default.
-- Local `events.json`, readable `night-log.txt`, and `morning-digest.txt`.
-- Console notification plus best-effort macOS/Linux desktop notification.
-- Optional provider-neutral LLM digest polish, disabled by default and restricted to derived event text.
-- Tests that require no model download, microphone, hardware, or API key.
+[![Star this repo](https://img.shields.io/github/stars/moelzek/Beddington?style=for-the-badge&logo=github&label=%E2%AD%90%20Star%20this%20repo&color=yellow)](https://github.com/moelzek/Beddington/stargazers)
+&nbsp;&nbsp;
+[![Follow @moelzek](https://img.shields.io/badge/Follow_%40moelzek-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/moelzek)
 
-## Laptop quickstart
+<br />
 
-Use Python 3.11–3.14. The commands below use the machine’s `python3`; substitute `python3.12` if you want the exact version used for the primary acceptance run.
+[![Python 3.11–3.14](https://img.shields.io/badge/python-3.11%E2%80%933.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+&nbsp;
+[![Runs on Raspberry Pi](https://img.shields.io/badge/runs%20on-Raspberry%20Pi-A22846?style=for-the-badge&logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com/)
+&nbsp;
+[![Data stays on device](https://img.shields.io/badge/data-100%25%20on--device-2EA043?style=for-the-badge)](#privacy-and-safety)
+
+---
+
+Most baby monitors send audio and video to a vendor's cloud. Beddington keeps everything on the device in front of you. It listens for sustained crying, logs each episode, writes a plain-language night log and a morning digest, and can play one soothing sound before it pings you. Raw audio and video never leave the device. It is an assistive notebook for tired parents, not a medical device, and it runs with every cloud feature switched off.
+
+[Quickstart](#quickstart) · [How it works](#how-it-works) · [Features](#what-it-does-today) · [Configuration](#configuration) · [Privacy](#privacy-and-safety)
+
+</div>
+
+## Why Beddington exists
+
+You want to know when your baby is crying. You do not want a microphone in the nursery uploading your child's sounds to someone else's servers, on someone else's terms, with someone else's retention policy.
+
+Beddington runs the cry detection on your own hardware, a Raspberry Pi or a laptop. The audio is analysed on the device and thrown away. What you keep is a short event record, a readable night log, and a morning digest. Nothing about your night leaves the room unless you explicitly turn on the optional text-only digest polish.
+
+## What it does today
+
+| What | How |
+|---|---|
+| On-device cry detection | The official YAMNet TFLite "Baby cry, infant cry" model, run locally on your audio |
+| Fewer false alarms | A confidence threshold, sustained-duration debounce, release delay, and notification cooldown you can tune |
+| Readable night log + morning digest | Plain-text `night-log.txt` and `morning-digest.txt`, plus a structured `events.json` |
+| One soothing sound, your choice | Optional Tier 1 plays a single preset (white noise, heartbeat, womb-style whoosh, or music) before it notifies you |
+| Quiet checks while soothing | Pauses, listens, and requires repeated quiet readings before it logs that crying has stopped |
+| Laptop or Raspberry Pi | A `.wav` file or a live USB microphone runs the same detector and state machine |
+| Private by construction | Raw audio and video never leave the device; cloud features are off by default |
+| Optional LLM digest polish | Only derived event text is sent, and only when you pass `--llm` |
+
+## Quickstart
+
+Use Python 3.11 to 3.14.
 
 ```bash
-cd ~/Code/Beddington
+git clone https://github.com/moelzek/Beddington.git
+cd Beddington
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install ".[dev]"
 ```
 
-Run the included public sample:
+Point `analyze` at any short `.wav` of a crying baby. A 10 to 30 second clip is plenty. The development sample recording is kept out of this public repo, so bring your own audio file:
 
 ```bash
-beddington --config config/default.toml analyze \
-  sample_data/crying_baby_cc0.wav \
+beddington --config config/default.toml analyze path/to/crying.wav \
   --output output/sample-night
 ```
 
-The first run downloads and verifies the official 3.9 MB YAMNet TFLite model into `~/.cache/beddington/models/`. The audio file is then processed locally. You should see:
+The first run downloads and verifies the official 3.9 MB YAMNet TFLite model into `~/.cache/beddington/models/`, then processes the audio locally. You should see something like:
 
 ```text
 [Beddington] Sustained crying detected (...). Please check the baby.
@@ -58,227 +85,89 @@ python -m json.tool output/sample-night/events.json
 
 Generated output is gitignored.
 
-## Try the Tier 1 soothe preset
+## How it works
 
-Tier 1 is explicit and off in the default config. The demo config uses dry-run
-playback, so it records the selected soothe preset without playing sound:
-
-```bash
-beddington --config config/tier1-demo.toml analyze \
-  sample_data/crying_baby_cc0.wav \
-  --output output/tier1-demo
+```text
+  microphone or .wav            YAMNet (on-device)          deterministic state machine            you
+ ───────────────────►  cry score  ───────────────►  threshold · debounce · cooldown  ───────►  night log
+                                                            + optional soothe preset             morning digest
+                                                                                                 notification
 ```
 
-You should see a digest that says Beddington tried one soothe preset before
-escalation. Open the readable log:
+1. Audio comes from a `.wav` file or a live 16 kHz mono microphone window.
+2. The local YAMNet model returns a baby-cry score for each window. The audio is then discarded.
+3. A deterministic state machine decides what counts as a real episode: the score must clear a threshold, stay high for a sustained duration, and respect a release delay and a cooldown between notifications.
+4. Optionally, Beddington plays one configured soothe preset and runs quiet checks before it escalates to a notification.
+5. You get an `events.json`, a readable `night-log.txt`, and a `morning-digest.txt`.
+
+Detection and timing are deterministic. The optional language model only ever rewrites the final text digest, and only if you ask it to.
+
+## More commands
 
 ```bash
-cat output/tier1-demo/night-log.txt
-```
+# Listen on a live microphone for 60 seconds (needs the mic extra)
+python -m pip install ".[mic]"
+beddington --config config/default.toml listen --seconds 60 --output output/live
 
-Expected: a `SOOTHE` line before any `NOTIFIED` line. Beddington chooses exactly
-one configured preset; it does not cycle through every sound. The default
-preset is `white_noise`. Available generated presets are:
+# Try the Tier 1 soothe preset in dry-run mode (records the preset, no sound)
+beddington --config config/tier1-demo.toml analyze path/to/crying.wav --output output/tier1-demo
 
-- [uterine_whoosh.wav](assets/soothe/uterine_whoosh.wav)
-- [white_noise.wav](assets/soothe/white_noise.wav)
-- [heartbeat.wav](assets/soothe/heartbeat.wav)
-- [soothing_music.wav](assets/soothe/soothing_music.wav)
-
-The files themselves are short, but Beddington can loop the selected preset for
-the configured `play_seconds`. The default presets are set up for 30-minute
-play windows when real playback is enabled.
-
-To test real playback without running cry detection, select the speaker output
-on the machine first, keep the volume low, then run:
-
-```bash
+# Preview the selected soothe sound through your speaker, briefly
 beddington --config config/default.toml preview-soothe --seconds 5
-```
 
-Expected: the selected `white_noise` preset plays briefly and then stops. This
-has already passed on the Pi through a Bluetooth speaker. The quiet-check
-software gate has also passed. The MAX98357 wired speaker test is deferred;
-the active bench path is now Tier 2A camera metadata plumbing.
-
-To preview the generated sounds directly on your Mac:
-
-```bash
-afplay assets/soothe/uterine_whoosh.wav
-afplay assets/soothe/white_noise.wav
-afplay assets/soothe/heartbeat.wav
-afplay assets/soothe/soothing_music.wav
-```
-
-## Run the tests
-
-```bash
+# Run the hardware-free test suite (no model download, no mic, no API key)
 python -m pytest
 ```
 
-Expected: all tests pass in under a few seconds. The tests use fake detector scores, so they do not download YAMNet.
+On Raspberry Pi OS the microphone path may also need `sudo apt install libportaudio2`.
 
-## Use a microphone
+Beddington also has bench-only, local-only camera utilities (`camera-smoke`, `visual-change`, `camera-change`) that write derived metrics and delete raw frames by default. They do not run nursery video, and video never triggers or suppresses a notification.
 
-Install the optional microphone dependency:
+## Configuration
 
-```bash
-python -m pip install ".[mic]"
-```
+Everything lives in [config/default.toml](config/default.toml). The knobs that matter most for false alarms:
 
-On Raspberry Pi OS you may also need:
+| Setting | What it does | Default |
+|---|---|---|
+| `threshold` | Minimum YAMNet baby-cry score to count | `0.40` |
+| `sustained_seconds` | How long the score must stay high before an event | `1.5` |
+| `release_seconds` | How long it must stay low before the episode ends | — |
+| `notification_cooldown_seconds` | Minimum time between notifications | — |
 
-```bash
-sudo apt install libportaudio2
-```
+YAMNet scores are uncalibrated model scores, not probabilities. Tune them against recordings from your own room before you rely on notifications. Soothe behaviour (`soothe.enabled`, `soothe.preset`, `soothe.player`, and the `quiet_check` block) is documented in the same file.
 
-Listen for 60 seconds:
+The bundled soothe sounds in [assets/soothe/](assets/soothe/) are synthetic placeholders for testing the preset path. The womb-style file is a generated rumble, not a recording, and not evidence that any sound will settle a given baby.
 
-```bash
-beddington --config config/default.toml listen \
-  --seconds 60 \
-  --output output/live
-```
-
-The microphone adapter records 16 kHz mono windows and runs the same detector and state machine as the WAV workflow.
-
-## Use the camera smoke test
-
-Tier 2A is bench-only local video plumbing. It does not run nursery video
-features and does not use video to trigger or suppress notifications.
-
-On the Pi, run:
-
-```bash
-beddington camera-smoke --output output/pi-camera-smoke
-```
-
-Expected: Beddington captures one local no-preview test frame, writes
-`output/pi-camera-smoke/camera-smoke.json`, and deletes the raw test frame by
-default. The report contains derived metadata such as image size and camera
-summary, not raw image data.
-
-For hardware-free tests on a laptop, inspect an existing local JPEG or PNG:
-
-```bash
-beddington camera-smoke --image path/to/local-test-image.jpg --output output/camera-smoke
-```
-
-Raw frames must stay local and must not be committed. The Tier 2 video boundary
-is captured in [tier2-video-gate.md](tier2-video-gate.md), and nursery use
-remains blocked until the physical checks in
-[camera-mount-plan.md](camera-mount-plan.md) pass.
-
-## Compare local test frames
-
-Use `visual-change` for the first deterministic derived video observation. It
-compares two local PGM/PPM test frames and writes only change metrics:
-
-```bash
-beddington visual-change \
-  --before path/to/before.pgm \
-  --after path/to/after.pgm \
-  --output output/visual-change
-```
-
-Expected: `output/visual-change/visual-change.json` contains
-`mean_absolute_difference`, `changed_pixel_ratio`, and either
-`visual_change_detected` or `little_visual_change_detected`. This is a local
-visual-change metric only, not a safety, sleep, breathing, or face-covering
-assessment.
-
-## Compare two Pi camera frames
-
-Use `camera-change` for a bench-only camera-linked smoke test:
-
-```bash
-beddington camera-change --output output/pi-camera-change
-```
-
-Expected: Beddington captures two short local BMP test frames from the Pi camera,
-compares them, writes `output/pi-camera-change/visual-change.json`, and deletes
-the raw BMP frames by default. The result may say `visual_change_detected` or
-`little_visual_change_detected` depending on camera noise, exposure, and scene
-change. It is still only a local visual-change metric, not a baby-state
-assessment.
-
-## Tune false alarms
-
-Edit [config/default.toml](config/default.toml):
-
-- `threshold`: minimum YAMNet baby-cry model score. Default `0.40`.
-- `sustained_seconds`: how long the score must remain high before an event/notification. Default `1.5`.
-- `release_seconds`: how long it must remain low before the episode ends.
-- `notification_cooldown_seconds`: minimum time between notifications.
-
-YAMNet scores are uncalibrated model scores, not probabilities. Tune against recordings from the real room before relying on notifications.
-
-## Tune soothing
-
-Edit [config/default.toml](config/default.toml):
-
-- `soothe.enabled`: default `false`; can also be enabled per run with `--soothe`.
-- `soothe.player`: `none` logs a dry run; `auto` plays a configured local sound file.
-- `soothe.preset`: the one preset to use, such as `white_noise`, `heartbeat`, or `soothing_music`.
-- `soothe.presets.<name>.sound_path`: local audio file to play when `player = "auto"`.
-- `soothe.presets.<name>.play_seconds`: how long that preset may loop.
-- `soothe.presets.<name>.wait_seconds`: how long Beddington waits before parent notification.
-- `soothe.quiet_check.enabled`: briefly pause or lower playback, listen, and
-  require repeated quiet checks before logging that crying is no longer
-  detected.
-- `soothe.quiet_check.check_interval_seconds`: how often to run a quiet check
-  while soothing is active.
-- `soothe.quiet_check.listen_seconds`: how long each listen-only check lasts.
-- `soothe.quiet_check.required_checks`: how many consecutive quiet checks are
-  required. This must be at least `2`.
-- `soothe.quiet_check.stop_on_notify`: stop playback when Beddington escalates to a
-  parent notification.
-
-The included generated sounds are synthetic placeholders for testing the preset.
-The uterine-style file is a generated womb-like rumble/whoosh, not a recording
-and not evidence that a particular sound will soothe a baby.
-
-Keep real audio tests at low volume. Do not wire the MAX98357 speaker bench test
-unless the Pi is powered off first.
-
-## Optional LLM polish
-
-The rule-based digest is the default and needs no account. To try a compatible chat-completions provider:
-
-```bash
-cp .env.example .env
-# Edit .env, then:
-set -a
-source .env
-set +a
-beddington --config config/default.toml analyze \
-  sample_data/crying_baby_cc0.wav \
-  --output output/sample-night-llm \
-  --llm
-```
-
-Only derived event text and the rule-based summary are sent. Raw audio is never sent. Never commit `.env`.
-
-## Layout
+## What's inside
 
 ```text
-src/beddington/       application code
+src/beddington/    application code
 tests/             hardware-free tests
-sample_data/       public CC0 verification recording
 config/            deterministic thresholds and feature flags
+assets/soothe/     synthetic soothe sounds for testing
 output/            generated logs (gitignored)
-Archive/           retired Lab Witness material
 ```
 
-## Project documents
+## Privacy and safety
 
-- [memory.md](memory.md) — canonical state and decisions
-- [baby-monitor-build-plan.md](baby-monitor-build-plan.md) — tiered build plan and BOM
-- [baby-monitor-evaluation.md](baby-monitor-evaluation.md) — evaluation and safety gate
-- [hardware-guide.md](hardware-guide.md) — wiring notes and bench-test order for owned parts
-- [ROADMAP.md](ROADMAP.md) — Tier 0–5 sequence
-- [tier2-video-gate.md](tier2-video-gate.md) — Tier 2A privacy, false-alarm, mount, and dark-room boundaries
+- Raw audio and video never leave the device. Only derived event text is ever sent anywhere, and only when you pass `--llm`.
+- Beddington does not diagnose illness and does not detect SIDS, apnoea, or fever. It is not a medical device and does not replace adult supervision or approved monitoring equipment.
+- Uncertain interpretations are labelled **best guess**.
+- Keep the companion beside the cot, never in it, and keep hot compute in a vented base.
+- The complete app works with every cloud feature disabled. Never commit your `.env`.
 
-## Safety and privacy
+---
 
-Beddington does not diagnose illness, detect SIDS/apnoea/fever, or replace adult supervision or approved monitoring equipment. Keep any companion beside the cot, never in it, and keep hot compute in a vented base.
+<div align="center">
+
+Built by [Mo Elzek](https://github.com/moelzek)
+
+<br />
+
+**If Beddington is useful to you, star it so other parents can find it.**
+
+[![Star this repo](https://img.shields.io/github/stars/moelzek/Beddington?style=for-the-badge&logo=github&label=%E2%AD%90%20Star%20this%20repo&color=yellow)](https://github.com/moelzek/Beddington/stargazers)
+&nbsp;&nbsp;
+[![Follow @moelzek](https://img.shields.io/badge/Follow_%40moelzek-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/moelzek)
+
+</div>
