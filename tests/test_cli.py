@@ -16,9 +16,16 @@ from beddington.cli import (
     _maybe_play_wake_chime,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
+    _soothe_via_dashboard,
     main,
 )
-from beddington.config import AppConfig, AssistantConfig, SootheStepConfig
+from beddington.config import (
+    AppConfig,
+    AssistantConfig,
+    SootheConfig,
+    SootheLearnConfig,
+    SootheStepConfig,
+)
 from beddington.logging import OutputPaths
 from beddington.models import Event, NightReport
 from beddington.sensor_store import SensorStore
@@ -295,6 +302,106 @@ def test_voice_stop_command_stops_dashboard_soothe_player(
     assert safe_stop == {"ok": True, "playing": None}
     assert dashboard.playing() is None
     assert _FakeDashboardPlayer.instances[0].stop_calls == 2
+
+
+def test_soothe_via_dashboard_next_uses_best_preset_excluding_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object] | None, str]] = []
+
+    def fake_live_view_json(
+        path: str,
+        token: str,
+        port: int,
+        params: dict[str, object] | None = None,
+        method: str = "GET",
+    ) -> dict[str, object]:
+        del token, port
+        calls.append((path, params, method))
+        if path == "/soothe.json":
+            return {
+                "presets": [
+                    {"key": "white_noise", "label": "white noise"},
+                    {"key": "rain", "label": "rain"},
+                    {"key": "ocean_waves", "label": "ocean waves"},
+                ],
+                "playing": "rain",
+                "default": "rain",
+            }
+        return {"ok": True, "playing": params["preset"] if params else None}
+
+    monkeypatch.setattr("beddington.cli._read_live_view_token", lambda: "token")
+    monkeypatch.setattr("beddington.cli._live_view_json", fake_live_view_json)
+    monkeypatch.setattr(
+        "beddington.cli._load_soothe_outcomes",
+        lambda _db: [
+            (1.0, "white_noise", False),
+            (2.0, "ocean_waves", True),
+            (3.0, "ocean_waves", True),
+            (4.0, "rain", True),
+        ],
+    )
+    config = AppConfig(
+        soothe=SootheConfig(
+            preset="white_noise",
+            learn=SootheLearnConfig(enabled=True, min_samples=1),
+        )
+    )
+
+    assert _soothe_via_dashboard({"action": "next"}, config=config) == (
+        "Playing ocean waves."
+    )
+    assert calls[-1] == (
+        "/soothe",
+        {"action": "play", "preset": "ocean_waves"},
+        "POST",
+    )
+
+
+def test_soothe_via_dashboard_volume_uses_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directions: list[str] = []
+
+    def fake_adjust(direction: str) -> dict[str, object]:
+        directions.append(direction)
+        return {"ok": True}
+
+    monkeypatch.setattr("beddington.cli._adjust_playback_volume", fake_adjust)
+
+    assert _soothe_via_dashboard({"action": "volume", "dir": "up"}) == (
+        "Okay, a little louder."
+    )
+    assert directions == ["up"]
+
+
+def test_soothe_via_dashboard_autosoothe_writes_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writes: list[tuple[bool, str]] = []
+    monkeypatch.setattr(
+        "beddington.autosoothe.read_state",
+        lambda: {"enabled": False, "preset": "rain"},
+    )
+    monkeypatch.setattr(
+        "beddington.autosoothe.write_state",
+        lambda enabled, preset: writes.append((enabled, preset))
+        or {"enabled": enabled, "preset": preset},
+    )
+    config = AppConfig(
+        soothe=SootheConfig(
+            preset="rain",
+            presets={"rain": SootheStepConfig(name="rain")},
+        )
+    )
+
+    assert _soothe_via_dashboard(
+        {"action": "autosoothe", "enabled": True}, config=config
+    ) == "Okay, I'll start watching for crying."
+    assert _soothe_via_dashboard(
+        {"action": "autosoothe", "enabled": False}, config=config
+    ) == "Okay, I'll stop watching for crying."
+    assert writes == [(True, "rain"), (False, "rain")]
 
 
 def test_auto_soothe_watcher_uses_best_preset_when_learning_has_data(

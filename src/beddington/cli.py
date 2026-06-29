@@ -721,6 +721,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
     auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms)
+    soothe_presets = _build_soothe_presets(config)
     # Warm the persona model so the first real reply isn't cold-start slow. Off the
     # critical path: a throwaway restyle whose result we discard. Harmless if the
     # model/Ollama is unavailable (paddingtonise just returns the input).
@@ -855,9 +856,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     if args.debug:
                         print(f"  [debug] chime: {chime}")
                     drain_captured_frames()
-                    soothe_cmd = match_soothe_command(question)
+                    soothe_cmd = match_soothe_command(question, soothe_presets)
                     if soothe_cmd is not None:
-                        answer = _soothe_via_dashboard(soothe_cmd)
+                        answer = _soothe_via_dashboard(soothe_cmd, config=config)
                     elif is_night_question(question) and night_store is not None:
                         digest = _summarise_store_night(night_store, 12 * 3600)
                         answer = digest.replace("• ", "").replace("\n", " ")
@@ -1478,31 +1479,196 @@ def _resolve_live_view_token(explicit: str | None) -> str:
     return token
 
 
-def _soothe_via_dashboard(cmd: dict[str, str], port: int = 8088) -> str:
-    """Trigger the live-view soothe player over local HTTP so the voice command
-    and the dashboard share ONE player (single source of truth)."""
+def _read_live_view_token() -> str | None:
     import os
-    import urllib.request
 
     try:
         with open(
             os.path.expanduser("~/.config/beddington/liveview.token"), encoding="utf-8"
         ) as handle:
-            token = handle.read().strip()
+            return handle.read().strip() or None
     except OSError:
-        return "Sorry, I can't reach the soothe player right now."
-    if cmd.get("action") == "stop":
-        query = f"token={token}&action=stop"
-        spoken = "Okay, stopping the sound."
-    else:
-        preset = cmd.get("preset", "white_noise")
-        query = f"token={token}&action=play&preset={preset}"
-        spoken = f"Playing {preset.replace('_', ' ')}."
+        return None
+
+
+def _live_view_json(
+    path: str,
+    token: str,
+    port: int,
+    params: Mapping[str, object] | None = None,
+    method: str = "GET",
+) -> dict[str, object]:
+    import urllib.parse
+    import urllib.request
+
+    query = urllib.parse.urlencode({"token": token, **dict(params or {})})
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}?{query}", method=method
+    )
+    body = urllib.request.urlopen(request, timeout=3).read()
+    if not body:
+        return {}
+    payload = json.loads(body.decode())
+    return payload if isinstance(payload, dict) else {}
+
+
+def _select_next_soothe_preset(
+    state: Mapping[str, object],
+    config: AppConfig | None,
+) -> str | None:
+    raw_presets = state.get("presets")
+    keys: list[str] = []
+    if isinstance(raw_presets, list):
+        for item in raw_presets:
+            if isinstance(item, dict):
+                key = str(item.get("key") or "")
+                if key:
+                    keys.append(key)
+    if not keys and config is not None:
+        keys = sorted(_build_soothe_presets(config))
+    current = str(state.get("playing") or "")
+    candidates = {key: object() for key in keys if key != current}
+    if not candidates:
+        return None
+
+    config_default = ""
+    if config is not None:
+        config_default = config.soothe.preset
+    default = str(state.get("default") or config_default or "")
+    if default not in candidates:
+        default = config_default if config_default in candidates else sorted(candidates)[0]
+
+    learn = getattr(getattr(config, "soothe", None), "learn", None)
+    learn_enabled = bool(getattr(learn, "enabled", False))
     try:
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{port}/soothe?{query}", method="POST"
+        min_samples = int(getattr(learn, "min_samples", 1)) if learn_enabled else 1
+    except (TypeError, ValueError):
+        min_samples = 1
+    from .soothe_memory import best_preset
+
+    outcomes = _load_soothe_outcomes(_DEFAULT_HISTORY_DB) if learn_enabled else ()
+    return best_preset(outcomes, candidates, max(1, min_samples), default)
+
+
+def _autosoothe_preset(config: AppConfig | None, requested: object = None) -> str:
+    presets = _build_soothe_presets(config) if config is not None else {}
+    value = str(requested or "")
+    if value and (not presets or value in presets):
+        return value
+    try:
+        from .autosoothe import read_state
+
+        existing = str(read_state().get("preset") or "")
+        if existing and (not presets or existing in presets):
+            return existing
+    except Exception:
+        pass
+    if config is not None and (not presets or config.soothe.preset in presets):
+        return config.soothe.preset
+    return next(iter(presets), "white_noise")
+
+
+def _write_autosoothe_voice_state(
+    enabled: bool,
+    config: AppConfig | None,
+    requested_preset: object = None,
+) -> str:
+    from .autosoothe import write_state
+
+    preset = _autosoothe_preset(config, requested_preset)
+    try:
+        write_state(enabled, preset)
+    except OSError:
+        return "Sorry, I couldn't update auto-soothe."
+    if enabled:
+        return "Okay, I'll start watching for crying."
+    return "Okay, I'll stop watching for crying."
+
+
+def _adjust_playback_volume(direction: str) -> dict[str, object]:
+    import shutil
+    import subprocess
+
+    up = direction == "up"
+    commands = []
+    if shutil.which("amixer"):
+        commands.append(["amixer", "sset", "Master", "5%+" if up else "5%-"])
+    if shutil.which("pactl"):
+        commands.append(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "+5%" if up else "-5%"])
+    if shutil.which("osascript"):
+        delta = 8 if up else -8
+        bound = "100" if up else "0"
+        compare = ">" if up else "<"
+        script = (
+            "set currentVolume to output volume of (get volume settings)\n"
+            f"set newVolume to currentVolume + {delta}\n"
+            f"if newVolume {compare} {bound} then set newVolume to {bound}\n"
+            "set volume output volume newVolume"
         )
-        urllib.request.urlopen(request, timeout=3).read()
+        commands.append(["osascript", "-e", script])
+    for command in commands:
+        try:
+            subprocess.run(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            return {"ok": True, "backend": command[0]}
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return {"ok": False, "reason": "unsupported"}
+
+
+def _soothe_via_dashboard(
+    cmd: Mapping[str, object],
+    port: int = 8088,
+    config: AppConfig | None = None,
+) -> str:
+    """Trigger the live-view soothe player over local HTTP so the voice command
+    and the dashboard share ONE player (single source of truth)."""
+    action = str(cmd.get("action") or "")
+    if action == "volume":
+        direction = str(cmd.get("dir") or "")
+        result = _adjust_playback_volume(direction)
+        if result.get("ok"):
+            return "Okay, a little louder." if direction == "up" else "Okay, a little quieter."
+        return "Sorry, I can't change the speaker volume from here."
+    if action == "autosoothe":
+        return _write_autosoothe_voice_state(
+            cmd.get("enabled") is True,
+            config,
+            cmd.get("preset"),
+        )
+
+    token = _read_live_view_token()
+    if token is None:
+        return "Sorry, I can't reach the soothe player right now."
+
+    if action == "stop":
+        params: dict[str, object] = {"action": "stop"}
+        spoken = "Okay, stopping the sound."
+    elif action == "next":
+        try:
+            state = _live_view_json("/soothe.json", token, port)
+            preset = _select_next_soothe_preset(state, config)
+            if preset is None:
+                return "Sorry, there isn't another soothe sound available."
+            params = {"action": "play", "preset": preset}
+            spoken = f"Playing {preset.replace('_', ' ')}."
+        except Exception:
+            return "Sorry, I couldn't reach the soothe player."
+    elif action == "play":
+        preset = str(cmd.get("preset") or "white_noise")
+        params = {"action": "play", "preset": preset}
+        spoken = f"Playing {preset.replace('_', ' ')}."
+    else:
+        return "Sorry, I didn't recognise that soothe command."
+
+    try:
+        state = _live_view_json("/soothe", token, port, params, method="POST")
+        if state.get("ok") is False:
+            return "Sorry, I couldn't play that sound."
         return spoken
     except Exception:
         return "Sorry, I couldn't reach the soothe player."

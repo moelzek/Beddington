@@ -17,6 +17,7 @@ as plain interpretations, not raw figures.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 from .ears import _edit_distance, normalize_transcript
 from .intent import INTENT_KEYWORDS, AskLlm, translate_intent
@@ -280,7 +281,21 @@ def is_night_question(question: str) -> bool:
     return _mentions(normalize_transcript(question), *_NIGHT_WORDS)
 
 
-# Soothe voice control: "play white noise", "soothe the baby", "stop the sound".
+# Soothe voice control: "play rain", "soothe the baby", "stop the sound".
+_DEFAULT_SOOTHE_PRESETS = {
+    "white_noise": "white noise",
+    "heartbeat": "heartbeat",
+    "soothing_music": "soothing music",
+    "uterine_whoosh": "uterine whoosh",
+    "pink_noise": "pink noise",
+    "rain": "rain",
+    "ocean_waves": "ocean waves",
+    "forest_breeze": "forest breeze",
+    "night_sky": "night sky",
+    "music_box_lullaby": "music box lullaby",
+    "shushing": "shushing",
+    "fan_hum": "fan hum",
+}
 _SOOTHE_STOP_WORDS = (
     "stop",
     "silence",
@@ -291,25 +306,95 @@ _SOOTHE_STOP_WORDS = (
     "shush",
 )
 _SOOTHE_PLAY_WORDS = ("play", "put on", "soothe", "comfort", "calm")
+_SOOTHE_GENERIC_PLAY_WORDS = ("soothe", "comfort", "calm")
+_SOOTHE_GENERIC_PLAY_CONTEXT = ("baby", "cry", "crying")
+_SOOTHE_AUTOSOOTHE_ON = (
+    "start watching for crying",
+    "start watching",
+    "start cry guard",
+    "start cryguard",
+    "watch for crying",
+    "auto soothe on",
+)
+_SOOTHE_AUTOSOOTHE_OFF = (
+    "stop watching",
+    "stop cry guard",
+    "stop cryguard",
+    "auto soothe off",
+)
+_SOOTHE_NEXT_WORDS = ("next", "switch", "try another")
+_SOOTHE_VOLUME_UP = ("louder",)
+_SOOTHE_VOLUME_DOWN = ("quieter",)
 
 
-def _soothe_preset_from(q: str) -> str | None:
-    if _mentions(q, "heartbeat", "heart beat"):
-        return "heartbeat"
-    if _mentions(q, "music", "song", "melody", "lullaby"):
-        return "soothing_music"
-    if _mentions(q, "whoosh", "womb", "uterine", "ocean"):
-        return "uterine_whoosh"
-    if _mentions(q, "white", "noise", "static", "hush"):
-        return "white_noise"
+def _soothe_display_names(
+    presets: Mapping[str, object] | None = None,
+) -> dict[str, str]:
+    if not presets:
+        return dict(_DEFAULT_SOOTHE_PRESETS)
+    names: dict[str, str] = {}
+    for key, preset in presets.items():
+        label = getattr(preset, "name", None)
+        names[str(key)] = str(label or key).strip() or str(key)
+    return names
+
+
+def _soothe_aliases(presets: Mapping[str, object] | None = None) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for key, display_name in _soothe_display_names(presets).items():
+        aliases[normalize_transcript(key.replace("_", " "))] = key
+        aliases[normalize_transcript(display_name)] = key
+    for key, display_name in _DEFAULT_SOOTHE_PRESETS.items():
+        aliases.setdefault(normalize_transcript(key.replace("_", " ")), key)
+        aliases.setdefault(normalize_transcript(display_name), key)
+    aliases.update(
+        {
+            "heart beat": "heartbeat",
+            "music": "soothing_music",
+            "song": "soothing_music",
+            "melody": "soothing_music",
+            "lullaby": "soothing_music",
+            "whoosh": "uterine_whoosh",
+            "womb": "uterine_whoosh",
+            "uterine": "uterine_whoosh",
+            "white": "white_noise",
+            "noise": "white_noise",
+            "static": "white_noise",
+            "hush": "white_noise",
+            "ocean": "ocean_waves",
+            "waves": "ocean_waves",
+        }
+    )
+    return aliases
+
+
+def _soothe_preset_from(
+    q: str,
+    presets: Mapping[str, object] | None = None,
+) -> str | None:
+    aliases = _soothe_aliases(presets)
+    words = q.split()
+    without_articles = " ".join(word for word in words if word not in {"a", "an", "the"})
+    for text in (q, without_articles):
+        for alias in sorted(aliases, key=lambda value: (-len(value.split()), value)):
+            if _mentions(text, alias):
+                return aliases[alias]
     return None
 
 
-def match_soothe_command(question: str) -> dict[str, str] | None:
+def match_soothe_command(
+    question: str,
+    presets: Mapping[str, object] | None = None,
+) -> dict[str, object] | None:
     """Detect a soothe play/stop command, or None. Returns e.g.
     {"action": "play", "preset": "white_noise"} or {"action": "stop"}."""
     q = normalize_transcript(question)
-    preset = _soothe_preset_from(q)
+    if _mentions(q, *_SOOTHE_AUTOSOOTHE_ON):
+        return {"action": "autosoothe", "enabled": True}
+    if _mentions(q, *_SOOTHE_AUTOSOOTHE_OFF):
+        return {"action": "autosoothe", "enabled": False}
+
+    preset = _soothe_preset_from(q, presets)
     context = preset is not None or _mentions(
         q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying", "cry"
     )
@@ -317,8 +402,19 @@ def match_soothe_command(question: str) -> dict[str, str] | None:
         return {"action": "stop"}
     if _mentions(q, *_SOOTHE_STOP_WORDS) and context:
         return {"action": "stop"}
+    if _mentions(q, *_SOOTHE_NEXT_WORDS):
+        return {"action": "next"}
+    if _mentions(q, *_SOOTHE_VOLUME_UP):
+        return {"action": "volume", "dir": "up"}
+    if _mentions(q, *_SOOTHE_VOLUME_DOWN):
+        return {"action": "volume", "dir": "down"}
     if _mentions(q, *_SOOTHE_PLAY_WORDS):
-        return {"action": "play", "preset": preset or "white_noise"}
+        if preset is not None:
+            return {"action": "play", "preset": preset}
+        if _mentions(q, *_SOOTHE_GENERIC_PLAY_WORDS) and _mentions(
+            q, *_SOOTHE_GENERIC_PLAY_CONTEXT
+        ):
+            return {"action": "play", "preset": "white_noise"}
     return None
 
 

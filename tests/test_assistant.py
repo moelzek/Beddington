@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from beddington.config import NarratorConfig
+from beddington.config import NarratorConfig, SootheStepConfig
 from beddington.assistant import answer_question
 
 SNAPSHOT = {
@@ -398,10 +398,67 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("stop the music") == {"action": "stop"}
     assert match_soothe_command("stop the noise") == {"action": "stop"}
     assert match_soothe_command("turn off the music") == {"action": "stop"}
+    assert match_soothe_command("switch off the music") == {"action": "stop"}
     # not soothe commands
     assert match_soothe_command("what is the temperature") is None
     assert match_soothe_command("is anyone there") is None
     assert match_soothe_command("what's her heart rate") is None
+
+
+def test_match_soothe_command_vc2_play_names_and_controls() -> None:
+    from beddington.assistant import match_soothe_command
+
+    presets = {
+        "white_noise": SootheStepConfig(name="white noise"),
+        "heartbeat": SootheStepConfig(name="heartbeat-style pulses"),
+        "soothing_music": SootheStepConfig(name="soothing music"),
+        "uterine_whoosh": SootheStepConfig(name="uterine whoosh"),
+        "pink_noise": SootheStepConfig(name="pink noise"),
+        "rain": SootheStepConfig(name="rain"),
+        "ocean_waves": SootheStepConfig(name="ocean waves"),
+        "forest_breeze": SootheStepConfig(name="forest breeze"),
+        "night_sky": SootheStepConfig(name="night sky"),
+        "music_box_lullaby": SootheStepConfig(name="music box lullaby"),
+        "shushing": SootheStepConfig(name="shushing"),
+        "fan_hum": SootheStepConfig(name="fan hum"),
+    }
+
+    play_cases = {
+        "PLAY WHITE NOISE": "white_noise",
+        "play the heartbeat": "heartbeat",
+        "play heartbeat-style pulses": "heartbeat",
+        "play soothing music": "soothing_music",
+        "play uterine whoosh": "uterine_whoosh",
+        "play pink noise": "pink_noise",
+        "play rain": "rain",
+        "play ocean waves": "ocean_waves",
+        "play forest breeze": "forest_breeze",
+        "play night sky": "night_sky",
+        "play music box lullaby": "music_box_lullaby",
+        "play shushing": "shushing",
+        "play fan hum": "fan_hum",
+    }
+    for phrase, preset in play_cases.items():
+        assert match_soothe_command(phrase, presets) == {
+            "action": "play",
+            "preset": preset,
+        }
+
+    control_cases = {
+        "next": {"action": "next"},
+        "switch": {"action": "next"},
+        "try another": {"action": "next"},
+        "louder": {"action": "volume", "dir": "up"},
+        "quieter": {"action": "volume", "dir": "down"},
+        "start watching for crying": {"action": "autosoothe", "enabled": True},
+        "stop watching": {"action": "autosoothe", "enabled": False},
+        "auto soothe on": {"action": "autosoothe", "enabled": True},
+        "auto soothe off": {"action": "autosoothe", "enabled": False},
+    }
+    for phrase, expected in control_cases.items():
+        assert match_soothe_command(phrase, presets) == expected
+
+    assert match_soothe_command("play washing machine", presets) is None
 
 
 def test_answer_falls_back_on_unrelated_word() -> None:
