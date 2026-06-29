@@ -17,6 +17,14 @@ def main() -> None:
     _write_wav(ASSET_DIR / "uterine_whoosh.wav", _uterine_whoosh(seconds=30.0))
     _write_wav(ASSET_DIR / "heartbeat.wav", _heartbeat(seconds=20.0))
     _write_wav(ASSET_DIR / "soothing_music.wav", _soothing_music(seconds=24.0))
+    _write_wav(ASSET_DIR / "pink_noise.wav", _pink_noise(seconds=24.0))
+    _write_wav(ASSET_DIR / "rain.wav", _rain(seconds=26.0))
+    _write_wav(ASSET_DIR / "ocean_waves.wav", _ocean_waves(seconds=30.0))
+    _write_wav(ASSET_DIR / "forest_breeze.wav", _forest_breeze(seconds=28.0))
+    _write_wav(ASSET_DIR / "night_sky.wav", _night_sky(seconds=30.0))
+    _write_wav(ASSET_DIR / "music_box_lullaby.wav", _music_box_lullaby(seconds=24.0))
+    _write_wav(ASSET_DIR / "shushing.wav", _shushing(seconds=24.0))
+    _write_wav(ASSET_DIR / "fan_hum.wav", _fan_hum(seconds=24.0))
 
 
 def _white_noise(seconds: float) -> np.ndarray:
@@ -95,6 +103,150 @@ def _soothing_music(seconds: float) -> np.ndarray:
     samples = _low_pass(samples, smoothing=0.93)
     samples = _fade(samples, seconds=2.0)
     return _normalise(samples, peak=0.14)
+
+
+def _pink_noise(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260623)
+    count = _sample_count(seconds)
+    samples = np.zeros(count, dtype=np.float64)
+    for weight, smoothing in [
+        (0.45, 0.985),
+        (0.28, 0.965),
+        (0.18, 0.925),
+        (0.09, 0.86),
+    ]:
+        noise = rng.normal(0.0, 1.0, count)
+        samples += weight * _low_pass(noise, smoothing=smoothing)
+    samples = _fade(samples, seconds=2.0)
+    return _normalise(samples, peak=0.12)
+
+
+def _rain(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260624)
+    t = _time(seconds)
+    bed = rng.normal(0.0, 1.0, len(t))
+    samples = 0.55 * _low_pass(bed, smoothing=0.92)
+    for start in rng.uniform(0.25, seconds - 0.25, round(seconds * 4.5)):
+        frequency = rng.uniform(2200.0, 4200.0)
+        width = rng.uniform(0.004, 0.012)
+        gain = rng.uniform(0.012, 0.035)
+        samples += gain * _pulse(t, start, frequency, width=width)
+    samples = _fade(samples, seconds=2.0)
+    return _normalise(samples, peak=0.14)
+
+
+def _ocean_waves(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260625)
+    t = _time(seconds)
+    noise = rng.normal(0.0, 1.0, len(t))
+    surf = _low_pass(noise, smoothing=0.965)
+    wave = (0.5 + 0.5 * np.sin(2 * np.pi * 0.07 * t - np.pi / 2)) ** 1.8
+    smaller_swell = 0.18 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.14 * t + 0.7))
+    samples = surf * (0.24 + 0.76 * wave + smaller_swell)
+    samples += 0.08 * _low_pass(rng.normal(0.0, 1.0, len(t)), smoothing=0.9)
+    samples = _fade(samples, seconds=3.0)
+    return _normalise(samples, peak=0.18)
+
+
+def _forest_breeze(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260626)
+    t = _time(seconds)
+    wind = _low_pass(rng.normal(0.0, 1.0, len(t)), smoothing=0.975)
+    gust = 0.45 + 0.25 * np.sin(2 * np.pi * 0.045 * t + 0.2)
+    gust += 0.18 * np.sin(2 * np.pi * 0.11 * t + 1.4)
+    gust += 0.08 * np.sin(2 * np.pi * 0.21 * t + 2.1)
+    samples = wind * np.clip(gust, 0.18, 0.9)
+    samples = _fade(samples, seconds=3.0)
+    return _normalise(samples, peak=0.13)
+
+
+def _night_sky(seconds: float) -> np.ndarray:
+    t = _time(seconds)
+    tremolo = 0.82 + 0.12 * np.sin(2 * np.pi * 0.055 * t)
+    tremolo += 0.06 * np.sin(2 * np.pi * 0.09 * t + 1.6)
+    samples = np.zeros_like(t)
+    for gain, frequency in [
+        (0.36, 146.83),
+        (0.24, 220.00),
+        (0.18, 293.66),
+        (0.12, 329.63),
+    ]:
+        samples += gain * np.sin(2 * np.pi * frequency * t)
+        samples += 0.35 * gain * np.sin(2 * np.pi * frequency * 1.006 * t)
+    samples *= tremolo
+    samples = _low_pass(samples, smoothing=0.82)
+    samples = _fade(samples, seconds=3.0)
+    return _normalise(samples, peak=0.12)
+
+
+def _music_box_lullaby(seconds: float) -> np.ndarray:
+    t = _time(seconds)
+    notes = [
+        392.00,
+        392.00,
+        440.00,
+        392.00,
+        329.63,
+        349.23,
+        392.00,
+        329.63,
+        293.66,
+        329.63,
+        349.23,
+        392.00,
+    ]
+    samples = np.zeros_like(t)
+    note_seconds = 0.8
+    repeats = math.ceil(seconds / (len(notes) * note_seconds))
+    for index, note in enumerate(notes * repeats):
+        start = index * note_seconds
+        if start >= seconds:
+            break
+        end = min(seconds, start + note_seconds * 0.86)
+        mask = (t >= start) & (t < end)
+        local = t[mask] - start
+        envelope = np.exp(-4.6 * local) * np.clip(local / 0.018, 0.0, 1.0)
+        bell = np.sin(2 * np.pi * note * local)
+        bell += 0.44 * np.sin(2 * np.pi * note * 2.0 * local)
+        bell += 0.18 * (2 / np.pi) * np.arcsin(np.sin(2 * np.pi * note * 3.0 * local))
+        samples[mask] += envelope * bell
+    samples = _low_pass(samples, smoothing=0.72)
+    samples = _fade(samples, seconds=1.5)
+    return _normalise(samples, peak=0.13)
+
+
+def _shushing(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260627)
+    t = _time(seconds)
+    noise = rng.normal(0.0, 1.0, len(t))
+    bright_noise = noise - _low_pass(noise, smoothing=0.93)
+    bright_noise = _low_pass(bright_noise, smoothing=0.32)
+    envelope = np.zeros_like(t)
+    for start in np.arange(0.25, seconds, 1.05):
+        duration = min(0.62, seconds - start)
+        mask = (t >= start) & (t < start + duration)
+        local = t[mask] - start
+        envelope[mask] += _attack_release(
+            local,
+            duration=duration,
+            attack=0.11,
+            release=0.24,
+        )
+    samples = bright_noise * np.clip(envelope, 0.0, 1.0)
+    samples = _fade(samples, seconds=1.5)
+    return _normalise(samples, peak=0.15)
+
+
+def _fan_hum(seconds: float) -> np.ndarray:
+    rng = np.random.default_rng(seed=20260628)
+    t = _time(seconds)
+    noise = _low_pass(rng.normal(0.0, 1.0, len(t)), smoothing=0.988)
+    tone = 0.5 * np.sin(2 * np.pi * 120.0 * t)
+    tone += 0.14 * np.sin(2 * np.pi * 240.0 * t)
+    samples = 0.55 * noise + tone
+    samples = _low_pass(samples, smoothing=0.7)
+    samples = _fade(samples, seconds=2.0)
+    return _normalise(samples, peak=0.12)
 
 
 def _sample_count(seconds: float) -> int:
