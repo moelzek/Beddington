@@ -58,3 +58,15 @@ def test_store_ignores_non_numeric_and_nan(tmp_path: Path) -> None:
     assert series["room_temperature_c"]["points"] == []
     assert series["room_humidity_pct"]["points"] == []
     store.close()
+
+
+def test_store_soothe_outcomes_roundtrip(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    store.append_soothe_outcome(100.0, "rain", True)
+    store.append_soothe_outcome(200.0, "pink-noise", False)
+    assert store.outcomes_since(150.0) == [(200.0, "pink-noise", False)]
+    assert store.outcomes_since(0.0) == [
+        (100.0, "rain", True),
+        (200.0, "pink-noise", False),
+    ]
+    store.close()

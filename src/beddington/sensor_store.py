@@ -46,6 +46,10 @@ class SensorStore:
             " (ts REAL NOT NULL, key TEXT NOT NULL, value REAL NOT NULL)"
         )
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_key_ts ON readings(key, ts)")
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS soothe_outcomes"
+            " (ts REAL NOT NULL, sound_name TEXT NOT NULL, success INTEGER NOT NULL)"
+        )
         self._conn.commit()
 
     def append(
@@ -102,6 +106,25 @@ class SensorStore:
             )
             self._conn.commit()
             return cursor.rowcount
+
+    def append_soothe_outcome(self, timestamp: float, sound_name: str, success: bool) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO soothe_outcomes VALUES (?, ?, ?)",
+                (float(timestamp), str(sound_name), 1 if success else 0),
+            )
+            self._conn.commit()
+
+    def outcomes_since(self, since_ts: float) -> list[tuple[float, str, bool]]:
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT ts, sound_name, success FROM soothe_outcomes WHERE ts>=? ORDER BY ts",
+                (float(since_ts),),
+            )
+            return [
+                (float(ts), str(sound_name), bool(success))
+                for ts, sound_name, success in cursor.fetchall()
+            ]
 
     def close(self) -> None:
         with self._lock:
