@@ -16,6 +16,7 @@ import math
 import os
 import sqlite3
 import threading
+import time
 
 from .liveview import DASHBOARD_SENSORS
 
@@ -49,6 +50,9 @@ class SensorStore:
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS soothe_outcomes"
             " (ts REAL NOT NULL, sound_name TEXT NOT NULL, success INTEGER NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_soothe_outcomes_ts ON soothe_outcomes(ts)"
         )
         self._conn.commit()
 
@@ -125,6 +129,49 @@ class SensorStore:
                 (float(ts), str(sound_name), bool(success))
                 for ts, sound_name, success in cursor.fetchall()
             ]
+
+    def night_aggregates(
+        self,
+        nights: int,
+        now_ts: float | None = None,
+    ) -> dict[str, list[tuple[int, int]] | list[tuple[str, int, int]]]:
+        if nights < 1:
+            raise ValueError("nights must be >= 1")
+        now = time.time() if now_ts is None else float(now_ts)
+        since_ts = now - float(nights) * 24 * 3600
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT ts, value FROM readings "
+                "WHERE key=? AND ts>=? ORDER BY ts",
+                ("motion_detected", since_ts),
+            )
+            motion_rows = cursor.fetchall()
+            cursor = self._conn.execute(
+                "SELECT sound_name, SUM(success), COUNT(*) "
+                "FROM soothe_outcomes WHERE ts>=? "
+                "GROUP BY sound_name ORDER BY sound_name",
+                (since_ts,),
+            )
+            soothe_rows = cursor.fetchall()
+
+        stir_counts: dict[int, int] = {}
+        previous: float | None = None
+        for ts, value in motion_rows:
+            current = float(value)
+            if previous is not None and current > 0.5 and previous <= 0.5:
+                hour = time.localtime(float(ts)).tm_hour
+                stir_counts[hour] = stir_counts.get(hour, 0) + 1
+            previous = current
+
+        return {
+            "stir_hours": sorted(
+                stir_counts.items(), key=lambda item: (-item[1], item[0])
+            ),
+            "soothe_tallies": [
+                (str(sound_name), int(successes or 0), int(attempts))
+                for sound_name, successes, attempts in soothe_rows
+            ],
+        }
 
     def close(self) -> None:
         with self._lock:

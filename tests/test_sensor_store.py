@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from beddington.sensor_store import SensorStore
+
+
+def _local_ts(year: int, month: int, day: int, hour: int, minute: int = 0) -> float:
+    return time.mktime((year, month, day, hour, minute, 0, -1, -1, -1))
 
 
 def test_store_append_and_series(tmp_path: Path) -> None:
@@ -68,5 +73,41 @@ def test_store_soothe_outcomes_roundtrip(tmp_path: Path) -> None:
     assert store.outcomes_since(0.0) == [
         (100.0, "rain", True),
         (200.0, "pink-noise", False),
+    ]
+    store.close()
+
+
+def test_store_night_aggregates_bucket_stirs_by_hour(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    now = _local_ts(2026, 1, 5, 8)
+
+    store.append(_local_ts(2026, 1, 1, 2), {"motion_detected": False})
+    store.append(_local_ts(2026, 1, 1, 2, 5), {"motion_detected": True})
+    store.append(_local_ts(2026, 1, 3, 2), {"motion_detected": False})
+    store.append(_local_ts(2026, 1, 3, 2, 5), {"motion_detected": True})
+    store.append(_local_ts(2026, 1, 3, 2, 10), {"motion_detected": True})
+    store.append(_local_ts(2026, 1, 4, 4), {"motion_detected": False})
+    store.append(_local_ts(2026, 1, 4, 4, 5), {"motion_detected": True})
+    store.append(_local_ts(2026, 1, 4, 4, 10), {"motion_detected": False})
+    store.append(_local_ts(2026, 1, 4, 2), {"motion_detected": False})
+    store.append(_local_ts(2026, 1, 4, 2, 5), {"motion_detected": True})
+
+    assert store.night_aggregates(3, now_ts=now)["stir_hours"] == [(2, 2), (4, 1)]
+    store.close()
+
+
+def test_store_night_aggregates_tallies_recent_soothe_outcomes(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    now = _local_ts(2026, 1, 5, 8)
+
+    store.append_soothe_outcome(_local_ts(2026, 1, 1, 21), "rain", True)
+    store.append_soothe_outcome(_local_ts(2026, 1, 3, 21), "rain", True)
+    store.append_soothe_outcome(_local_ts(2026, 1, 3, 22), "rain", False)
+    store.append_soothe_outcome(_local_ts(2026, 1, 4, 21), "waves", False)
+    store.append_soothe_outcome(_local_ts(2026, 1, 4, 22), "waves", True)
+
+    assert store.night_aggregates(3, now_ts=now)["soothe_tallies"] == [
+        ("rain", 1, 2),
+        ("waves", 1, 2),
     ]
     store.close()
