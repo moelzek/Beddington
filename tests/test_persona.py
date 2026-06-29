@@ -65,6 +65,12 @@ def test_invented_number_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     assert paddingtonise(PLAIN, _cfg()) == PLAIN
 
 
+def test_added_presence_claim_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    plain = "Playing white noise."
+    _mock(monkeypatch, "Playing white noise while someone stayed nearby.")
+    assert paddingtonise(plain, _cfg()) == plain
+
+
 def test_dropped_number_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     plain = "Around 16 to 20 degrees Celsius is the usual comfortable range."
     _mock(monkeypatch, "Around 20 degrees Celsius is the comfortable range, if I may.")

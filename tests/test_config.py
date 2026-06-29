@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from beddington.config import load_config
+from beddington.config import NarratorConfig, load_config
 
 
 def test_load_config_reads_detection_values(tmp_path: Path) -> None:
@@ -147,6 +147,10 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.assistant.llm_translator.enabled is True
     assert config.narrator.enabled is True
     assert config.narrator.model == "llama3.2:1b"
+
+
+def test_narrator_config_defaults_enabled() -> None:
+    assert NarratorConfig().enabled is True
 
 
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:

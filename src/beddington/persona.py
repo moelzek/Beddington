@@ -25,6 +25,7 @@ import re
 import urllib.request
 
 from .config import NarratorConfig
+from .grounding import has_unsupported_additions
 from .narrator import _BANNED_NARRATION_WORDS
 
 _SYSTEM_PROMPT = (
@@ -140,6 +141,8 @@ def _validate(candidate: str, plain: str) -> bool:
         return False
     # Units: no unit added, dropped, or swapped (closes the unit-swap hole).
     if _unit_set(text) != _unit_set(plain):
+        return False
+    if has_unsupported_additions(text, plain):
         return False
     # On-topic: the restyle must share most of the plain answer's content words,
     # so a small model can't pass with off-topic / meta text (e.g. echoing the

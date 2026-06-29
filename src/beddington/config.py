@@ -37,7 +37,7 @@ class LlmConfig:
 
 @dataclass(frozen=True)
 class NarratorConfig:
-    enabled: bool = False
+    enabled: bool = True
     backend: str = "ollama"
     model: str = "llama3.2:1b"
     host: str = "http://127.0.0.1:11434"

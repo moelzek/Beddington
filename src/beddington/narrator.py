@@ -11,6 +11,7 @@ from typing import Any
 
 from .config import NarratorConfig
 from .context import describe_presence_scene
+from .grounding import has_unsupported_additions
 from .models import Event, NightReport
 from .soothe import _playback_command, _player_name
 
@@ -28,39 +29,7 @@ _BANNED_NARRATION_WORDS = (
 
 
 def build_narration_prompt(report: NightReport) -> str:
-    episodes = _cry_episodes(report)
-    soothe_attempts = [
-        event for event in report.events if event.kind == "soothe_attempted"
-    ]
-    notifications = [
-        event for event in report.events if event.kind == "notification_sent"
-    ]
-
-    facts = [
-        f"Crying episode count: {len(episodes)}.",
-    ]
-    if episodes:
-        durations = ", ".join(_format_duration(duration) for _, duration in episodes)
-        facts.append(f"Crying episode durations: {durations}.")
-        facts.append(
-            f"Total crying duration: {_format_duration(sum(duration for _, duration in episodes))}."
-        )
-    else:
-        facts.append("No sustained crying episodes were detected.")
-
-    if soothe_attempts:
-        names = ", ".join(
-            str(event.details.get("name", "soothe preset"))
-            for event in soothe_attempts
-        )
-        facts.append(f"Soothing played: {names}.")
-    else:
-        facts.append("Soothing played: none.")
-
-    facts.append(_outcome_fact(report.events, len(notifications)))
-    facts.extend(_environment_facts(report.events))
-    facts.extend(_sound_facts(report.events))
-
+    facts = _narration_facts(report)
     fact_lines = "\n".join(f"- {fact}" for fact in facts)
     return (
         "You are Beddington, a kindly little bear with the warm, polite, gentle manner "
@@ -122,9 +91,54 @@ def narrate(report: NightReport, config: NarratorConfig, digest_fallback: str) -
     # Small local models sometimes append a stray, contradictory line after a
     # blank line. The faithful recap is the first paragraph, so keep only that.
     text = text.split("\n\n", 1)[0].strip()
-    if not text or _contains_banned_word(text):
+    grounding_source = _grounding_source(report, digest_fallback)
+    if (
+        not text
+        or _contains_banned_word(text)
+        or has_unsupported_additions(text, grounding_source)
+    ):
         return digest_fallback
     return text
+
+
+def _narration_facts(report: NightReport) -> list[str]:
+    episodes = _cry_episodes(report)
+    soothe_attempts = [
+        event for event in report.events if event.kind == "soothe_attempted"
+    ]
+    notifications = [
+        event for event in report.events if event.kind == "notification_sent"
+    ]
+
+    facts = [
+        f"Crying episode count: {len(episodes)}.",
+    ]
+    if episodes:
+        durations = ", ".join(_format_duration(duration) for _, duration in episodes)
+        facts.append(f"Crying episode durations: {durations}.")
+        facts.append(
+            f"Total crying duration: {_format_duration(sum(duration for _, duration in episodes))}."
+        )
+    else:
+        facts.append("No sustained crying episodes were detected.")
+
+    if soothe_attempts:
+        names = ", ".join(
+            str(event.details.get("name", "soothe preset"))
+            for event in soothe_attempts
+        )
+        facts.append(f"Soothing played: {names}.")
+    else:
+        facts.append("Soothing played: none.")
+
+    facts.append(_outcome_fact(report.events, len(notifications)))
+    facts.extend(_environment_facts(report.events))
+    facts.extend(_sound_facts(report.events))
+    return facts
+
+
+def _grounding_source(report: NightReport, digest_fallback: str) -> str:
+    return "\n".join([*_narration_facts(report), digest_fallback])
 
 
 def speak(text: str, config: NarratorConfig) -> dict[str, Any]:

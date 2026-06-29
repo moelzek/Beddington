@@ -15,6 +15,7 @@ from beddington.config import (
     NarratorConfig,
     NotificationConfig,
 )
+from beddington.digest import build_digest
 from beddington.models import AudioWindow, Event, NightReport
 from beddington.narrator import build_narration_prompt, narrate, speak
 from beddington.pipeline import run_pipeline
@@ -102,7 +103,7 @@ def test_narrate_trims_trailing_ramble(monkeypatch: pytest.MonkeyPatch) -> None:
         return FakeResponse(
             {
                 "response": (
-                    "Crying was detected once for 18 seconds.\n\n"
+                    "Crying was detected once for 5 seconds.\n\n"
                     "Crying ceased after three quiet checks."
                 )
             }
@@ -112,7 +113,7 @@ def test_narrate_trims_trailing_ramble(monkeypatch: pytest.MonkeyPatch) -> None:
 
     text = narrate(_sample_report(), NarratorConfig(enabled=True), "fallback digest")
 
-    assert text == "Crying was detected once for 18 seconds."
+    assert text == "Crying was detected once for 5 seconds."
 
 
 def test_narrate_returns_fallback_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,8 +123,57 @@ def test_narrate_returns_fallback_when_disabled(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fail_urlopen)
 
     assert (
-        narrate(_sample_report(), NarratorConfig(), "fallback digest")
+        narrate(_sample_report(), NarratorConfig(enabled=False), "fallback digest")
         == "fallback digest"
+    )
+
+
+def test_narrate_falls_back_when_ollama_adds_sensor_fact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _report_without_sensor_context()
+    fallback = build_digest(report)
+
+    def fake_urlopen(request, timeout):
+        return FakeResponse(
+            {
+                "response": (
+                    "Beddington noticed one crying episode. The room temperature "
+                    "was 22 C, humidity was 60%, and presence stayed constant."
+                )
+            }
+        )
+
+    monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fake_urlopen)
+
+    text = narrate(report, NarratorConfig(enabled=True), fallback)
+
+    assert text == fallback
+    assert "22" not in text
+    assert "60" not in text
+    assert "presence" not in text.lower()
+
+
+def test_narrate_uses_faithful_rewording(monkeypatch: pytest.MonkeyPatch) -> None:
+    report = _report_without_sensor_context()
+
+    def fake_urlopen(request, timeout):
+        return FakeResponse(
+            {
+                "response": (
+                    "Beddington noticed one crying episode lasting 5 seconds, "
+                    "and no parent notification was sent."
+                )
+            }
+        )
+
+    monkeypatch.setattr("beddington.narrator.urllib.request.urlopen", fake_urlopen)
+
+    text = narrate(report, NarratorConfig(enabled=True), build_digest(report))
+
+    assert text == (
+        "Beddington noticed one crying episode lasting 5 seconds, "
+        "and no parent notification was sent."
     )
 
 
@@ -457,5 +507,35 @@ def _sample_report() -> NightReport:
         sustained_seconds=1.0,
         windows_processed=20,
         peak_score=0.82,
+        events=events,
+    )
+
+
+def _report_without_sensor_context() -> NightReport:
+    started = datetime(2026, 6, 28, tzinfo=UTC)
+    events = (
+        Event(
+            kind="cry_started",
+            occurred_at=started + timedelta(seconds=1),
+            offset_seconds=1.0,
+            score=0.81,
+        ),
+        Event(
+            kind="cry_ended",
+            occurred_at=started + timedelta(seconds=6),
+            offset_seconds=6.0,
+            score=0.12,
+            duration_seconds=5.0,
+        ),
+    )
+    return NightReport(
+        started_at=started,
+        finished_at=started + timedelta(seconds=10),
+        source="/private/recordings/raw.wav",
+        detector="fake",
+        threshold=0.4,
+        sustained_seconds=1.0,
+        windows_processed=20,
+        peak_score=0.81,
         events=events,
     )
