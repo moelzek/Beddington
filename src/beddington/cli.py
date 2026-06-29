@@ -514,6 +514,18 @@ def _read_sensor_snapshot(
     return snapshot
 
 
+def _is_degenerate(text: str) -> bool:
+    """True for Whisper's repetition hallucination on noise (e.g. 'No. No. No.'
+    repeated), so it can be dropped instead of mistaken for a command."""
+    words = text.split()
+    if len(words) < 6:
+        return False
+    from collections import Counter
+
+    most_common = Counter(words).most_common(1)[0][1]
+    return most_common / len(words) > 0.6
+
+
 def _transcribe(model: object, audio: object) -> str:
     segments, _ = model.transcribe(
         audio,
@@ -530,7 +542,8 @@ def _transcribe(model: object, audio: object) -> str:
             "air pressure, brightness, or air quality? How was the night?"
         ),
     )
-    return " ".join(segment.text for segment in segments).strip()
+    text = " ".join(segment.text for segment in segments).strip()
+    return "" if _is_degenerate(text) else text
 
 
 def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> int:
@@ -634,8 +647,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     levels.append(float(np.sqrt(np.mean(f**2))))
                 levels.sort()
                 noise_floor = levels[len(levels) // 2] if levels else 0.012
-                # Cap at 0.024 so a normal close voice (~0.04+) always clears it.
-                threshold = max(0.015, min(0.024, round(noise_floor * 1.6, 4)))
+                # Floor 0.024 keeps the bar above a muffled/buried-mic noise floor
+                # (~0.02) so room noise never opens a long blob that Whisper would
+                # hallucinate on; cap 0.032 so a close voice (~0.034+) still clears.
+                threshold = max(0.024, min(0.032, round(noise_floor * 1.6, 4)))
                 adapt = True
             print(
                 f"Listening (speech threshold {threshold:.4f}) — say "
@@ -661,7 +676,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Track the noise floor from quiet frames and keep the bar
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
-                    threshold = max(0.015, min(0.024, round(noise_floor * 1.6, 4)))
+                    threshold = max(0.024, min(0.032, round(noise_floor * 1.6, 4)))
                 is_speech = rms > threshold
                 if args.debug:
                     frames_seen += 1
