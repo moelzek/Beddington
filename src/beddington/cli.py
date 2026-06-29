@@ -45,6 +45,7 @@ from .video import (
 )
 
 _DEFAULT_HISTORY_DB = "~/.local/share/beddington/sensors.db"
+_NIGHT_DIGEST_TREND_NIGHTS = 7
 _SOOTHE_SUCCESS_EVENTS = {"soothe_quiet_confirmed", "soothe_settled"}
 _SOOTHE_FAILURE_EVENTS = {"soothe_unresolved"}
 
@@ -443,6 +444,16 @@ def _record_soothe_outcomes(events: Sequence[Event], store: object) -> None:
             sound_name = None
 
 
+def _summarise_store_night(store: object, window_seconds: float) -> str:
+    from .night_digest import summarise_night
+
+    now = time.time()
+    return summarise_night(
+        store.series(now - window_seconds),
+        aggregates=store.night_aggregates(_NIGHT_DIGEST_TREND_NIGHTS, now_ts=now),
+    )
+
+
 def _format_sensor_line(reading: dict[str, object]) -> str:
     def num(key: str, suffix: str) -> str | None:
         value = reading.get(key)
@@ -778,11 +789,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     if soothe_cmd is not None:
                         answer = _soothe_via_dashboard(soothe_cmd)
                     elif is_night_question(question) and night_store is not None:
-                        from .night_digest import summarise_night
-
-                        digest = summarise_night(
-                            night_store.series(time.time() - 12 * 3600)
-                        )
+                        digest = _summarise_store_night(night_store, 12 * 3600)
                         answer = digest.replace("• ", "").replace("\n", " ")
                     else:
                         snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
@@ -1505,12 +1512,11 @@ class _AutoSootheWatcher:
 def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:
     import os
 
-    from .night_digest import summarise_night
     from .sensor_store import SensorStore
 
     store = SensorStore(os.path.expanduser(args.history_db))
     window = max(0.1, args.history_hours) * 3600
-    text = summarise_night(store.series(time.time() - window))
+    text = _summarise_store_night(store, window)
     store.close()
     print(text)
     if args.speak:
@@ -1555,14 +1561,12 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
                 "mode_auto": sampler.override() is None,
             }
             if store is not None:
-                from .night_digest import summarise_night
-
                 window = max(0.1, args.history_hours) * 3600
                 history_provider = (  # noqa: E731
                     lambda: store.series(time.time() - window)
                 )
                 digest_provider = (  # noqa: E731
-                    lambda: {"text": summarise_night(store.series(time.time() - window))}
+                    lambda: {"text": _summarise_store_night(store, window)}
                 )
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731

@@ -35,17 +35,56 @@ def test_summarise_night_reports_facts() -> None:
     assert "coolest around 04:00" in text
 
 
+def test_summarise_night_adds_trend_lines() -> None:
+    series = _series(
+        room_temperature_c=[[0.0, 20.0], [3600.0, 21.0]],
+    )
+    text = summarise_night(
+        series,
+        aggregates={
+            "stir_hours": [(2, 3), (4, 1)],
+            "soothe_tallies": [("rain", 2, 3), ("waves", 1, 1)],
+        },
+    )
+
+    assert "• Usually stirs around ~2am (best guess)." in text
+    assert "• When rain played, she quieted 2/3 times (best guess)." in text
+
+
+def test_summarise_night_skips_sparse_trends() -> None:
+    series = _series(
+        room_temperature_c=[[0.0, 20.0], [3600.0, 21.0]],
+    )
+    text = summarise_night(
+        series,
+        aggregates={
+            "stir_hours": [(2, 1)],
+            "soothe_tallies": [("rain", 1, 1)],
+        },
+    )
+
+    assert "Usually stirs" not in text
+    assert "she quieted" not in text
+
+
 def test_summarise_night_makes_no_safety_claim() -> None:
     series = _series(
         room_temperature_c=[[0.0, 20.0], [60.0, 20.0]],
         radar_respiratory_rate=[[0.0, 16.0], [60.0, 16.0]],
         radar_heart_rate_bpm=[[0.0, 90.0], [60.0, 90.0]],
     )
-    text = summarise_night(series)
+    text = summarise_night(
+        series,
+        aggregates={
+            "stir_hours": [(3, 2)],
+            "soothe_tallies": [("safe_song", 2, 2), ("rain", 1, 2)],
+        },
+    )
     words = set(re.findall(r"[a-z]+", text.lower()))
     assert words.isdisjoint(_BANNED)
     # vitals are labelled bench-only
     assert "not a medical reading" in text.lower()
+    assert "safe song" not in text.lower()
 
 
 def test_summarise_night_empty() -> None:
