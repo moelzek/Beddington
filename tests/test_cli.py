@@ -7,9 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from beddington.cli import _format_sensor_line, main
+from beddington.cli import _format_sensor_line, _record_run_soothe_outcomes, main
 from beddington.logging import OutputPaths
-from beddington.models import NightReport
+from beddington.models import Event, NightReport
+from beddington.sensor_store import SensorStore
 from beddington.video import ImageInfo, VisualChangeReport
 
 
@@ -42,6 +43,56 @@ def test_format_sensor_line_combines_all_sensors() -> None:
 
 def test_format_sensor_line_empty() -> None:
     assert _format_sensor_line({}) == "no readings yet"
+
+
+@pytest.mark.parametrize("kind", ("soothe_quiet_confirmed", "soothe_settled"))
+def test_record_run_soothe_outcomes_writes_success(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    attempted = datetime(2026, 6, 29, 20, 0, tzinfo=UTC)
+    resolved = datetime(2026, 6, 29, 20, 1, tzinfo=UTC)
+    db_path = tmp_path / "s.db"
+
+    _record_run_soothe_outcomes(
+        (
+            Event(
+                kind="soothe_attempted",
+                occurred_at=attempted,
+                offset_seconds=10.0,
+                details={"name": "rain"},
+            ),
+            Event(kind=kind, occurred_at=resolved, offset_seconds=70.0),
+        ),
+        str(db_path),
+    )
+
+    store = SensorStore(str(db_path))
+    assert store.outcomes_since(0.0) == [(resolved.timestamp(), "rain", True)]
+    store.close()
+
+
+def test_record_run_soothe_outcomes_writes_failure(tmp_path: Path) -> None:
+    attempted = datetime(2026, 6, 29, 21, 0, tzinfo=UTC)
+    resolved = datetime(2026, 6, 29, 21, 2, tzinfo=UTC)
+    db_path = tmp_path / "s.db"
+
+    _record_run_soothe_outcomes(
+        (
+            Event(
+                kind="soothe_attempted",
+                occurred_at=attempted,
+                offset_seconds=10.0,
+                details={"name": "pink-noise"},
+            ),
+            Event(kind="soothe_unresolved", occurred_at=resolved, offset_seconds=130.0),
+        ),
+        str(db_path),
+    )
+
+    store = SensorStore(str(db_path))
+    assert store.outcomes_since(0.0) == [(resolved.timestamp(), "pink-noise", False)]
+    store.close()
 
 
 def test_preview_soothe_dry_run_uses_selected_preset(
@@ -164,6 +215,78 @@ gpio_pin = 4
     assert captured["sensor_readers"] is readers
     assert captured["config"].sensors.sample_interval_seconds == 2.0
     assert "digest" in capsys.readouterr().out
+
+
+def test_analyze_records_soothe_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("", encoding="utf-8")
+    wav_path = tmp_path / "sample.wav"
+    wav_path.write_bytes(b"RIFF")
+    history_db = tmp_path / "history.db"
+
+    def fake_run_pipeline(**kwargs):
+        started = datetime(2026, 6, 29, 22, 0, tzinfo=UTC)
+        resolved = started + timedelta(seconds=90)
+        report = NightReport(
+            started_at=started,
+            finished_at=resolved,
+            source="fake.wav",
+            detector="fake",
+            threshold=0.4,
+            sustained_seconds=1.5,
+            windows_processed=0,
+            peak_score=0.0,
+            events=(
+                Event(
+                    kind="soothe_attempted",
+                    occurred_at=started,
+                    offset_seconds=0.0,
+                    details={"name": "rain"},
+                ),
+                Event(
+                    kind="soothe_unresolved",
+                    occurred_at=resolved,
+                    offset_seconds=90.0,
+                ),
+            ),
+        )
+        return SimpleNamespace(
+            report=report,
+            digest="digest",
+            paths=OutputPaths(
+                events_json=tmp_path / "events.json",
+                readable_log=tmp_path / "night-log.txt",
+                digest=tmp_path / "morning-digest.txt",
+            ),
+        )
+
+    monkeypatch.setattr("beddington.cli.YamNetTFLiteDetector", lambda model: object())
+    monkeypatch.setattr("beddington.cli.WavFileAudioSource", lambda path: object())
+    monkeypatch.setattr("beddington.cli.build_sensor_readers", lambda config: ())
+    monkeypatch.setattr("beddington.cli.run_pipeline", fake_run_pipeline)
+
+    result = main(
+        [
+            "--config",
+            str(config_path),
+            "analyze",
+            str(wav_path),
+            "--history-db",
+            str(history_db),
+            "--output",
+            str(tmp_path / "output"),
+        ]
+    )
+
+    store = SensorStore(str(history_db))
+    assert result == 0
+    assert store.outcomes_since(0.0) == [
+        (datetime(2026, 6, 29, 22, 1, 30, tzinfo=UTC).timestamp(), "rain", False)
+    ]
+    store.close()
 
 
 def test_camera_smoke_image_mode_writes_derived_report(tmp_path, capsys) -> None:

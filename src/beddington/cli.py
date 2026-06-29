@@ -44,6 +44,10 @@ from .video import (
     write_visual_change_report,
 )
 
+_DEFAULT_HISTORY_DB = "~/.local/share/beddington/sensors.db"
+_SOOTHE_SUCCESS_EVENTS = {"soothe_quiet_confirmed", "soothe_settled"}
+_SOOTHE_FAILURE_EVENTS = {"soothe_unresolved"}
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -258,7 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--sensor-interval", type=float, default=3.0)
     live.add_argument(
         "--history-db",
-        default="~/.local/share/beddington/sensors.db",
+        default=_DEFAULT_HISTORY_DB,
         help="SQLite file persisting derived sensor history (graphs survive restarts)",
     )
     live.add_argument(
@@ -276,7 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
         "night-digest",
         help="Summarise the night from the persisted sensor history (optionally speak it)",
     )
-    night.add_argument("--history-db", default="~/.local/share/beddington/sensors.db")
+    night.add_argument("--history-db", default=_DEFAULT_HISTORY_DB)
     night.add_argument("--history-hours", type=float, default=12.0)
     night.add_argument(
         "--speak", action="store_true", help="Speak the digest aloud (Piper)"
@@ -287,6 +291,11 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output", type=Path, default=Path("output/latest"))
     parser.add_argument("--model", type=Path)
+    parser.add_argument(
+        "--history-db",
+        default=_DEFAULT_HISTORY_DB,
+        help="SQLite file persisting derived sensor and soothe history",
+    )
     parser.add_argument("--no-desktop", action="store_true")
     parser.add_argument("--llm", action="store_true")
     parser.add_argument(
@@ -364,6 +373,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sensor_readers=build_sensor_readers(config.sensors),
         sound_classifier=detector.classify if config.sounds.enabled else None,
     )
+    _record_run_soothe_outcomes(result.report.events, args.history_db)
     spoken_text = result.digest
     narrator_config = config.narrator
     if args.speak:
@@ -390,6 +400,47 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Readable log: {result.paths.readable_log}")
     print(f"Morning digest: {result.paths.digest}")
     return 0
+
+
+def _record_run_soothe_outcomes(events: Sequence[Event], history_db: str) -> None:
+    if not any(
+        event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS
+        for event in events
+    ):
+        return
+    import os
+
+    from .sensor_store import SensorStore
+
+    store = None
+    try:
+        store = SensorStore(os.path.expanduser(history_db))
+        _record_soothe_outcomes(events, store)
+    except Exception:
+        pass
+    finally:
+        if store is not None:
+            try:
+                store.close()
+            except Exception:
+                pass
+
+
+def _record_soothe_outcomes(events: Sequence[Event], store: object) -> None:
+    sound_name: str | None = None
+    for event in events:
+        if event.kind == "soothe_attempted":
+            name = event.details.get("name")
+            sound_name = str(name) if name else None
+            continue
+        if event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS:
+            if sound_name:
+                store.append_soothe_outcome(
+                    event.occurred_at.timestamp(),
+                    sound_name,
+                    event.kind in _SOOTHE_SUCCESS_EVENTS,
+                )
+            sound_name = None
 
 
 def _format_sensor_line(reading: dict[str, object]) -> str:
