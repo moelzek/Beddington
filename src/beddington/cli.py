@@ -1434,8 +1434,45 @@ class _AutoSootheWatcher:
                 [np.zeros(self._WINDOW - len(audio), dtype=np.float32), audio]
             )
         if self._watcher.observe(now - (self._start or now), audio):  # type: ignore[attr-defined]
-            return str(self._state.get("preset") or "") or None
+            return self._preset_to_play()
         return None
+
+    def _preset_to_play(self) -> str | None:
+        preset = str(self._state.get("preset") or "")
+        learn = getattr(self._config.soothe, "learn", None)
+        if not getattr(learn, "enabled", False):
+            return preset or None
+        try:
+            min_samples = int(getattr(learn, "min_samples"))
+        except (TypeError, ValueError):
+            return preset or None
+        if min_samples < 1:
+            return preset or None
+
+        import os
+
+        from .sensor_store import SensorStore
+        from .soothe_memory import best_preset
+
+        store = None
+        try:
+            presets = _build_soothe_presets(self._config)
+            store = SensorStore(os.path.expanduser(_DEFAULT_HISTORY_DB))
+            outcomes = store.outcomes_since(0.0)
+            recorded = sum(
+                1 for _ts, sound_name, _success in outcomes if sound_name in presets
+            )
+            if recorded < min_samples:
+                return preset or None
+            return best_preset(outcomes, presets, min_samples, preset) or None
+        except Exception:
+            return preset or None
+        finally:
+            if store is not None:
+                try:
+                    store.close()
+                except Exception:
+                    pass
 
     def _ensure_building(self) -> None:
         if self._building:

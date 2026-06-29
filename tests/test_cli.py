@@ -5,9 +5,16 @@ import struct
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
-from beddington.cli import _format_sensor_line, _record_run_soothe_outcomes, main
+from beddington.cli import (
+    _AutoSootheWatcher,
+    _format_sensor_line,
+    _record_run_soothe_outcomes,
+    main,
+)
+from beddington.config import SootheStepConfig
 from beddington.logging import OutputPaths
 from beddington.models import Event, NightReport
 from beddington.sensor_store import SensorStore
@@ -93,6 +100,88 @@ def test_record_run_soothe_outcomes_writes_failure(tmp_path: Path) -> None:
     store = SensorStore(str(db_path))
     assert store.outcomes_since(0.0) == [(resolved.timestamp(), "pink-noise", False)]
     store.close()
+
+
+def _auto_soothe_config(learn_enabled: bool, min_samples: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        soothe=SimpleNamespace(
+            preset="rain",
+            presets={
+                "rain": SootheStepConfig(name="rain"),
+                "waves": SootheStepConfig(name="waves"),
+            },
+            learn=SimpleNamespace(enabled=learn_enabled, min_samples=min_samples),
+        )
+    )
+
+
+def _trigger_auto_soothe(watcher: _AutoSootheWatcher) -> str | None:
+    watcher._state = {"enabled": True, "preset": "rain"}
+    watcher._last_state = 10.0
+    watcher._watcher = SimpleNamespace(observe=lambda _elapsed, _audio: True)
+    return watcher.feed(np.zeros(15_600, dtype=np.float32), 10.0)
+
+
+def _patch_auto_soothe_memory(
+    monkeypatch: pytest.MonkeyPatch,
+    db_path: Path,
+) -> None:
+    monkeypatch.setattr("beddington.cli._DEFAULT_HISTORY_DB", str(db_path))
+    monkeypatch.setattr(
+        "beddington.cli._build_soothe_presets",
+        lambda config: config.soothe.presets,
+    )
+
+
+def test_auto_soothe_watcher_uses_best_preset_when_learning_has_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "history.db"
+    store = SensorStore(str(db_path))
+    store.append_soothe_outcome(1.0, "rain", True)
+    store.append_soothe_outcome(2.0, "rain", False)
+    store.append_soothe_outcome(3.0, "waves", True)
+    store.append_soothe_outcome(4.0, "waves", True)
+    store.close()
+    _patch_auto_soothe_memory(monkeypatch, db_path)
+
+    watcher = _AutoSootheWatcher(_auto_soothe_config(True, 2), 16_000, frame_ms=1000)
+
+    assert _trigger_auto_soothe(watcher) == "waves"
+
+
+def test_auto_soothe_watcher_keeps_configured_preset_when_learning_off(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "history.db"
+    store = SensorStore(str(db_path))
+    store.append_soothe_outcome(1.0, "rain", False)
+    store.append_soothe_outcome(2.0, "rain", False)
+    store.append_soothe_outcome(3.0, "waves", True)
+    store.append_soothe_outcome(4.0, "waves", True)
+    store.close()
+    _patch_auto_soothe_memory(monkeypatch, db_path)
+
+    watcher = _AutoSootheWatcher(_auto_soothe_config(False, 2), 16_000, frame_ms=1000)
+
+    assert _trigger_auto_soothe(watcher) == "rain"
+
+
+def test_auto_soothe_watcher_keeps_configured_preset_with_sparse_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "history.db"
+    store = SensorStore(str(db_path))
+    store.append_soothe_outcome(1.0, "waves", True)
+    store.close()
+    _patch_auto_soothe_memory(monkeypatch, db_path)
+
+    watcher = _AutoSootheWatcher(_auto_soothe_config(True, 2), 16_000, frame_ms=1000)
+
+    assert _trigger_auto_soothe(watcher) == "rain"
 
 
 def test_preview_soothe_dry_run_uses_selected_preset(
