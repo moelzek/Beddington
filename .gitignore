@@ -60,6 +60,12 @@ data/raw/
 # --- Jupyter ---
 .ipynb_checkpoints/
 
+# --- graphify (generated knowledge graph; rebuild with /graphify) ---
+graphify-out/
+
+# --- overnight smart-loop runtime state (logs, ledger, summary) ---
+.smartloop/
+
 # --- OS / editor junk ---
 .DS_Store
 Thumbs.db
