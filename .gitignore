@@ -66,6 +66,9 @@ graphify-out/
 # --- overnight smart-loop runtime state (logs, ledger, summary) ---
 .smartloop/
 
+# --- stale pre-rename package (superseded by src/beddington/; do not re-add) ---
+src/lullaby/
+
 # --- OS / editor junk ---
 .DS_Store
 Thumbs.db

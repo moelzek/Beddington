@@ -26,15 +26,14 @@ MAX_RETRIES=2              # attempts = 1 + MAX_RETRIES
 # Unit table: "UID|commit message|one-line task". Detail lives in the spec.
 UNITS=(
   "U1|feat: soothe outcomes table in SensorStore|Add soothe_outcomes table + append_soothe_outcome + outcomes_since."
-  "U2|feat: best-preset soothe-memory logic|Add pure src/lullaby/soothe_memory.py best_preset() with exploration + default."
+  "U2|feat: best-preset soothe-memory logic|Add pure src/beddington/soothe_memory.py best_preset() with exploration + default."
   "U3|feat: record soothe outcomes during a run|On soothe resolve, write success/failure outcome via SensorStore in the run loop."
   "U4|feat: auto-soothe picks the best-remembered sound|Use soothe_memory.best_preset in _AutoSootheWatcher.feed when learning is on."
   "U5|feat: config for soothe learning|Add [soothe.learn] enabled/min_samples config + loader + TOML + validation."
   "U6|feat: cross-night aggregates in SensorStore|Add deterministic last-N-nights stir-times + per-sound tallies query."
   "U7|feat: night-digest trend lines|Add 'usually stirs ~Xam' + 'when X played she quieted k/n' (best guess) lines."
-  "U8|feat: optional llama intent translator|Add src/lullaby/intent.py translate_intent(), fallback-safe, value-free."
+  "U8|feat: optional llama intent translator|Add src/beddington/intent.py translate_intent(), fallback-safe, value-free."
   "U9|feat: wire llama translator into answers|Use translator only on fallback; value always from deterministic brain; off by default."
-  "U10|chore: smart-upgrades closeout + changelog|Smoke-test, append memory.md changelog lines for all 3 features, summary."
 )
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -122,6 +121,17 @@ for entry in "${UNITS[@]}"; do
   fi
   if [ "$landed" = "2" ]; then break; fi
 done
+
+# Closeout: count how many units landed, smoke-test the CLI, and append a
+# local-only changelog line to memory.md (gitignored -> not pushed, by design).
+DONE_COUNT=$(grep -c "^- \[x\] " "$LEDGER" 2>/dev/null || echo 0)
+log "closeout: $DONE_COUNT unit(s) landed"
+beddington --help > "$LOG_DIR/smoke.log" 2>&1 && log "smoke: beddington --help OK" || log "smoke: beddington --help FAILED (see smoke.log)"
+if [ -f memory.md ] && [ "$DONE_COUNT" -gt 0 ]; then
+  printf -- "- **%s** — Overnight gated codex loop landed %s smart-upgrade unit(s) (soothe memory / night trends / llama translator). See \`git log main\` and \`.smartloop/units.md\`.\n" \
+    "$(date '+%Y-%m-%d')" "$DONE_COUNT" >> memory.md
+  log "appended local changelog line to memory.md (not committed; file is gitignored)"
+fi
 
 # Morning summary
 {
