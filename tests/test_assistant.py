@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from beddington.config import NarratorConfig
 from beddington.assistant import answer_question
 
 SNAPSHOT = {
@@ -15,6 +16,15 @@ SNAPSHOT = {
     "target_distance_cm": 120.0,
     "radar_respiratory_rate": 16.0,
 }
+
+
+def _translator_config(enabled: bool = True) -> NarratorConfig:
+    return NarratorConfig(
+        enabled=enabled,
+        backend="ollama",
+        model="llama3.2:1b",
+        host="http://ollama.local:11434",
+    )
 
 
 def test_answer_humidity() -> None:
@@ -289,6 +299,71 @@ def test_answer_fallback_when_value_missing() -> None:
     assert "say it again" in answer_question(
         "what is the humidity?", {}
     )
+
+
+def test_llm_translator_disabled_keeps_fallback() -> None:
+    calls: list[str] = []
+
+    def fake(prompt: str, config: object) -> str:
+        del config
+        calls.append(prompt)
+        return "temperature"
+
+    answer = answer_question(
+        "should I crack a window?",
+        SNAPSHOT,
+        _translator_config(enabled=False),
+        ask_llm=fake,
+    )
+
+    assert "say it again" in answer
+    assert calls == []
+
+
+def test_llm_translator_only_runs_after_fallback() -> None:
+    def fail(prompt: str, config: object) -> str:
+        del prompt, config
+        raise AssertionError("translator should only run after fallback")
+
+    answer = answer_question(
+        "what is the humidity?",
+        SNAPSHOT,
+        _translator_config(),
+        ask_llm=fail,
+    )
+
+    assert "49 percent" in answer
+
+
+def test_llm_translator_maps_fallback_to_deterministic_room_answer() -> None:
+    def fake(prompt: str, config: object) -> str:
+        del prompt, config
+        return "temperature"
+
+    answer = answer_question(
+        "should I crack a window?",
+        {"room_temperature_c": 18.0},
+        _translator_config(),
+        ask_llm=fake,
+    )
+
+    assert "18 degrees" in answer
+
+
+def test_llm_translator_cannot_supply_values() -> None:
+    def fake(prompt: str, config: object) -> str:
+        del prompt, config
+        return "temperature"
+
+    answer = answer_question(
+        "should I crack a window if it is 999?",
+        {"room_temperature_c": 19.0},
+        _translator_config(),
+        ask_llm=fake,
+    )
+
+    assert "19 degrees" in answer
+    assert "999" not in answer
 
 
 def test_answer_tolerates_misheard_keywords() -> None:

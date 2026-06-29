@@ -28,6 +28,9 @@ enabled = false
 base_url = ""
 model = ""
 
+[assistant.llm_translator]
+enabled = false
+
 [narrator]
 enabled = false
 backend = "ollama"

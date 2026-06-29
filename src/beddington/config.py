@@ -60,6 +60,16 @@ class NarratorConfig:
 
 
 @dataclass(frozen=True)
+class LlmTranslatorConfig:
+    enabled: bool = False
+
+
+@dataclass(frozen=True)
+class AssistantConfig:
+    llm_translator: LlmTranslatorConfig = LlmTranslatorConfig()
+
+
+@dataclass(frozen=True)
 class AirSensorConfig:
     enabled: bool = False
     i2c_address: int = 0x76
@@ -140,6 +150,7 @@ class AppConfig:
     notifications: NotificationConfig = NotificationConfig()
     llm: LlmConfig = LlmConfig()
     narrator: NarratorConfig = NarratorConfig()
+    assistant: AssistantConfig = AssistantConfig()
     sensors: SensorsConfig = SensorsConfig()
     sounds: SoundsConfig = SoundsConfig()
     soothe: SootheConfig = SootheConfig()
@@ -161,6 +172,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         notifications = raw.get("notifications", {})
         llm = raw.get("llm", {})
         narrator = raw.get("narrator", {})
+        assistant = raw.get("assistant", {})
         sensors = raw.get("sensors", {})
         sounds = raw.get("sounds", {})
         soothe = raw.get("soothe", {})
@@ -210,6 +222,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 model=str(llm.get("model", config.llm.model)),
             ),
             narrator=_load_narrator(narrator, config.narrator),
+            assistant=_load_assistant(assistant, config.assistant),
             sensors=_load_sensors(sensors, config.sensors),
             sounds=_load_sounds(sounds, config.sounds),
             soothe=SootheConfig(
@@ -384,6 +397,31 @@ def _load_narrator(
         persona_timeout=float(
             raw_narrator.get("persona_timeout", default.persona_timeout)
         ),
+    )
+
+
+def _load_assistant(
+    raw_assistant: object,
+    default: AssistantConfig,
+) -> AssistantConfig:
+    if not isinstance(raw_assistant, dict):
+        return default
+    return AssistantConfig(
+        llm_translator=_load_llm_translator(
+            raw_assistant.get("llm_translator", {}),
+            default.llm_translator,
+        )
+    )
+
+
+def _load_llm_translator(
+    raw_translator: object,
+    default: LlmTranslatorConfig,
+) -> LlmTranslatorConfig:
+    if not isinstance(raw_translator, dict):
+        return default
+    return LlmTranslatorConfig(
+        enabled=bool(raw_translator.get("enabled", default.enabled)),
     )
 
 

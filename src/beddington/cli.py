@@ -793,7 +793,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         answer = digest.replace("• ", "").replace("\n", " ")
                     else:
                         snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
-                        answer = answer_question(question, snapshot)
+                        answer = answer_question(
+                            question,
+                            snapshot,
+                            _assistant_llm_translator_config(config),
+                        )
                     # Re-voice the deterministic answer as Beddington (grounded +
                     # validated; medically-sensitive vitals are spoken verbatim).
                     # One chokepoint, so every spoken surface is covered.
@@ -820,11 +824,18 @@ def _ask_command(args: argparse.Namespace, config: AppConfig) -> int:
     if not question:
         raise SystemExit("Ask a question, e.g. beddington ask what is the humidity")
     snapshot = _read_sensor_snapshot(build_sensor_readers(config.sensors))
-    answer = answer_question(question, snapshot)
+    answer = answer_question(question, snapshot, _assistant_llm_translator_config(config))
     print(answer)
     if args.speak:
         speak(answer, replace(config.narrator, voice_enabled=True))
     return 0
+
+
+def _assistant_llm_translator_config(config: AppConfig) -> object:
+    return replace(
+        config.narrator,
+        enabled=config.assistant.llm_translator.enabled,
+    )
 
 
 def _sounds_live_command(args: argparse.Namespace, config: AppConfig) -> int:

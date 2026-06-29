@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 
 from .ears import _edit_distance, normalize_transcript
+from .intent import INTENT_KEYWORDS, AskLlm, translate_intent
 
 _FALLBACK = "Sorry, I didn't catch that. Please say it again."
 
@@ -311,8 +312,28 @@ def match_soothe_command(question: str) -> dict[str, str] | None:
     return None
 
 
-def answer_question(question: str, snapshot: dict[str, object]) -> str:
+def answer_question(
+    question: str,
+    snapshot: dict[str, object],
+    llm_translator: object | None = None,
+    ask_llm: AskLlm | None = None,
+) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
+    answer = _deterministic_answer_question(question, snapshot)
+    if answer != _FALLBACK:
+        return answer
+    if llm_translator is None or not getattr(llm_translator, "enabled", False):
+        return answer
+
+    intent = translate_intent(question, llm_translator, ask_llm=ask_llm)
+    if intent not in INTENT_KEYWORDS:
+        return answer
+
+    translated = _deterministic_answer_question(intent, snapshot)
+    return translated if translated != _FALLBACK else answer
+
+
+def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -> str:
     q = normalize_transcript(question)
 
     # Unsupported vitals first (oxygen, blood pressure, fever...): say we don't

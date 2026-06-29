@@ -105,6 +105,11 @@ enabled = false
 base_url = ""
 model = ""
 
+[assistant.llm_translator]
+# Optional local intent classifier. It only runs after the deterministic answer
+# path misses, and it can select an existing intent only. Off by default.
+enabled = false
+
 [narrator]
 # Optional local narrator. Runs only after the deterministic report exists.
 # It receives derived text only and never controls detection, timing, or alerts.

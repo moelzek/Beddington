@@ -63,6 +63,9 @@ persona_temperature = 0.5
 persona_num_predict = 64
 persona_timeout = 6.0
 
+[assistant.llm_translator]
+enabled = true
+
 [sensors]
 sample_interval_seconds = 3.5
 
@@ -109,6 +112,7 @@ gpio_pin = 4
     assert config.narrator.persona_temperature == 0.5
     assert config.narrator.persona_num_predict == 64
     assert config.narrator.persona_timeout == 6.0
+    assert config.assistant.llm_translator.enabled is True
     assert config.sounds.enabled is True
     assert config.sounds.threshold == 0.3
     assert config.sensors.sample_interval_seconds == 3.5
@@ -140,6 +144,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.sensors.motion.gpio_pin == 4
     assert config.soothe.learn.enabled is False
     assert config.soothe.learn.min_samples == 10
+    assert config.assistant.llm_translator.enabled is False
 
 
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
