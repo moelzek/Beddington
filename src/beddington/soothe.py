@@ -140,6 +140,7 @@ class SootheController:
         self._quiet_checks_passed = 0
         self._pending_resolution: _PendingResolution | None = None
         self._crying = False
+        self._last_cry_ended_offset: float | None = None
 
     def observe(
         self,
@@ -261,10 +262,16 @@ class SootheController:
         if not self._active:
             return ()
         cry_ended = next(event for event in tracker_events if event.kind == "cry_ended")
-        if not self._minimum_elapsed(offset_seconds):
+        last_cry_ended_offset = self._last_cry_ended_offset or cry_ended.offset_seconds
+        release_offset = max(
+            self._minimum_release_offset(),
+            last_cry_ended_offset + self.config.hold_after_stop_seconds,
+        )
+        if offset_seconds < release_offset:
             self._pending_resolution = _PendingResolution(
                 kind="settled",
                 duration_seconds=cry_ended.duration_seconds,
+                release_offset=release_offset,
             )
             return ()
         self.player.stop_all()
@@ -281,8 +288,16 @@ class SootheController:
         for event in tracker_events:
             if event.kind == "cry_started":
                 self._crying = True
+                if (
+                    self._active
+                    and self._pending_resolution is not None
+                    and self._pending_resolution.kind == "settled"
+                ):
+                    self._pending_resolution = None
             elif event.kind == "cry_ended":
                 self._crying = False
+                if self._active:
+                    self._last_cry_ended_offset = event.offset_seconds
 
     @property
     def _quiet_check_enabled(self) -> bool:
@@ -417,12 +432,12 @@ class SootheController:
         )
 
     def _minimum_elapsed(self, offset_seconds: float) -> bool:
+        return offset_seconds >= self._minimum_release_offset()
+
+    def _minimum_release_offset(self) -> float:
         if self._active_started_offset is None:
-            return True
-        return (
-            offset_seconds - self._active_started_offset
-            >= self.config.min_play_seconds
-        )
+            return 0.0
+        return self._active_started_offset + self.config.min_play_seconds
 
     def _release_pending_resolution(
         self,
@@ -430,7 +445,17 @@ class SootheController:
         score: float,
     ) -> tuple[Event, ...]:
         pending = self._pending_resolution
-        if pending is None or not self._minimum_elapsed(offset_seconds):
+        if pending is None:
+            return ()
+        if pending.kind == "settled" and self._crying:
+            self._pending_resolution = None
+            return ()
+
+        release_offset = pending.release_offset
+        if release_offset is None:
+            if not self._minimum_elapsed(offset_seconds):
+                return ()
+        elif offset_seconds < release_offset:
             return ()
 
         if pending.kind == "settled":
@@ -497,6 +522,7 @@ class SootheController:
         self._quiet_checks_passed = 0
         self._pending_resolution = None
         self._crying = False
+        self._last_cry_ended_offset = None
 
 
 @dataclass(frozen=True)
@@ -510,6 +536,7 @@ class _PendingResolution:
     kind: str
     duration_seconds: float | None = None
     quiet_checks: int | None = None
+    release_offset: float | None = None
 
 
 def build_soothe_player(config: SootheConfig) -> SoothePlayer:

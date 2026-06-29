@@ -228,6 +228,7 @@ def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
             enabled=True,
             player="none",
             min_play_seconds=0.0,
+            hold_after_stop_seconds=0.0,
             steps=(SootheStepConfig(name="white noise", wait_seconds=10.0),),
         ),
     )

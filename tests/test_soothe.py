@@ -77,6 +77,7 @@ def test_soothe_settle_waits_for_min_play_seconds() -> None:
         SootheConfig(
             enabled=True,
             min_play_seconds=60.0,
+            hold_after_stop_seconds=0.0,
             steps=(
                 SootheStepConfig(
                     name="short noise",
@@ -112,6 +113,104 @@ def test_soothe_settle_waits_for_min_play_seconds() -> None:
     assert released.events[0].details == {
         "reason": "crying_settled_before_notification"
     }
+
+
+def test_soothe_holds_until_after_last_cry_stops() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=0.0,
+            hold_after_stop_seconds=45.0,
+            steps=(
+                SootheStepConfig(
+                    name="white noise",
+                    wait_seconds=180.0,
+                    play_seconds=180.0,
+                ),
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    cry_ended = Event(
+        kind="cry_ended",
+        occurred_at=started + timedelta(seconds=30.0),
+        offset_seconds=30.0,
+        score=0.1,
+        duration_seconds=30.0,
+    )
+    early = controller.observe(30.0, 0.1, (cry_ended,), escalation_due=False)
+    before_hold = controller.observe(74.9, 0.1, (), escalation_due=False)
+    released = controller.observe(75.0, 0.1, (), escalation_due=False)
+
+    assert early == soothe.SootheResult()
+    assert before_hold == soothe.SootheResult()
+    assert player.stop_calls == 1
+    assert [event.kind for event in released.events] == ["soothe_settled"]
+    assert released.events[0].offset_seconds == 75.0
+
+
+def test_soothe_hold_cancels_when_crying_returns() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=0.0,
+            hold_after_stop_seconds=45.0,
+            steps=(
+                SootheStepConfig(
+                    name="white noise",
+                    wait_seconds=180.0,
+                    play_seconds=180.0,
+                ),
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    first_ended = Event(
+        kind="cry_ended",
+        occurred_at=started + timedelta(seconds=30.0),
+        offset_seconds=30.0,
+        score=0.1,
+        duration_seconds=30.0,
+    )
+    crying_returned = Event(
+        kind="cry_started",
+        occurred_at=started + timedelta(seconds=50.0),
+        offset_seconds=50.0,
+        score=0.8,
+    )
+    second_ended = Event(
+        kind="cry_ended",
+        occurred_at=started + timedelta(seconds=90.0),
+        offset_seconds=90.0,
+        score=0.1,
+        duration_seconds=40.0,
+    )
+
+    controller.observe(30.0, 0.1, (first_ended,), escalation_due=False)
+    resumed = controller.observe(50.0, 0.8, (crying_returned,), escalation_due=False)
+    old_deadline = controller.observe(75.0, 0.8, (), escalation_due=False)
+    controller.observe(90.0, 0.1, (second_ended,), escalation_due=False)
+    before_new_deadline = controller.observe(134.9, 0.1, (), escalation_due=False)
+    released = controller.observe(135.0, 0.1, (), escalation_due=False)
+
+    assert resumed == soothe.SootheResult()
+    assert old_deadline == soothe.SootheResult()
+    assert before_new_deadline == soothe.SootheResult()
+    assert player.stop_calls == 1
+    assert [event.kind for event in released.events] == ["soothe_settled"]
+    assert released.events[0].offset_seconds == 135.0
 
 
 def test_quiet_check_resolution_waits_for_min_play_seconds() -> None:

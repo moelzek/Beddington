@@ -43,6 +43,8 @@ enabled = true
 player = "none"
 preset = "white_noise"
 min_play_seconds = 42.5
+hold_after_stop_seconds = 43.5
+escalate_after_seconds = 44.5
 
 [soothe.quiet_check]
 enabled = true
@@ -106,6 +108,8 @@ gpio_pin = 4
     assert config.soothe.enabled is True
     assert config.soothe.preset == "white_noise"
     assert config.soothe.min_play_seconds == 42.5
+    assert config.soothe.hold_after_stop_seconds == 43.5
+    assert config.soothe.escalate_after_seconds == 44.5
     assert config.soothe.steps[0].name == "white noise"
     assert config.soothe.steps[0].sound_path == tmp_path / "white-noise.wav"
     assert config.soothe.steps[0].wait_seconds == 2.5
@@ -146,6 +150,8 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
 
     assert config.soothe.preset == "white_noise"
     assert config.soothe.min_play_seconds == 600.0
+    assert config.soothe.hold_after_stop_seconds == 600.0
+    assert config.soothe.escalate_after_seconds == 300.0
     assert config.soothe.quiet_check.enabled is False
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
@@ -170,6 +176,8 @@ def test_pi_product_config_points_at_generated_soothe_assets() -> None:
 
     assert config.soothe.preset == "white_noise"
     assert config.soothe.min_play_seconds == 600.0
+    assert config.soothe.hold_after_stop_seconds == 600.0
+    assert config.soothe.escalate_after_seconds == 300.0
     assert config.soothe.quiet_check.enabled is False
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
@@ -264,6 +272,8 @@ def test_soothe_min_play_seconds_defaults_to_ten_minutes() -> None:
     config = load_config()
 
     assert config.soothe.min_play_seconds == 600.0
+    assert config.soothe.hold_after_stop_seconds == 600.0
+    assert config.soothe.escalate_after_seconds == 300.0
 
 
 def test_soothe_min_play_seconds_must_be_non_negative(tmp_path: Path) -> None:
@@ -271,6 +281,26 @@ def test_soothe_min_play_seconds_must_be_non_negative(tmp_path: Path) -> None:
     path.write_text("[soothe]\nmin_play_seconds = -1\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="soothe.min_play_seconds"):
+        load_config(path)
+
+
+def test_soothe_hold_after_stop_seconds_must_be_non_negative(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[soothe]\nhold_after_stop_seconds = -1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="soothe.hold_after_stop_seconds"):
+        load_config(path)
+
+
+def test_soothe_escalate_after_seconds_must_be_non_negative(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[soothe]\nescalate_after_seconds = -1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="soothe.escalate_after_seconds"):
         load_config(path)
 
 

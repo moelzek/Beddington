@@ -26,6 +26,10 @@ player = "none"
 preset = "white_noise"
 # Keep soothe audio playing for at least ten minutes once triggered.
 min_play_seconds = 600.0
+# Keep playing for ten minutes after the last cry ends.
+hold_after_stop_seconds = 600.0
+# Switch sounds after five minutes of continued crying.
+escalate_after_seconds = 300.0
 
 [soothe.learn]
 # Use on-device outcome counts to choose a preset. On by default — learns which
