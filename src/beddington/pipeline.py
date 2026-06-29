@@ -16,6 +16,7 @@ from .models import Event, NightReport
 from .notifications import Notifier
 from .sensors import SensorReader
 from .soothe import SoothePlayer, build_soothe_player, SootheController
+from .soothe_memory import Outcome
 from .state import CryEventTracker
 
 
@@ -35,6 +36,7 @@ def run_pipeline(
     started_at: datetime | None = None,
     use_llm: bool | None = None,
     soothe_player: SoothePlayer | None = None,
+    soothe_outcomes: Sequence[Outcome] = (),
     sensor_readers: Sequence[SensorReader] = (),
     sound_classifier: Callable[..., dict[str, float]] | None = None,
 ) -> RunResult:
@@ -66,6 +68,7 @@ def run_pipeline(
                 if config.soothe.quiet_check.quiet_threshold is not None
                 else config.detection.threshold
             ),
+            soothe_outcomes=soothe_outcomes,
         )
 
     for window in source.windows():

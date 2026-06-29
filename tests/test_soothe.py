@@ -8,7 +8,12 @@ import time
 from pathlib import Path
 
 from beddington import soothe
-from beddington.config import QuietCheckConfig, SootheConfig, SootheStepConfig
+from beddington.config import (
+    QuietCheckConfig,
+    SootheConfig,
+    SootheLearnConfig,
+    SootheStepConfig,
+)
 from beddington.models import Event
 from beddington.soothe import SootheController, SubprocessSoothePlayer
 
@@ -211,6 +216,108 @@ def test_soothe_hold_cancels_when_crying_returns() -> None:
     assert player.stop_calls == 1
     assert [event.kind for event in released.events] == ["soothe_settled"]
     assert released.events[0].offset_seconds == 135.0
+
+
+def test_soothe_switches_to_best_other_preset_after_escalate() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    presets = {
+        "rain": SootheStepConfig(
+            name="rain",
+            wait_seconds=600.0,
+            play_seconds=600.0,
+        ),
+        "waves": SootheStepConfig(
+            name="waves",
+            wait_seconds=600.0,
+            play_seconds=600.0,
+        ),
+        "bells": SootheStepConfig(
+            name="bells",
+            wait_seconds=600.0,
+            play_seconds=600.0,
+        ),
+    }
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            preset="rain",
+            min_play_seconds=0.0,
+            escalate_after_seconds=5.0,
+            presets=presets,
+            steps=(presets["rain"],),
+            learn=SootheLearnConfig(enabled=True, min_samples=2),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+        soothe_outcomes=(
+            (1.0, "rain", True),
+            (2.0, "rain", True),
+            (3.0, "waves", True),
+            (4.0, "waves", True),
+            (5.0, "bells", False),
+            (6.0, "bells", False),
+        ),
+    )
+
+    attempted = controller.observe(0.0, 0.9, (), escalation_due=True)
+    early = controller.observe(4.9, 0.9, (), escalation_due=False)
+    switched = controller.observe(5.0, 0.9, (), escalation_due=False)
+
+    assert [event.kind for event in attempted.events] == ["soothe_attempted"]
+    assert early == soothe.SootheResult()
+    assert [step.name for step in player.played_steps] == ["rain", "waves"]
+    assert player.stop_calls == 1
+    assert [event.kind for event in switched.events] == ["soothe_switched"]
+    assert switched.events[0].details == {"from": "rain", "to": "waves"}
+
+
+def test_soothe_does_not_switch_if_crying_stops_before_escalate() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    presets = {
+        "rain": SootheStepConfig(
+            name="rain",
+            wait_seconds=600.0,
+            play_seconds=600.0,
+        ),
+        "waves": SootheStepConfig(
+            name="waves",
+            wait_seconds=600.0,
+            play_seconds=600.0,
+        ),
+    }
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            preset="rain",
+            min_play_seconds=0.0,
+            hold_after_stop_seconds=20.0,
+            escalate_after_seconds=5.0,
+            presets=presets,
+            steps=(presets["rain"],),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+    cry_ended = Event(
+        kind="cry_ended",
+        occurred_at=started + timedelta(seconds=2.0),
+        offset_seconds=2.0,
+        score=0.1,
+        duration_seconds=2.0,
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    stopped = controller.observe(2.0, 0.1, (cry_ended,), escalation_due=False)
+    past_escalate = controller.observe(5.0, 0.1, (), escalation_due=False)
+
+    assert stopped == soothe.SootheResult()
+    assert past_escalate == soothe.SootheResult()
+    assert [step.name for step in player.played_steps] == ["rain"]
+    assert player.stop_calls == 0
 
 
 def test_quiet_check_resolution_waits_for_min_play_seconds() -> None:

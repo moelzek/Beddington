@@ -88,6 +88,10 @@ def _readable_log(report: NightReport) -> str:
             )
         elif event.kind == "soothe_settled":
             lines.append(f"{at}  SETTLED     crying ended before parent notification")
+        elif event.kind == "soothe_switched":
+            from_preset = event.details.get("from", "previous")
+            to_preset = event.details.get("to", "next")
+            lines.append(f"{at}  SOOTHE      switched {from_preset} -> {to_preset}")
         elif event.kind == "soothe_quiet_check_started":
             listen = float(event.details.get("listen_seconds", 0.0))
             lines.append(

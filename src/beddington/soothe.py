@@ -6,10 +6,11 @@ import sys
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Iterable, Protocol
 
 from .config import SootheConfig, SootheStepConfig
 from .models import Event
+from .soothe_memory import Outcome, best_preset
 
 
 @dataclass(frozen=True)
@@ -123,15 +124,19 @@ class SootheController:
         started_at: datetime,
         player: SoothePlayer,
         quiet_threshold: float,
+        soothe_outcomes: Iterable[Outcome] = (),
     ):
         self.config = config
         self.started_at = started_at
         self.player = player
         self.quiet_threshold = quiet_threshold
+        self._soothe_outcomes = tuple(soothe_outcomes)
         self._active = False
         self._active_started_offset: float | None = None
         self._step_index = 0
         self._current_step: SootheStepConfig | None = None
+        self._current_preset_key: str | None = None
+        self._current_sound_started_offset: float | None = None
         self._next_step_offset: float | None = None
         self._notify_due_offset: float | None = None
         self._next_quiet_check_offset: float | None = None
@@ -140,6 +145,7 @@ class SootheController:
         self._quiet_checks_passed = 0
         self._pending_resolution: _PendingResolution | None = None
         self._crying = False
+        self._current_cry_started_offset: float | None = None
         self._last_cry_ended_offset: float | None = None
 
     def observe(
@@ -179,6 +185,9 @@ class SootheController:
                 return SootheResult(tuple(events), notify=False)
             events.extend(self._attempt_due_steps(offset_seconds, score))
             notify = self._notification_due(offset_seconds)
+            if notify:
+                return SootheResult(tuple(events), notify=notify)
+            events.extend(self._switch_if_due(offset_seconds, score))
             return SootheResult(tuple(events), notify=notify)
 
         return SootheResult()
@@ -216,6 +225,8 @@ class SootheController:
                 self.config.min_play_seconds,
             )
             self._current_step = step
+            self._current_preset_key = self._preset_key_for_step(self._step_index)
+            self._current_sound_started_offset = offset_seconds
             playback = self.player.play(step)
             events.append(
                 Event(
@@ -288,6 +299,7 @@ class SootheController:
         for event in tracker_events:
             if event.kind == "cry_started":
                 self._crying = True
+                self._current_cry_started_offset = event.offset_seconds
                 if (
                     self._active
                     and self._pending_resolution is not None
@@ -296,8 +308,78 @@ class SootheController:
                     self._pending_resolution = None
             elif event.kind == "cry_ended":
                 self._crying = False
+                self._current_cry_started_offset = None
                 if self._active:
                     self._last_cry_ended_offset = event.offset_seconds
+
+    def _preset_key_for_step(self, step_index: int) -> str | None:
+        if (
+            step_index == 0
+            and self.config.presets
+            and self.config.preset in self.config.presets
+        ):
+            return self.config.preset
+        return None
+
+    def _switch_if_due(self, offset_seconds: float, score: float) -> tuple[Event, ...]:
+        if (
+            not self._crying
+            or self._current_preset_key is None
+            or self._current_sound_started_offset is None
+            or self.config.escalate_after_seconds < 0
+        ):
+            return ()
+
+        crying_since = (
+            self._current_cry_started_offset
+            if self._current_cry_started_offset is not None
+            else self._current_sound_started_offset
+        )
+        due_offset = (
+            max(self._current_sound_started_offset, crying_since)
+            + self.config.escalate_after_seconds
+        )
+        if offset_seconds < due_offset:
+            return ()
+
+        next_key = self._next_preset_key(self._current_preset_key)
+        if next_key is None:
+            return ()
+
+        previous_key = self._current_preset_key
+        step = _with_min_play_seconds(
+            self.config.presets[next_key],
+            self.config.min_play_seconds,
+        )
+        self.player.stop_all()
+        self.player.play(step)
+        self._current_step = step
+        self._current_preset_key = next_key
+        self._current_sound_started_offset = offset_seconds
+        return (
+            Event(
+                kind="soothe_switched",
+                occurred_at=self._at(offset_seconds),
+                offset_seconds=offset_seconds,
+                score=score,
+                details={"from": previous_key, "to": next_key},
+            ),
+        )
+
+    def _next_preset_key(self, current_key: str) -> str | None:
+        available = {
+            key: step for key, step in self.config.presets.items() if key != current_key
+        }
+        if not available:
+            return None
+        fallback = min(available)
+        outcomes = self._soothe_outcomes if self.config.learn.enabled else ()
+        return best_preset(
+            outcomes,
+            available,
+            self.config.learn.min_samples,
+            fallback,
+        )
 
     @property
     def _quiet_check_enabled(self) -> bool:
@@ -514,6 +596,8 @@ class SootheController:
         self._active_started_offset = None
         self._step_index = 0
         self._current_step = None
+        self._current_preset_key = None
+        self._current_sound_started_offset = None
         self._next_step_offset = None
         self._notify_due_offset = None
         self._next_quiet_check_offset = None
@@ -522,6 +606,7 @@ class SootheController:
         self._quiet_checks_passed = 0
         self._pending_resolution = None
         self._crying = False
+        self._current_cry_started_offset = None
         self._last_cry_ended_offset = None
 
 

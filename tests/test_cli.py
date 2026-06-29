@@ -149,6 +149,44 @@ def test_record_soothe_outcomes_maps_display_name_to_preset_key_for_selection(
     store.close()
 
 
+def test_record_soothe_outcomes_uses_switched_preset_key(tmp_path: Path) -> None:
+    started = datetime(2026, 6, 29, 20, 0, tzinfo=UTC)
+    presets = {
+        "rain": SootheStepConfig(name="rain"),
+        "waves": SootheStepConfig(name="waves"),
+    }
+    store = SensorStore(str(tmp_path / "s.db"))
+
+    _record_soothe_outcomes(
+        (
+            Event(
+                kind="soothe_attempted",
+                occurred_at=started,
+                offset_seconds=0.0,
+                details={"name": "rain"},
+            ),
+            Event(
+                kind="soothe_switched",
+                occurred_at=started + timedelta(seconds=300),
+                offset_seconds=300.0,
+                details={"from": "rain", "to": "waves"},
+            ),
+            Event(
+                kind="soothe_settled",
+                occurred_at=started + timedelta(seconds=360),
+                offset_seconds=360.0,
+            ),
+        ),
+        store,
+        presets,
+    )
+
+    assert store.outcomes_since(0.0) == [
+        ((started + timedelta(seconds=360)).timestamp(), "waves", True)
+    ]
+    store.close()
+
+
 def _auto_soothe_config(learn_enabled: bool, min_samples: int) -> SimpleNamespace:
     return SimpleNamespace(
         soothe=SimpleNamespace(

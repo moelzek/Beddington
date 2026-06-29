@@ -364,6 +364,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         source = MicrophoneAudioSource(args.seconds, args.device)
 
+    soothe_outcomes = (
+        _load_soothe_outcomes(args.history_db) if config.soothe.enabled else ()
+    )
     result = run_pipeline(
         source=source,
         detector=detector,
@@ -372,6 +375,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output,
         started_at=args.started_at,
         use_llm=args.llm,
+        soothe_outcomes=soothe_outcomes,
         sensor_readers=build_sensor_readers(config.sensors),
         sound_classifier=detector.classify if config.sounds.enabled else None,
     )
@@ -447,6 +451,9 @@ def _record_soothe_outcomes(
             name = event.details.get("name")
             sound_name = _soothe_outcome_key(name, presets)
             continue
+        if event.kind == "soothe_switched":
+            sound_name = _soothe_outcome_key(event.details.get("to"), presets)
+            continue
         if event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS:
             if sound_name:
                 store.append_soothe_outcome(
@@ -472,6 +479,25 @@ def _soothe_outcome_key(
     if sound_name in presets:
         return sound_name
     return sound_name
+
+
+def _load_soothe_outcomes(history_db: str) -> list[tuple[float, str, bool]]:
+    import os
+
+    from .sensor_store import SensorStore
+
+    store = None
+    try:
+        store = SensorStore(os.path.expanduser(history_db))
+        return store.outcomes_since(0.0)
+    except Exception:
+        return []
+    finally:
+        if store is not None:
+            try:
+                store.close()
+            except Exception:
+                pass
 
 
 def _summarise_store_night(store: object, window_seconds: float) -> str:
