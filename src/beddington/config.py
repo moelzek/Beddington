@@ -116,6 +116,12 @@ class QuietCheckConfig:
 
 
 @dataclass(frozen=True)
+class SootheLearnConfig:
+    enabled: bool = False
+    min_samples: int = 10
+
+
+@dataclass(frozen=True)
 class SootheConfig:
     enabled: bool = False
     player: str = "none"
@@ -125,6 +131,7 @@ class SootheConfig:
         SootheStepConfig(name="white noise dry run", wait_seconds=30.0),
     )
     quiet_check: QuietCheckConfig = QuietCheckConfig()
+    learn: SootheLearnConfig = SootheLearnConfig()
 
 
 @dataclass(frozen=True)
@@ -164,6 +171,10 @@ def load_config(path: Path | None = None) -> AppConfig:
         quiet_check = _load_quiet_check(
             soothe.get("quiet_check", {}),
             config.soothe.quiet_check,
+        )
+        learn = _load_soothe_learn(
+            soothe.get("learn", {}),
+            config.soothe.learn,
         )
         soothe_steps = (
             (soothe_presets[soothe_preset],)
@@ -208,6 +219,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 presets=soothe_presets,
                 steps=soothe_steps,
                 quiet_check=quiet_check,
+                learn=learn,
             ),
         )
 
@@ -325,6 +337,18 @@ def _load_quiet_check(
         stop_on_notify=bool(
             raw_quiet_check.get("stop_on_notify", default.stop_on_notify)
         ),
+    )
+
+
+def _load_soothe_learn(
+    raw_learn: object,
+    default: SootheLearnConfig,
+) -> SootheLearnConfig:
+    if not isinstance(raw_learn, dict):
+        return default
+    return SootheLearnConfig(
+        enabled=bool(raw_learn.get("enabled", default.enabled)),
+        min_samples=int(raw_learn.get("min_samples", default.min_samples)),
     )
 
 
@@ -489,6 +513,8 @@ def _validate(config: AppConfig) -> None:
                 "soothe.quiet_check.quiet_threshold must be less than or equal "
                 "to detection.threshold"
             )
+    if config.soothe.learn.min_samples < 1:
+        raise ValueError("soothe.learn.min_samples must be at least 1")
     narrator = config.narrator
     if narrator.backend != "ollama":
         raise ValueError("narrator.backend must be 'ollama'")

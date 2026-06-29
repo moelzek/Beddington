@@ -36,6 +36,10 @@ quiet_threshold = 0.3
 pause_during_check = true
 stop_on_notify = true
 
+[soothe.learn]
+enabled = true
+min_samples = 3
+
 [soothe.presets.white_noise]
 name = "white noise"
 sound_path = "white-noise.wav"
@@ -90,6 +94,8 @@ gpio_pin = 4
     assert config.soothe.quiet_check.listen_seconds == 1.0
     assert config.soothe.quiet_check.required_checks == 2
     assert config.soothe.quiet_check.quiet_threshold == 0.3
+    assert config.soothe.learn.enabled is True
+    assert config.soothe.learn.min_samples == 3
     assert config.narrator.enabled is True
     assert config.narrator.backend == "ollama"
     assert config.narrator.model == "llama3.2:1b"
@@ -132,6 +138,8 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.sensors.air.i2c_address == 0x76
     assert config.sensors.motion.enabled is False
     assert config.sensors.motion.gpio_pin == 4
+    assert config.soothe.learn.enabled is False
+    assert config.soothe.learn.min_samples == 10
 
 
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
@@ -200,6 +208,14 @@ quiet_threshold = 0.5
     )
 
     with pytest.raises(ValueError, match="quiet_threshold"):
+        load_config(path)
+
+
+def test_soothe_learn_requires_positive_min_samples(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[soothe.learn]\nmin_samples = 0\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="soothe.learn.min_samples"):
         load_config(path)
 
 

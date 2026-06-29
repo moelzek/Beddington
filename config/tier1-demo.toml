@@ -13,6 +13,10 @@ enabled = true
 player = "none"
 preset = "white_noise"
 
+[soothe.learn]
+enabled = false
+min_samples = 10
+
 [soothe.presets.white_noise]
 name = "white noise dry run"
 sound_path = ""

@@ -25,6 +25,11 @@ player = "none"
 # Pick exactly one: white_noise, heartbeat, soothing_music, or uterine_whoosh.
 preset = "white_noise"
 
+[soothe.learn]
+# Use on-device outcome counts to choose a preset. Off by default.
+enabled = false
+min_samples = 10
+
 [soothe.quiet_check]
 # Quiet checks are deterministic listen-only windows during soothing. Keep this
 # off until you are deliberately testing soothe verification.
