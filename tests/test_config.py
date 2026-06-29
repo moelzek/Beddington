@@ -142,9 +142,11 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.sensors.air.i2c_address == 0x76
     assert config.sensors.motion.enabled is False
     assert config.sensors.motion.gpio_pin == 4
-    assert config.soothe.learn.enabled is False
+    assert config.soothe.learn.enabled is True
     assert config.soothe.learn.min_samples == 10
-    assert config.assistant.llm_translator.enabled is False
+    assert config.assistant.llm_translator.enabled is True
+    assert config.narrator.enabled is True
+    assert config.narrator.model == "llama3.2:1b"
 
 
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:

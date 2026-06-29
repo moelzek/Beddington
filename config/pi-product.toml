@@ -1,0 +1,112 @@
+# Beddington — "real final product" profile for the Raspberry Pi (mic + speaker).
+#
+# This is default.toml with the on-device playback bits switched on so you can
+# mimic the finished product: the mic hears a cry, the speaker plays a soothe
+# sound, Beddington listens back to confirm it settled, records the outcome to
+# its on-device memory, and the morning recap is narrated by the local llama.
+#
+# Run:  bash scripts/setup_models.sh        # one-time: pull llama3.2:1b
+#       beddington --config config/pi-product.toml listen --seconds 180
+# See:  PI_REAL_PRODUCT_TEST.md
+
+[detection]
+threshold = 0.40
+sustained_seconds = 1.5
+release_seconds = 1.0
+notification_cooldown_seconds = 30.0
+
+[notifications]
+desktop = true
+
+[sounds]
+enabled = true
+threshold = 0.2
+
+[soothe]
+# ON for the real product: play the chosen preset through the Pi speaker.
+enabled = true
+# "auto" plays a real local WAV via the system player (aplay/paplay on Pi OS).
+player = "auto"
+preset = "white_noise"
+
+[soothe.learn]
+# Learn which sound calms this baby. Lower min_samples so the learning visibly
+# kicks in during a hands-on test (raise back to ~10 for real use).
+enabled = true
+min_samples = 3
+
+[soothe.quiet_check]
+# Listen back after playing to confirm the room went quiet -> records a success
+# outcome. Short windows here so a test settles quickly.
+enabled = true
+check_interval_seconds = 15.0
+listen_seconds = 4.0
+required_checks = 2
+pause_during_check = true
+stop_on_notify = true
+
+[soothe.presets.white_noise]
+name = "white noise"
+sound_path = "../assets/soothe/white_noise.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.heartbeat]
+name = "heartbeat-style pulses"
+sound_path = "../assets/soothe/heartbeat.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.soothing_music]
+name = "soothing music"
+sound_path = "../assets/soothe/soothing_music.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.uterine_whoosh]
+name = "uterine whoosh"
+sound_path = "../assets/soothe/uterine_whoosh.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[sensors]
+sample_interval_seconds = 10.0
+
+# Hardware sensors stay off unless you have them wired. Enable as needed:
+[sensors.air]
+enabled = false
+i2c_address = 0x76
+gas = false
+
+[sensors.motion]
+enabled = false
+gpio_pin = 4
+
+[sensors.radar]
+enabled = false
+host = ""
+port = 6053
+password = ""
+include_distance = true
+include_target_count = true
+bench_vitals = false
+
+[assistant.llm_translator]
+# Understands fuzzy questions via the local llama (value still from the brain).
+enabled = true
+
+[narrator]
+# Morning recap narrated by the local llama3.2:1b.
+enabled = true
+backend = "ollama"
+model = "llama3.2:1b"
+host = "http://127.0.0.1:11434"
+num_predict = 140
+temperature = 0.3
+# Speak the recap aloud through the speaker. Needs Piper installed + a voice
+# model (see PI_REAL_PRODUCT_TEST.md). Leave false if Piper isn't set up yet.
+voice_enabled = false
+voice_engine = "piper"
+piper_binary = "~/piper/piper"
+piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
+persona_enabled = true

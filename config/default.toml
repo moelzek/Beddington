@@ -26,8 +26,9 @@ player = "none"
 preset = "white_noise"
 
 [soothe.learn]
-# Use on-device outcome counts to choose a preset. Off by default.
-enabled = false
+# Use on-device outcome counts to choose a preset. On by default — learns which
+# sound calms this baby; falls back to the configured preset until it has data.
+enabled = true
 min_samples = 10
 
 [soothe.quiet_check]
@@ -106,14 +107,17 @@ base_url = ""
 model = ""
 
 [assistant.llm_translator]
-# Optional local intent classifier. It only runs after the deterministic answer
-# path misses, and it can select an existing intent only. Off by default.
-enabled = false
+# Local intent classifier (uses the [narrator] llama model/host). It only runs
+# after the deterministic answer path misses, and can select an existing intent
+# only — it never invents a value. On by default; no-ops if Ollama is absent.
+enabled = true
 
 [narrator]
-# Optional local narrator. Runs only after the deterministic report exists.
-# It receives derived text only and never controls detection, timing, or alerts.
-enabled = false
+# Local narrator (llama3.2:1b via Ollama). Runs only after the deterministic
+# report exists. It receives derived text only and never controls detection,
+# timing, or alerts. On by default; falls back to the plain digest if Ollama
+# or the model is unavailable. Pull the model once with scripts/setup_models.sh.
+enabled = true
 backend = "ollama"
 model = "llama3.2:1b"
 host = "http://127.0.0.1:11434"
