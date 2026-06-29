@@ -54,6 +54,13 @@ class SensorStore:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_soothe_outcomes_ts ON soothe_outcomes(ts)"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS cry_episodes"
+            " (started_ts REAL NOT NULL, ended_ts REAL, duration_seconds REAL)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cry_episodes_ts ON cry_episodes(started_ts)"
+        )
         self._conn.commit()
 
     def append(
@@ -129,6 +136,41 @@ class SensorStore:
                 (float(ts), str(sound_name), bool(success))
                 for ts, sound_name, success in cursor.fetchall()
             ]
+
+    def append_cry_episode(
+        self,
+        started_ts: float,
+        ended_ts: float | None = None,
+        duration_seconds: float | None = None,
+    ) -> None:
+        started = float(started_ts)
+        if not math.isfinite(started):
+            return
+        ended: float | None = None
+        if ended_ts is not None:
+            ended_value = float(ended_ts)
+            if math.isfinite(ended_value):
+                ended = ended_value
+        duration: float | None = None
+        if duration_seconds is not None:
+            duration_value = float(duration_seconds)
+            if math.isfinite(duration_value):
+                duration = max(0.0, duration_value)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO cry_episodes VALUES (?, ?, ?)",
+                (started, ended, duration),
+            )
+            self._conn.commit()
+
+    def cry_episode_count_since(self, since_ts: float) -> int:
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT COUNT(*) FROM cry_episodes "
+                "WHERE started_ts>=? OR (ended_ts IS NOT NULL AND ended_ts>=?)",
+                (float(since_ts), float(since_ts)),
+            )
+            return int(cursor.fetchone()[0])
 
     def night_aggregates(
         self,

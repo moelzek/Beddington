@@ -18,7 +18,9 @@ from .audio import (
 )
 from .assistant import (
     ConversationMemory,
+    answer_history_question,
     answer_question,
+    is_history_question,
     is_night_question,
     match_soothe_command,
 )
@@ -426,7 +428,9 @@ def _record_run_soothe_outcomes(
     presets: Mapping[str, SootheStepConfig] | None = None,
 ) -> None:
     if not any(
-        event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS
+        event.kind in {"cry_started", "cry_ended"}
+        or event.kind in _SOOTHE_SUCCESS_EVENTS
+        or event.kind in _SOOTHE_FAILURE_EVENTS
         for event in events
     ):
         return
@@ -437,6 +441,7 @@ def _record_run_soothe_outcomes(
     store = None
     try:
         store = SensorStore(os.path.expanduser(history_db))
+        _record_cry_episodes(events, store)
         _record_soothe_outcomes(events, store, presets)
     except Exception:
         pass
@@ -446,6 +451,32 @@ def _record_run_soothe_outcomes(
                 store.close()
             except Exception:
                 pass
+
+
+def _record_cry_episodes(events: Sequence[Event], store: object) -> None:
+    active_started_ts: float | None = None
+    for event in events:
+        if event.kind == "cry_started":
+            if active_started_ts is not None:
+                store.append_cry_episode(active_started_ts)
+            active_started_ts = event.occurred_at.timestamp()
+            continue
+        if event.kind != "cry_ended":
+            continue
+
+        ended_ts = event.occurred_at.timestamp()
+        duration = event.duration_seconds
+        if active_started_ts is not None:
+            started_ts = active_started_ts
+            active_started_ts = None
+        elif duration is not None:
+            started_ts = ended_ts - max(0.0, float(duration))
+        else:
+            started_ts = ended_ts
+        store.append_cry_episode(started_ts, ended_ts, duration)
+
+    if active_started_ts is not None:
+        store.append_cry_episode(active_started_ts)
 
 
 def _record_soothe_outcomes(
@@ -865,6 +896,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     soothe_cmd = match_soothe_command(question, soothe_presets)
                     if soothe_cmd is not None:
                         answer = _soothe_via_dashboard(soothe_cmd, config=config)
+                    elif is_history_question(question):
+                        answer = answer_history_question(question, night_store) or (
+                            "I don't have enough history yet to answer that."
+                        )
                     elif is_night_question(question) and night_store is not None:
                         digest = _summarise_store_night(night_store, 12 * 3600)
                         answer = digest.replace("• ", "").replace("\n", " ")

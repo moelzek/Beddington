@@ -17,6 +17,7 @@ as plain interpretations, not raw figures.
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -288,11 +289,168 @@ _NIGHT_WORDS = (
     "the night", "overnight", "last night", "night summary", "summary",
     "recap", "digest", "how was the night", "how did the night",
 )
+_HISTORY_WINDOW_SECONDS = 12 * 3600
 
 
 def is_night_question(question: str) -> bool:
     """True if the question asks for the night recap (answered from history)."""
     return _mentions(normalize_transcript(question), *_NIGHT_WORDS)
+
+
+def _is_cry_count_question(q: str) -> bool:
+    return (
+        _mentions(
+            q,
+            "how many cries",
+            "how many cry",
+            "how many crying episodes",
+            "cry count",
+            "crying count",
+            "number of cries",
+            "number of crying episodes",
+        )
+        or (
+            _mentions(q, "how many", "count", "number")
+            and _mentions(q, "cry", "cries", "crying")
+        )
+    )
+
+
+def _trend_topic(q: str) -> str | None:
+    if _mentions(
+        q,
+        "more humid",
+        "less humid",
+        "getting humid",
+        "getting more humid",
+        "getting less humid",
+        "getting drier",
+        "getting dryer",
+        "humidity rising",
+        "humidity falling",
+        "humidity dropping",
+        "humidity going up",
+        "humidity going down",
+    ):
+        return "humidity"
+    if _mentions(q, "rising", "falling", "dropping") and _mentions(
+        q, "humidity", "humid"
+    ):
+        return "humidity"
+
+    if _mentions(
+        q,
+        "getting colder",
+        "getting cooler",
+        "getting warmer",
+        "temperature rising",
+        "temperature falling",
+        "temperature dropping",
+        "temperature going up",
+        "temperature going down",
+    ):
+        return "temperature"
+    if _mentions(q, "rising", "falling", "dropping") and _mentions(
+        q, "temperature", "temp", "degrees"
+    ):
+        return "temperature"
+    return None
+
+
+def is_history_question(question: str) -> bool:
+    """True for short history questions answered from the persisted night store."""
+    q = normalize_transcript(question)
+    return _is_cry_count_question(q) or _trend_topic(q) is not None
+
+
+def _series_values(series: dict[str, object], key: str) -> list[float]:
+    entry = series.get(key)
+    if not isinstance(entry, dict):
+        return []
+    points = entry.get("points")
+    if not isinstance(points, list):
+        return []
+    values: list[float] = []
+    for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        value = point[1]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        number = float(value)
+        if math.isfinite(number):
+            values.append(number)
+    return values
+
+
+def _history_trend_phrase(topic: str, values: list[float]) -> str:
+    midpoint = max(1, len(values) // 2)
+    earlier = values[:midpoint]
+    recent = values[midpoint:]
+    if not earlier or not recent:
+        return f"I don't have enough {topic} history yet to tell."
+
+    earlier_avg = sum(earlier) / len(earlier)
+    recent_avg = sum(recent) / len(recent)
+    threshold = 0.25 if topic == "temperature" else 1.0
+    if recent_avg > earlier_avg + threshold:
+        direction = "getting warmer" if topic == "temperature" else "getting more humid"
+    elif recent_avg < earlier_avg - threshold:
+        direction = "getting colder" if topic == "temperature" else "getting less humid"
+    else:
+        direction = "about steady"
+    description = direction if direction == "about steady" else f"like it is {direction}"
+
+    unit = "degrees Celsius" if topic == "temperature" else "percent"
+    return (
+        f"The {topic} looks {description}: recent readings average "
+        f"{recent_avg:.0f} {unit}, versus {earlier_avg:.0f} {unit} earlier "
+        "(best guess)."
+    )
+
+
+def answer_history_question(
+    question: str,
+    store: object | None,
+    window_seconds: float = _HISTORY_WINDOW_SECONDS,
+    now_ts: float | None = None,
+) -> str | None:
+    """Answer a history question from the persisted night store.
+
+    Returns None when the question is not a VC4 history question. The store is
+    deliberately duck-typed so tests can seed a real SensorStore and the voice
+    loop can pass its read-only handle without importing storage here.
+    """
+    q = normalize_transcript(question)
+    now = time.time() if now_ts is None else float(now_ts)
+    since = now - max(1.0, float(window_seconds))
+
+    if _is_cry_count_question(q):
+        if store is None or not hasattr(store, "cry_episode_count_since"):
+            return "I don't have enough cry history yet for tonight."
+        try:
+            count = int(store.cry_episode_count_since(since))  # type: ignore[attr-defined]
+        except Exception:
+            return "I don't have enough cry history yet for tonight."
+        episode = "episode" if count == 1 else "episodes"
+        return f"I found {count} crying {episode} tonight."
+
+    topic = _trend_topic(q)
+    if topic is None:
+        return None
+    if store is None or not hasattr(store, "series"):
+        return f"I don't have enough {topic} history yet to tell."
+    try:
+        series = store.series(since)  # type: ignore[attr-defined]
+    except Exception:
+        return f"I don't have enough {topic} history yet to tell."
+    if not isinstance(series, dict):
+        return f"I don't have enough {topic} history yet to tell."
+    key = "room_temperature_c" if topic == "temperature" else "room_humidity_pct"
+    values = _series_values(series, key)
+    if len(values) < 2:
+        return f"I don't have enough {topic} history yet to tell."
+    return _history_trend_phrase(topic, values)
 
 
 # Soothe voice control: "play rain", "soothe the baby", "stop the sound".
