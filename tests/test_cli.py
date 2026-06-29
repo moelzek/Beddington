@@ -11,12 +11,14 @@ import pytest
 from beddington.cli import (
     _AutoSootheWatcher,
     _DashboardSoothe,
+    _build_soothe_presets,
     _format_sensor_line,
+    _maybe_play_wake_chime,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
     main,
 )
-from beddington.config import SootheStepConfig
+from beddington.config import AppConfig, AssistantConfig, SootheStepConfig
 from beddington.logging import OutputPaths
 from beddington.models import Event, NightReport
 from beddington.sensor_store import SensorStore
@@ -217,6 +219,38 @@ def _patch_auto_soothe_memory(
         "beddington.cli._build_soothe_presets",
         lambda config: config.soothe.presets,
     )
+
+
+def test_wake_chime_plays_when_wake_question_detected() -> None:
+    played: list[Path] = []
+
+    result = _maybe_play_wake_chime(
+        "what is the temperature",
+        AppConfig(assistant=AssistantConfig(chime_enabled=True)),
+        player=lambda path: played.append(path) or {"played": True},
+    )
+
+    assert result == {"played": True}
+    assert [path.name for path in played] == ["chime.wav"]
+
+
+def test_wake_chime_honours_disabled_config() -> None:
+    played: list[Path] = []
+
+    result = _maybe_play_wake_chime(
+        "what is the temperature",
+        AppConfig(assistant=AssistantConfig(chime_enabled=False)),
+        player=lambda path: played.append(path) or {"played": True},
+    )
+
+    assert result == {"played": False, "reason": "disabled"}
+    assert played == []
+
+
+def test_bundled_chime_is_not_a_soothe_preset() -> None:
+    presets = _build_soothe_presets(AppConfig())
+
+    assert "chime" not in presets
 
 
 class _FakeDashboardPlayer:

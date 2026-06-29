@@ -5,7 +5,7 @@ import json
 import threading
 import time
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +46,9 @@ from .video import (
 )
 
 _DEFAULT_HISTORY_DB = "~/.local/share/beddington/sensors.db"
+_WAKE_CHIME_PATH = (
+    Path(__file__).resolve().parents[2] / "assets" / "soothe" / "chime.wav"
+)
 _NIGHT_DIGEST_TREND_NIGHTS = 7
 _SOOTHE_SUCCESS_EVENTS = {"soothe_quiet_confirmed", "soothe_settled"}
 _SOOTHE_FAILURE_EVENTS = {"soothe_unresolved"}
@@ -732,6 +735,13 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     def on_audio(indata, frames, time_info, status) -> None:  # pragma: no cover
         frames_q.put(indata[:, 0].copy())
 
+    def drain_captured_frames() -> None:
+        try:
+            while True:
+                frames_q.get_nowait()
+        except queue.Empty:
+            pass
+
     pre_roll: deque = deque(maxlen=start_speech_frames + 2)
     buffer: list = []
     in_utterance = False
@@ -841,6 +851,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         print(f'  [debug] transcript="{text}" -> question={question!r}')
                     if question is None:
                         continue  # no wake word — ignore silently
+                    chime = _maybe_play_wake_chime(question, config)
+                    if args.debug:
+                        print(f"  [debug] chime: {chime}")
+                    drain_captured_frames()
                     soothe_cmd = match_soothe_command(question)
                     if soothe_cmd is not None:
                         answer = _soothe_via_dashboard(soothe_cmd)
@@ -865,14 +879,53 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             print(f"  [debug] speak: {spoken}")
                         # Drop frames captured while we were speaking, so Beddington
                         # never transcribes its own voice as a new command.
-                        try:
-                            while True:
-                                frames_q.get_nowait()
-                        except queue.Empty:
-                            pass
+                        drain_captured_frames()
     except KeyboardInterrupt:
         print("Stopped.")
     return 0
+
+
+def _maybe_play_wake_chime(
+    question: str | None,
+    config: AppConfig,
+    player: Callable[[Path], dict[str, object]] | None = None,
+) -> dict[str, object]:
+    if question is None:
+        return {"played": False, "reason": "no_wake_word"}
+    if not config.assistant.chime_enabled:
+        return {"played": False, "reason": "disabled"}
+    play = player or _play_audio_file_once
+    return play(_WAKE_CHIME_PATH)
+
+
+def _play_audio_file_once(path: Path) -> dict[str, object]:
+    import subprocess
+
+    from .soothe import _playback_command, _player_name
+
+    if not path.exists():
+        return {
+            "played": False,
+            "reason": "sound_path_not_found",
+            "sound_path": str(path),
+        }
+    command = _playback_command(path, play_seconds=0.0)
+    if command is None:
+        return {
+            "played": False,
+            "reason": "no_supported_player",
+            "sound_path": str(path),
+        }
+    try:
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {"played": False, "reason": "player_failed", "sound_path": str(path)}
+    return {"played": True, "player": _player_name(command), "sound_path": str(path)}
 
 
 def _ask_command(args: argparse.Namespace, config: AppConfig) -> int:
@@ -1331,6 +1384,8 @@ def _build_soothe_presets(config: AppConfig) -> dict[str, SootheStepConfig]:
     assets_dir = Path(__file__).resolve().parents[2] / "assets" / "soothe"
     if assets_dir.is_dir():
         for wav in sorted(assets_dir.glob("*.wav")):
+            if wav.name == "chime.wav":
+                continue
             if wav.stem not in presets:
                 presets[wav.stem] = SootheStepConfig(
                     name=wav.stem.replace("_", " "), sound_path=wav

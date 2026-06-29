@@ -145,6 +145,9 @@ include_distance = true
 include_target_count = true
 bench_vitals = false
 
+[assistant]
+chime_enabled = true
+
 [assistant.llm_translator]
 # Understands fuzzy questions via the local llama (value still from the brain).
 enabled = true

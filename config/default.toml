@@ -160,6 +160,9 @@ enabled = false
 base_url = ""
 model = ""
 
+[assistant]
+chime_enabled = true
+
 [assistant.llm_translator]
 # Local intent classifier (uses the [narrator] llama model/host). It only runs
 # after the deterministic answer path misses, and can select an existing intent

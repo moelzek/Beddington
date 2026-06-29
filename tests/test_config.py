@@ -82,6 +82,9 @@ persona_temperature = 0.5
 persona_num_predict = 64
 persona_timeout = 6.0
 
+[assistant]
+chime_enabled = false
+
 [assistant.llm_translator]
 enabled = true
 
@@ -134,6 +137,7 @@ gpio_pin = 4
     assert config.narrator.persona_temperature == 0.5
     assert config.narrator.persona_num_predict == 64
     assert config.narrator.persona_timeout == 6.0
+    assert config.assistant.chime_enabled is False
     assert config.assistant.llm_translator.enabled is True
     assert config.sounds.enabled is True
     assert config.sounds.threshold == 0.3
@@ -166,6 +170,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.sensors.motion.gpio_pin == 4
     assert config.soothe.learn.enabled is True
     assert config.soothe.learn.min_samples == 10
+    assert config.assistant.chime_enabled is True
     assert config.assistant.llm_translator.enabled is True
     assert config.narrator.enabled is True
     assert config.narrator.model == "llama3.2:1b"
@@ -185,6 +190,7 @@ def test_pi_product_config_points_at_generated_soothe_assets() -> None:
     for preset in config.soothe.presets.values():
         assert preset.sound_path is not None
         assert preset.sound_path.exists()
+    assert config.assistant.chime_enabled is True
 
 
 def test_narrator_config_defaults_enabled() -> None:

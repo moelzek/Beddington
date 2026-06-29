@@ -25,6 +25,7 @@ def main() -> None:
     _write_wav(ASSET_DIR / "music_box_lullaby.wav", _music_box_lullaby(seconds=24.0))
     _write_wav(ASSET_DIR / "shushing.wav", _shushing(seconds=24.0))
     _write_wav(ASSET_DIR / "fan_hum.wav", _fan_hum(seconds=24.0))
+    _write_wav(ASSET_DIR / "chime.wav", _chime(seconds=0.3))
 
 
 def _white_noise(seconds: float) -> np.ndarray:
@@ -246,6 +247,29 @@ def _fan_hum(seconds: float) -> np.ndarray:
     samples = 0.55 * noise + tone
     samples = _low_pass(samples, smoothing=0.7)
     samples = _fade(samples, seconds=2.0)
+    return _normalise(samples, peak=0.12)
+
+
+def _chime(seconds: float) -> np.ndarray:
+    t = _time(seconds)
+    samples = np.zeros_like(t)
+    for start, duration, frequency, gain in (
+        (0.00, 0.18, 523.25, 0.75),
+        (0.12, 0.18, 659.25, 0.65),
+    ):
+        end = min(seconds, start + duration)
+        mask = (t >= start) & (t < end)
+        local = t[mask] - start
+        envelope = _attack_release(
+            local,
+            duration=end - start,
+            attack=0.012,
+            release=0.09,
+        )
+        tone = np.sin(2 * np.pi * frequency * local)
+        tone += 0.2 * np.sin(2 * np.pi * frequency * 2.0 * local)
+        samples[mask] += gain * envelope * tone
+    samples = _fade(samples, seconds=0.015)
     return _normalise(samples, peak=0.12)
 
 

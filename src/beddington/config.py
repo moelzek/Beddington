@@ -66,6 +66,7 @@ class LlmTranslatorConfig:
 
 @dataclass(frozen=True)
 class AssistantConfig:
+    chime_enabled: bool = True
     llm_translator: LlmTranslatorConfig = LlmTranslatorConfig()
 
 
@@ -428,6 +429,9 @@ def _load_assistant(
     if not isinstance(raw_assistant, dict):
         return default
     return AssistantConfig(
+        chime_enabled=bool(
+            raw_assistant.get("chime_enabled", default.chime_enabled)
+        ),
         llm_translator=_load_llm_translator(
             raw_assistant.get("llm_translator", {}),
             default.llm_translator,

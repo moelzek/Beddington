@@ -28,6 +28,9 @@ enabled = false
 base_url = ""
 model = ""
 
+[assistant]
+chime_enabled = true
+
 [assistant.llm_translator]
 enabled = false
 
