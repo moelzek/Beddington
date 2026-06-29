@@ -69,6 +69,54 @@ sound_path = "../assets/soothe/uterine_whoosh.wav"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
+[soothe.presets.pink_noise]
+name = "pink noise"
+sound_path = "../assets/soothe/pink_noise.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.rain]
+name = "rain"
+sound_path = "../assets/soothe/rain.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.ocean_waves]
+name = "ocean waves"
+sound_path = "../assets/soothe/ocean_waves.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.forest_breeze]
+name = "forest breeze"
+sound_path = "../assets/soothe/forest_breeze.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.night_sky]
+name = "night sky"
+sound_path = "../assets/soothe/night_sky.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.music_box_lullaby]
+name = "music box lullaby"
+sound_path = "../assets/soothe/music_box_lullaby.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.shushing]
+name = "shushing"
+sound_path = "../assets/soothe/shushing.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.fan_hum]
+name = "fan hum"
+sound_path = "../assets/soothe/fan_hum.wav"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
 [sensors]
 sample_interval_seconds = 10.0
 

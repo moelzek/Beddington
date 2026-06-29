@@ -5,6 +5,22 @@ import pytest
 from beddington.config import NarratorConfig, load_config
 
 
+EXPECTED_SOOTHE_PRESETS = [
+    "fan_hum",
+    "forest_breeze",
+    "heartbeat",
+    "music_box_lullaby",
+    "night_sky",
+    "ocean_waves",
+    "pink_noise",
+    "rain",
+    "shushing",
+    "soothing_music",
+    "uterine_whoosh",
+    "white_noise",
+]
+
+
 def test_load_config_reads_detection_values(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
@@ -127,16 +143,12 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     config = load_config(Path("config/default.toml"))
 
     assert config.soothe.preset == "white_noise"
-    assert sorted(config.soothe.presets) == [
-        "heartbeat",
-        "soothing_music",
-        "uterine_whoosh",
-        "white_noise",
-    ]
+    assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
     assert config.soothe.steps[0].play_seconds == 1800.0
-    assert all(step.sound_path is not None for step in config.soothe.steps)
-    assert all(step.sound_path.exists() for step in config.soothe.steps if step.sound_path)
+    for preset in config.soothe.presets.values():
+        assert preset.sound_path is not None
+        assert preset.sound_path.exists()
     assert config.sensors.sample_interval_seconds == 10.0
     assert config.sensors.air.enabled is False
     assert config.sensors.air.i2c_address == 0x76
@@ -147,6 +159,18 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.assistant.llm_translator.enabled is True
     assert config.narrator.enabled is True
     assert config.narrator.model == "llama3.2:1b"
+
+
+def test_pi_product_config_points_at_generated_soothe_assets() -> None:
+    config = load_config(Path("config/pi-product.toml"))
+
+    assert config.soothe.preset == "white_noise"
+    assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
+    assert [step.name for step in config.soothe.steps] == ["white noise"]
+    assert config.soothe.steps[0].play_seconds == 1800.0
+    for preset in config.soothe.presets.values():
+        assert preset.sound_path is not None
+        assert preset.sound_path.exists()
 
 
 def test_narrator_config_defaults_enabled() -> None:

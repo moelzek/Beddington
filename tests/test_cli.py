@@ -275,7 +275,7 @@ def test_preview_soothe_rejects_unknown_preset() -> None:
                 "preview-soothe",
                 "--dry-run",
                 "--preset",
-                "rain",
+                "thunderstorm",
             ]
         )
 
