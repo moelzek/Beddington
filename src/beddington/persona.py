@@ -28,24 +28,26 @@ from .config import NarratorConfig
 from .narrator import _BANNED_NARRATION_WORDS
 
 _SYSTEM_PROMPT = (
-    "You are Beddington, a kindly little bear speaking aloud to a parent through a "
-    "baby monitor. You have the warm, polite, earnest and gentle manner of Paddington "
-    "Bear, and you speak in plain British English.\n"
-    "You will be given ONE sentence of factual information. Say the SAME information "
-    "back in your own voice. You may add a little warmth or one gentle touch — a "
-    'mention of marmalade, of Aunt Lucy, an "if I may", or a hard stare — but at most '
-    "one, and keep it brief.\n"
-    "Hard rules, never broken:\n"
-    "- Keep every number exactly as given. Do not add, remove, round or change any number.\n"
-    "- Keep every unit exactly (degrees, percent, centimetres). Never change a unit.\n"
-    "- Do not add any fact, reading, cause or detail that is not in the given sentence.\n"
-    "- Never reassure the parent. Never say or imply the baby is safe, asleep, sleeping, "
-    "healthy, fine, well, okay, normal, calm, settled, content, peaceful or at peace, and "
-    "never comment on the baby's wellbeing.\n"
-    "- Make no medical claim and give no medical advice.\n"
-    "- This is spoken aloud: reply with 1 to 2 short sentences of plain prose. No lists, "
-    "no markdown, no headings, no emoji, no stage directions.\n"
-    "Reply with only the re-voiced sentence and nothing else."
+    "You are Beddington, a kindly little bear with the warm, polite, gentle manner of "
+    "Paddington Bear, speaking aloud to a parent through a baby monitor in plain British "
+    "English.\n"
+    "You will be given ONE sentence of fact. Say the SAME fact back in your own gentle "
+    "voice. This is a RE-WORDING task, not a conversation.\n"
+    "You MUST:\n"
+    '- include every number and unit exactly as given (for example "20 degrees Celsius" '
+    'or "49 percent");\n'
+    "- keep it to one short sentence;\n"
+    '- add at most one small Paddington touch (marmalade, Aunt Lucy, or "if I may").\n'
+    "You MUST NOT:\n"
+    "- give any advice, suggestion or instruction;\n"
+    "- add any new fact, cause, place or detail that is not in the sentence;\n"
+    "- reassure the parent, or say the baby is safe, asleep, well, fine, calm, cosy, "
+    "snug, peaceful or content;\n"
+    "- make any medical comment.\n"
+    "\n"
+    "Example\n"
+    "Fact: The room is about 21 degrees Celsius, a touch warm for a baby.\n"
+    "You say: The room is about 21 degrees Celsius, a touch warm for a little one, if I may."
 )
 
 # Markers of a medically-sensitive answer (radar vitals readout / no-lock / the
@@ -86,6 +88,14 @@ _UNIT_WORDS = (
 
 _DIGITS = re.compile(r"\d+")
 
+# Filler/function words ignored when checking that the restyle stayed on-topic.
+_STOPWORDS = frozenset({
+    "the", "that", "this", "there", "here", "with", "your", "you", "about",
+    "just", "very", "quite", "rather", "right", "into", "from", "have", "they",
+    "them", "then", "than", "what", "when", "your", "ever", "some", "only",
+    "little", "ones", "dear", "parent", "please",
+})
+
 
 def _norm(text: str) -> str:
     """Lowercase, punctuation->spaces, space-padded — for whole-word/phrase tests."""
@@ -99,6 +109,15 @@ def _digit_runs(text: str) -> list[str]:
 def _unit_set(text: str) -> set[str]:
     norm = _norm(text)
     return {word for word in _UNIT_WORDS if f" {word} " in norm}
+
+
+def _content_words(text: str) -> set[str]:
+    """Significant words (>= 4 letters, not filler) used to check the restyle
+    actually conveys the same answer and isn't off-topic / meta text."""
+    return {
+        w for w in re.findall(r"[a-z]+", text.lower())
+        if len(w) >= 4 and w not in _STOPWORDS
+    }
 
 
 def is_medically_sensitive(plain: str) -> bool:
@@ -122,6 +141,14 @@ def _validate(candidate: str, plain: str) -> bool:
     # Units: no unit added, dropped, or swapped (closes the unit-swap hole).
     if _unit_set(text) != _unit_set(plain):
         return False
+    # On-topic: the restyle must share most of the plain answer's content words,
+    # so a small model can't pass with off-topic / meta text (e.g. echoing the
+    # instructions) when there are no numbers to anchor on.
+    plain_content = _content_words(plain)
+    if plain_content:
+        overlap = len(plain_content & _content_words(text))
+        if overlap < (len(plain_content) + 1) // 2:
+            return False
     # Banned words/phrases: only reject those the model ADDED (delta).
     cand_norm, plain_norm = _norm(candidate), _norm(plain)
     for word in _BANNED_WORDS:
@@ -139,7 +166,7 @@ def _call_ollama(plain: str, config: NarratorConfig) -> str | None:
     """Ask the local model to re-voice ``plain``. Returns None on any failure."""
     payload = {
         "model": config.model,
-        "prompt": _SYSTEM_PROMPT + "\n\nSentence to say in your own voice:\n" + plain,
+        "prompt": _SYSTEM_PROMPT + "\n\nFact: " + plain + "\nYou say:",
         "stream": False,
         "options": {
             "num_predict": config.persona_num_predict,
