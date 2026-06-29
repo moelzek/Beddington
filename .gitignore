@@ -86,3 +86,4 @@ Archive/
 sample_data/
 # Override the earlier !.env.example exception — keep this file local only
 .env.example
+uv.lock
