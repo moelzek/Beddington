@@ -12,12 +12,14 @@ from beddington.cli import (
     _AutoSootheWatcher,
     _format_sensor_line,
     _record_run_soothe_outcomes,
+    _record_soothe_outcomes,
     main,
 )
 from beddington.config import SootheStepConfig
 from beddington.logging import OutputPaths
 from beddington.models import Event, NightReport
 from beddington.sensor_store import SensorStore
+from beddington.soothe_memory import best_preset
 from beddington.video import ImageInfo, VisualChangeReport
 
 
@@ -99,6 +101,51 @@ def test_record_run_soothe_outcomes_writes_failure(tmp_path: Path) -> None:
 
     store = SensorStore(str(db_path))
     assert store.outcomes_since(0.0) == [(resolved.timestamp(), "pink-noise", False)]
+    store.close()
+
+
+def test_record_soothe_outcomes_maps_display_name_to_preset_key_for_selection(
+    tmp_path: Path,
+) -> None:
+    started = datetime(2026, 6, 29, 20, 0, tzinfo=UTC)
+    presets = {"white_noise": SootheStepConfig(name="white noise")}
+    store = SensorStore(str(tmp_path / "s.db"))
+
+    _record_soothe_outcomes(
+        (
+            Event(
+                kind="soothe_attempted",
+                occurred_at=started,
+                offset_seconds=0.0,
+                details={"name": "white noise"},
+            ),
+            Event(
+                kind="soothe_quiet_confirmed",
+                occurred_at=started + timedelta(seconds=60),
+                offset_seconds=60.0,
+            ),
+            Event(
+                kind="soothe_attempted",
+                occurred_at=started + timedelta(seconds=120),
+                offset_seconds=120.0,
+                details={"name": "white noise"},
+            ),
+            Event(
+                kind="soothe_settled",
+                occurred_at=started + timedelta(seconds=180),
+                offset_seconds=180.0,
+            ),
+        ),
+        store,
+        presets,
+    )
+
+    outcomes = store.outcomes_since(0.0)
+    assert outcomes == [
+        ((started + timedelta(seconds=60)).timestamp(), "white_noise", True),
+        ((started + timedelta(seconds=180)).timestamp(), "white_noise", True),
+    ]
+    assert best_preset(outcomes, presets, min_samples=2, default="rain") == "white_noise"
     store.close()
 
 

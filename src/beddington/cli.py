@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -374,7 +375,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         sensor_readers=build_sensor_readers(config.sensors),
         sound_classifier=detector.classify if config.sounds.enabled else None,
     )
-    _record_run_soothe_outcomes(result.report.events, args.history_db)
+    _record_run_soothe_outcomes(
+        result.report.events,
+        args.history_db,
+        _build_soothe_presets(config),
+    )
     spoken_text = result.digest
     narrator_config = config.narrator
     if args.speak:
@@ -403,7 +408,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _record_run_soothe_outcomes(events: Sequence[Event], history_db: str) -> None:
+def _record_run_soothe_outcomes(
+    events: Sequence[Event],
+    history_db: str,
+    presets: Mapping[str, SootheStepConfig] | None = None,
+) -> None:
     if not any(
         event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS
         for event in events
@@ -416,7 +425,7 @@ def _record_run_soothe_outcomes(events: Sequence[Event], history_db: str) -> Non
     store = None
     try:
         store = SensorStore(os.path.expanduser(history_db))
-        _record_soothe_outcomes(events, store)
+        _record_soothe_outcomes(events, store, presets)
     except Exception:
         pass
     finally:
@@ -427,12 +436,16 @@ def _record_run_soothe_outcomes(events: Sequence[Event], history_db: str) -> Non
                 pass
 
 
-def _record_soothe_outcomes(events: Sequence[Event], store: object) -> None:
+def _record_soothe_outcomes(
+    events: Sequence[Event],
+    store: object,
+    presets: Mapping[str, SootheStepConfig] | None = None,
+) -> None:
     sound_name: str | None = None
     for event in events:
         if event.kind == "soothe_attempted":
             name = event.details.get("name")
-            sound_name = str(name) if name else None
+            sound_name = _soothe_outcome_key(name, presets)
             continue
         if event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS:
             if sound_name:
@@ -442,6 +455,23 @@ def _record_soothe_outcomes(events: Sequence[Event], store: object) -> None:
                     event.kind in _SOOTHE_SUCCESS_EVENTS,
                 )
             sound_name = None
+
+
+def _soothe_outcome_key(
+    name: object,
+    presets: Mapping[str, SootheStepConfig] | None,
+) -> str | None:
+    if not name:
+        return None
+    sound_name = str(name)
+    if not presets:
+        return sound_name
+    for key in sorted(presets):
+        if presets[key].name == sound_name:
+            return key
+    if sound_name in presets:
+        return sound_name
+    return sound_name
 
 
 def _summarise_store_night(store: object, window_seconds: float) -> str:
