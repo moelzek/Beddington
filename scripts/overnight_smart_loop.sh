@@ -77,47 +77,47 @@ fi
 log "preflight green"
 
 for entry in "${UNITS[@]}"; do
-  IFS='|' read -r UID MSG TASK <<< "$entry"
-  st=$(ledger_status "$UID")
-  if [ "$st" = "DONE" ]; then log "$UID already DONE — skip"; continue; fi
-  if [ "$st" = "BLOCKED" ]; then log "$UID BLOCKED — stopping loop"; break; fi
+  IFS='|' read -r UNIT MSG TASK <<< "$entry"
+  st=$(ledger_status "$UNIT")
+  if [ "$st" = "DONE" ]; then log "$UNIT already DONE — skip"; continue; fi
+  if [ "$st" = "BLOCKED" ]; then log "$UNIT BLOCKED — stopping loop"; break; fi
 
   attempt=0; landed=0; extra=""
   while [ "$attempt" -le "$MAX_RETRIES" ]; do
     attempt=$((attempt+1))
-    log "$UID attempt $attempt: codex"
-    PROMPT="Read $SPEC in this repo IN FULL — it defines hard constraints, the codebase map, the safety rules, and a numbered unit list. Implement ONLY unit $UID ($TASK). Do not start any other unit. Match existing code and test style. Add or extend tests for this unit. Ensure the WHOLE suite passes with: $TEST_CMD . Stdlib only — no new dependency. No banned words; label inferences (best guess). When done, print one line of what changed.$extra"
+    log "$UNIT attempt $attempt: codex"
+    PROMPT="Read $SPEC in this repo IN FULL — it defines hard constraints, the codebase map, the safety rules, and a numbered unit list. Implement ONLY unit $UNIT ($TASK). Do not start any other unit. Match existing code and test style. Add or extend tests for this unit. Ensure the WHOLE suite passes with: $TEST_CMD . Stdlib only — no new dependency. No banned words; label inferences (best guess). When done, print one line of what changed.$extra"
     timeout "$CODEX_TIMEOUT" codex exec -s workspace-write \
-      --output-last-message "$LOG_DIR/$UID.codex.txt" "$PROMPT" \
-      > "$LOG_DIR/$UID.run.log" 2>&1 || log "$UID codex exited non-zero/timeout"
+      --output-last-message "$LOG_DIR/$UNIT.codex.txt" "$PROMPT" \
+      > "$LOG_DIR/$UNIT.run.log" 2>&1 || log "$UNIT codex exited non-zero/timeout"
 
-    log "$UID gate: tests"
+    log "$UNIT gate: tests"
     if ! run_tests; then
-      log "$UID tests RED (attempt $attempt)"
+      log "$UNIT tests RED (attempt $attempt)"
       extra=" Previous attempt left failing tests; fix them. pytest tail: $(tail -25 "$LOG_DIR/pytest.last" | tr '\n' ' ')"
       continue
     fi
     if [ -z "$(git status --porcelain)" ]; then
-      log "$UID green but NO changes — codex did nothing (attempt $attempt)"
-      extra=" The previous attempt made no file changes. You MUST edit files to implement $UID."
+      log "$UNIT green but NO changes — codex did nothing (attempt $attempt)"
+      extra=" The previous attempt made no file changes. You MUST edit files to implement $UNIT."
       continue
     fi
     # green + has changes -> commit + push
     git add -A >> "$LOG_DIR/git.log" 2>&1
-    git commit -m "$MSG" -m "Built by overnight gated codex loop ($UID)." -m "Co-Authored-By: WOZCODE <contact@withwoz.com>" >> "$LOG_DIR/git.log" 2>&1
+    git commit -m "$MSG" -m "Built by overnight gated codex loop ($UNIT)." -m "Co-Authored-By: WOZCODE <contact@withwoz.com>" >> "$LOG_DIR/git.log" 2>&1
     if push_main; then
-      ledger_mark "$UID" "x" "$MSG"
-      log "$UID DONE + pushed to main"; landed=1
+      ledger_mark "$UNIT" "x" "$MSG"
+      log "$UNIT DONE + pushed to main"; landed=1
     else
-      ledger_mark "$UID" "!" "tests green, commit kept locally, PUSH FAILED (conflict)"
-      log "$UID push failed — local commit kept, stopping loop"; landed=2
+      ledger_mark "$UNIT" "!" "tests green, commit kept locally, PUSH FAILED (conflict)"
+      log "$UNIT push failed — local commit kept, stopping loop"; landed=2
     fi
     break
   done
 
   if [ "$landed" = "0" ]; then
-    ledger_mark "$UID" "!" "could not go green after $((MAX_RETRIES+1)) attempts"
-    log "$UID BLOCKED after retries — stopping loop"; break
+    ledger_mark "$UNIT" "!" "could not go green after $((MAX_RETRIES+1)) attempts"
+    log "$UNIT BLOCKED after retries — stopping loop"; break
   fi
   if [ "$landed" = "2" ]; then break; fi
 done
