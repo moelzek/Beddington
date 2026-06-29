@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from beddington.config import NarratorConfig, SootheStepConfig
-from beddington.assistant import answer_question
+from beddington.assistant import ConversationMemory, answer_question
 
 SNAPSHOT = {
     "room_temperature_c": 21.4,
@@ -44,6 +44,68 @@ def test_answer_interprets_values() -> None:
 
 def test_answer_temperature() -> None:
     assert "21 degrees" in answer_question("is it warm in here?", SNAPSHOT)
+
+
+def test_temperature_followup_uses_last_intent_and_current_reading() -> None:
+    memory = ConversationMemory()
+    first = answer_question(
+        "what is the temperature?",
+        {"room_temperature_c": 18.0},
+        memory=memory,
+    )
+    assert "18 degrees" in first
+    assert memory.last_intent == "temperature"
+
+    answer = answer_question(
+        "is that hot for a baby?",
+        {"room_temperature_c": 23.0},
+        memory=memory,
+    )
+
+    assert "23 degrees" in answer
+    assert "warm for a baby" in answer
+    assert "say it again" not in answer
+
+
+def test_bare_ok_followup_uses_last_intent_without_llm() -> None:
+    memory = ConversationMemory()
+    answer_question("temperature", {"room_temperature_c": 18.0}, memory=memory)
+
+    def fail(prompt: str, config: object) -> str:
+        del prompt, config
+        raise AssertionError("follow-up should resolve before LLM translation")
+
+    answer = answer_question(
+        "is that ok?",
+        {"room_temperature_c": 19.0},
+        _translator_config(),
+        ask_llm=fail,
+        memory=memory,
+    )
+
+    assert "19 degrees" in answer
+    assert "comfortable for a baby" in answer
+
+
+def test_humidity_followup_switches_topic_after_any_reading() -> None:
+    memory = ConversationMemory()
+    first = answer_question(
+        "how bright is it?",
+        {"room_illuminance_lx": 80.0},
+        memory=memory,
+    )
+    assert "lit" in first
+    assert memory.last_intent == "brightness"
+
+    answer = answer_question(
+        "what about humidity?",
+        {"room_humidity_pct": 63.0},
+        memory=memory,
+    )
+
+    assert "63 percent" in answer
+    assert "humid" in answer
+    assert memory.last_intent == "humidity"
 
 
 def test_answer_pressure_is_interpreted() -> None:

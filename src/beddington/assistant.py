@@ -18,11 +18,25 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from .ears import _edit_distance, normalize_transcript
 from .intent import INTENT_KEYWORDS, AskLlm, translate_intent
 
 _FALLBACK = "Sorry, I didn't catch that. Please say it again."
+
+
+@dataclass
+class ConversationMemory:
+    """Tiny carry-over for voice follow-ups; no free-form conversation state."""
+
+    last_intent: str | None = None
+
+
+@dataclass(frozen=True)
+class _AnswerResult:
+    answer: str
+    intent: str | None = None
 
 # Vital-sign words. A question containing one is answered from the radar's bench
 # data (Mo, the owner/physician, authorised this), routed first so a vitals
@@ -418,42 +432,181 @@ def match_soothe_command(
     return None
 
 
+def _answer_intent_result(intent: str, snapshot: dict[str, object]) -> _AnswerResult:
+    if intent == "temperature":
+        value = _num(snapshot, "room_temperature_c")
+        if value is not None:
+            return _AnswerResult(_temperature_phrase(value), intent)
+    if intent == "humidity":
+        value = _num(snapshot, "room_humidity_pct")
+        if value is not None:
+            return _AnswerResult(_humidity_phrase(value), intent)
+    if intent == "pressure":
+        value = _num(snapshot, "room_pressure_hpa")
+        if value is not None:
+            return _AnswerResult(_pressure_phrase(value), intent)
+    if intent == "air quality":
+        value = _num(snapshot, "room_gas_resistance_ohms")
+        if value is not None:
+            return _AnswerResult(_air_quality_phrase(value), intent)
+    if intent == "brightness":
+        value = _num(snapshot, "room_illuminance_lx")
+        if value is not None:
+            return _AnswerResult(_brightness_phrase(value), intent)
+    if intent == "count":
+        return _AnswerResult(_people_phrase(snapshot), intent)
+    if intent == "motion":
+        motion = snapshot.get("motion_detected")
+        if isinstance(motion, bool):
+            answer = "There's movement in the room." if motion else "The room is still."
+            return _AnswerResult(answer, intent)
+    if intent == "anyone":
+        return _AnswerResult(_presence_phrase(snapshot), intent)
+    if intent == "distance":
+        value = _num(snapshot, "target_distance_cm")
+        if value is not None:
+            return _AnswerResult(
+                f"The nearest person is about {value:.0f} centimetres away.",
+                intent,
+            )
+    if intent == "overview":
+        return _AnswerResult(_room_overview(snapshot), intent)
+    return _AnswerResult(_FALLBACK)
+
+
+_FOLLOWUP_PREFIXES = ("what about ", "how about ", "and ")
+_BARE_OK_FOLLOWUPS = (
+    "is it ok", "is it okay", "is it alright", "is it all right",
+    "is it comfortable",
+)
+
+
+def _explicit_followup_intent(q: str) -> str | None:
+    if _mentions(
+        q, "temperature", "warm", "hot", "cold", "chilly", "degree", "degrees",
+        fuzzy=("temperature",),
+    ):
+        return "temperature"
+    if _mentions(q, "humid", "humidity", "muggy", "dry", "damp", fuzzy=("humidity",)):
+        return "humidity"
+    if _mentions(q, "pressure", "barometer", fuzzy=("pressure",)):
+        return "pressure"
+    if _mentions(
+        q, "air quality", "gas", "smell", "smelly", "voc", "stuffy", "fresh", "nappy",
+        fuzzy=("quality",),
+    ):
+        return "air quality"
+    if _mentions(q, "light", "lighting", "lit", "bright", "dark", "dim", "lux"):
+        return "brightness"
+    if _mentions(q, "how many", "number of people", "headcount", "count"):
+        return "count"
+    if _mentions(q, "moving", "movement", "motion", "still", "activity"):
+        return "motion"
+    if _mentions(
+        q, "anyone", "anybody", "someone", "somebody", "everyone", "everybody",
+        "nearby", "occupied", "empty", "who", "people", "person",
+    ):
+        return "anyone"
+    if _mentions(q, "how far", "distance", "close"):
+        return "distance"
+    if _mentions(
+        q, "how is the room", "room condition", "condition", "everything", "overview",
+        "how are things", "status", "report", "summary", "rundown", "how is it",
+        "in here", "in there", "the room", "room like", "what s it like",
+        "comfortable", "cozy", "cosy", "nice",
+    ):
+        return "overview"
+    return None
+
+
+def _resolve_followup_intent(
+    question: str,
+    last_intent: str | None,
+) -> str | None:
+    q = normalize_transcript(question)
+    if not q:
+        return None
+
+    explicit = _explicit_followup_intent(q)
+    if explicit is not None and any(q.startswith(prefix) for prefix in _FOLLOWUP_PREFIXES):
+        return explicit
+    if explicit is not None and _mentions(q, "that", "this"):
+        return explicit
+
+    if not (
+        _mentions(q, "that", "this")
+        or q in _BARE_OK_FOLLOWUPS
+    ):
+        return None
+    if last_intent in INTENT_KEYWORDS:
+        return last_intent
+    return None
+
+
+def _remember_answer(
+    memory: ConversationMemory | None,
+    result: _AnswerResult,
+) -> None:
+    if memory is not None and result.answer != _FALLBACK:
+        memory.last_intent = result.intent
+
+
 def answer_question(
     question: str,
     snapshot: dict[str, object],
     llm_translator: object | None = None,
     ask_llm: AskLlm | None = None,
+    *,
+    memory: ConversationMemory | None = None,
 ) -> str:
     """Answer a plain-language question from the current sensor snapshot."""
-    answer = _deterministic_answer_question(question, snapshot)
-    if answer != _FALLBACK:
-        return answer
+    if memory is not None:
+        followup_intent = _resolve_followup_intent(question, memory.last_intent)
+        if followup_intent is not None:
+            followup = _answer_intent_result(followup_intent, snapshot)
+            _remember_answer(memory, followup)
+            return followup.answer
+
+    result = _deterministic_answer_result(question, snapshot)
+    if result.answer != _FALLBACK:
+        _remember_answer(memory, result)
+        return result.answer
     if llm_translator is None or not getattr(llm_translator, "enabled", False):
-        return answer
+        return result.answer
 
     intent = translate_intent(question, llm_translator, ask_llm=ask_llm)
     if intent not in INTENT_KEYWORDS:
-        return answer
+        return result.answer
 
-    translated = _deterministic_answer_question(intent, snapshot)
-    return translated if translated != _FALLBACK else answer
+    translated = _answer_intent_result(intent, snapshot)
+    if translated.answer != _FALLBACK:
+        _remember_answer(memory, translated)
+        return translated.answer
+    return result.answer
 
 
 def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -> str:
+    return _deterministic_answer_result(question, snapshot).answer
+
+
+def _deterministic_answer_result(
+    question: str,
+    snapshot: dict[str, object],
+) -> _AnswerResult:
     q = normalize_transcript(question)
 
     # Unsupported vitals first (oxygen, blood pressure, fever...): say we don't
     # measure them — routed before the room-pressure branch so "blood pressure"
     # never returns air pressure.
     if _mentions(q, *_UNSUPPORTED_VITALS):
-        return _unsupported_vitals_phrase()
+        return _AnswerResult(_unsupported_vitals_phrase())
 
     # Supported vitals next: an explicit breathing/heart/pulse question is answered
     # from the radar's bench data, routed before any other branch can capture a
     # vitals-flavoured question (even one with an incidental "still"/"moving"/
     # "warm" in it). The answer never reassures and never claims wellbeing.
     if _mentions(q, *_VITALS_WORDS):
-        return _vitals_phrase(snapshot)
+        return _AnswerResult(_vitals_phrase(snapshot))
 
     # Specific readings first, so "how warm is the room" routes to temperature
     # rather than the general overview.
@@ -461,56 +614,56 @@ def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -
         q, "temperature", "warm", "hot", "cold", "chilly", "degree", "degrees",
         fuzzy=("temperature",),
     ):
-        value = _num(snapshot, "room_temperature_c")
-        if value is not None:
-            return _temperature_phrase(value)
+        result = _answer_intent_result("temperature", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     if _mentions(q, "humid", "humidity", "muggy", "dry", "damp", fuzzy=("humidity",)):
-        value = _num(snapshot, "room_humidity_pct")
-        if value is not None:
-            return _humidity_phrase(value)
+        result = _answer_intent_result("humidity", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     if _mentions(q, "pressure", "barometer", fuzzy=("pressure",)):
-        value = _num(snapshot, "room_pressure_hpa")
-        if value is not None:
-            return _pressure_phrase(value)
+        result = _answer_intent_result("pressure", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     if _mentions(
         q, "air quality", "gas", "smell", "smelly", "voc", "stuffy", "fresh", "nappy",
         fuzzy=("quality",),
     ):
-        value = _num(snapshot, "room_gas_resistance_ohms")
-        if value is not None:
-            return _air_quality_phrase(value)
+        result = _answer_intent_result("air quality", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     if _mentions(
         q, "light", "lighting", "lit", "bright", "dark", "dim", "lux",
         fuzzy=("brightness",),
     ):
-        value = _num(snapshot, "room_illuminance_lx")
-        if value is not None:
-            return _brightness_phrase(value)
+        result = _answer_intent_result("brightness", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     if _mentions(q, "how many", "number of people", "headcount", "count"):
-        return _people_phrase(snapshot)
+        return _answer_intent_result("count", snapshot)
 
     # Motion before presence, so "is there any movement" reaches motion rather
     # than being captured by a generic presence phrase.
     if _mentions(q, "moving", "movement", "motion", "still", "activity"):
-        motion = snapshot.get("motion_detected")
-        if isinstance(motion, bool):
-            return "There's movement in the room." if motion else "The room is still."
+        result = _answer_intent_result("motion", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     if _mentions(
         q, "anyone", "anybody", "someone", "somebody", "everyone", "everybody",
         "nearby", "occupied", "empty", "who", "people", "person",
     ):
-        return _presence_phrase(snapshot)
+        return _answer_intent_result("anyone", snapshot)
 
     if _mentions(q, "how far", "distance", "close"):
-        value = _num(snapshot, "target_distance_cm")
-        if value is not None:
-            return f"The nearest person is about {value:.0f} centimetres away."
+        result = _answer_intent_result("distance", snapshot)
+        if result.answer != _FALLBACK:
+            return result
 
     # A wellbeing check about the baby (not the room) surfaces the labelled radar
     # vitals, checked after the specific room/presence/motion branches so "is the
@@ -518,7 +671,7 @@ def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -
     # answers motion. Narrow phrases only, so "is the baby asleep/crying/hungry"
     # fall through to the fallback rather than being answered with vitals numbers.
     if _mentions(q, *_BABY_VITALS_PHRASES):
-        return _vitals_phrase(snapshot)
+        return _AnswerResult(_vitals_phrase(snapshot))
 
     # General "how is the room?" — a whole-room overview, checked last so specific
     # questions win.
@@ -528,6 +681,6 @@ def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -
         "in here", "in there", "the room", "room like", "what s it like",
         "comfortable", "cozy", "cosy", "nice",
     ):
-        return _room_overview(snapshot)
+        return _answer_intent_result("overview", snapshot)
 
-    return _FALLBACK
+    return _AnswerResult(_FALLBACK)

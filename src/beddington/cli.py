@@ -16,7 +16,12 @@ from .audio import (
     RealtimeWavFileAudioSource,
     WavFileAudioSource,
 )
-from .assistant import answer_question, is_night_question, match_soothe_command
+from .assistant import (
+    ConversationMemory,
+    answer_question,
+    is_night_question,
+    match_soothe_command,
+)
 from .persona import paddingtonise
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
@@ -722,6 +727,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
     auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms)
     soothe_presets = _build_soothe_presets(config)
+    conversation_memory = ConversationMemory()
     # Warm the persona model so the first real reply isn't cold-start slow. Off the
     # critical path: a throwaway restyle whose result we discard. Harmless if the
     # model/Ollama is unavailable (paddingtonise just returns the input).
@@ -868,6 +874,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             question,
                             snapshot,
                             _assistant_llm_translator_config(config),
+                            memory=conversation_memory,
                         )
                     # Re-voice the deterministic answer as Beddington (grounded +
                     # validated; medically-sensitive vitals are spoken verbatim).
