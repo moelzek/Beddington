@@ -374,6 +374,7 @@ def test_answer_tolerates_misheard_keywords() -> None:
 
 def test_match_soothe_command() -> None:
     from beddington.assistant import match_soothe_command
+    from beddington.ears import extract_wake_question
 
     assert match_soothe_command("play white noise") == {
         "action": "play", "preset": "white_noise"
@@ -388,7 +389,14 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("soothe the baby") == {
         "action": "play", "preset": "white_noise"
     }
+    assert match_soothe_command(extract_wake_question("Hi Beddington, stop") or "") == {
+        "action": "stop"
+    }
+    assert match_soothe_command("stop") == {"action": "stop"}
+    assert match_soothe_command("stop the soothe") == {"action": "stop"}
     assert match_soothe_command("stop the sound") == {"action": "stop"}
+    assert match_soothe_command("stop the music") == {"action": "stop"}
+    assert match_soothe_command("stop the noise") == {"action": "stop"}
     assert match_soothe_command("turn off the music") == {"action": "stop"}
     # not soothe commands
     assert match_soothe_command("what is the temperature") is None

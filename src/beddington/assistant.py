@@ -281,7 +281,15 @@ def is_night_question(question: str) -> bool:
 
 
 # Soothe voice control: "play white noise", "soothe the baby", "stop the sound".
-_SOOTHE_STOP_WORDS = ("stop", "silence", "turn off", "switch off", "enough", "no more", "shush")
+_SOOTHE_STOP_WORDS = (
+    "stop",
+    "silence",
+    "turn off",
+    "switch off",
+    "enough",
+    "no more",
+    "shush",
+)
 _SOOTHE_PLAY_WORDS = ("play", "put on", "soothe", "comfort", "calm")
 
 
@@ -305,6 +313,8 @@ def match_soothe_command(question: str) -> dict[str, str] | None:
     context = preset is not None or _mentions(
         q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying", "cry"
     )
+    if q == "stop":
+        return {"action": "stop"}
     if _mentions(q, *_SOOTHE_STOP_WORDS) and context:
         return {"action": "stop"}
     if _mentions(q, *_SOOTHE_PLAY_WORDS):

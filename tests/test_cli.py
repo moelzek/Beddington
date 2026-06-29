@@ -10,6 +10,7 @@ import pytest
 
 from beddington.cli import (
     _AutoSootheWatcher,
+    _DashboardSoothe,
     _format_sensor_line,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
@@ -216,6 +217,50 @@ def _patch_auto_soothe_memory(
         "beddington.cli._build_soothe_presets",
         lambda config: config.soothe.presets,
     )
+
+
+class _FakeDashboardPlayer:
+    instances: list["_FakeDashboardPlayer"] = []
+
+    def __init__(self) -> None:
+        self.played_steps: list[SootheStepConfig] = []
+        self.stop_calls = 0
+        self.instances.append(self)
+
+    def play(self, step: SootheStepConfig) -> dict[str, object]:
+        self.played_steps.append(step)
+        return {"played": True}
+
+    def stop_all(self) -> None:
+        self.stop_calls += 1
+
+
+def test_voice_stop_command_stops_dashboard_soothe_player(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from beddington.assistant import match_soothe_command
+
+    _FakeDashboardPlayer.instances = []
+    monkeypatch.setattr(
+        "beddington.soothe.SubprocessSoothePlayer",
+        _FakeDashboardPlayer,
+    )
+    dashboard = _DashboardSoothe(
+        {"white_noise": SootheStepConfig(name="white noise")},
+        "white_noise",
+    )
+    dashboard.play("white_noise")
+
+    command = match_soothe_command("stop")
+    assert command == {"action": "stop"}
+    assert dashboard.playing() == "white_noise"
+    stopped = dashboard.stop() if command["action"] == "stop" else {}
+    safe_stop = dashboard.stop()
+
+    assert stopped == {"ok": True, "playing": None}
+    assert safe_stop == {"ok": True, "playing": None}
+    assert dashboard.playing() is None
+    assert _FakeDashboardPlayer.instances[0].stop_calls == 2
 
 
 def test_auto_soothe_watcher_uses_best_preset_when_learning_has_data(
