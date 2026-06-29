@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import os
 import subprocess
 import sys
@@ -7,8 +8,9 @@ import time
 from pathlib import Path
 
 from beddington import soothe
-from beddington.config import SootheStepConfig
-from beddington.soothe import SubprocessSoothePlayer
+from beddington.config import QuietCheckConfig, SootheConfig, SootheStepConfig
+from beddington.models import Event
+from beddington.soothe import SootheController, SubprocessSoothePlayer
 
 
 class FakeProcess:
@@ -43,6 +45,121 @@ class StubbornProcess(FakeProcess):
 
     def wait(self, timeout: float | None = None) -> int:
         raise subprocess.TimeoutExpired(self.command, timeout)
+
+
+class FakeControllerPlayer:
+    def __init__(self) -> None:
+        self.played_steps: list[SootheStepConfig] = []
+        self.pause_calls = 0
+        self.resume_steps: list[SootheStepConfig] = []
+        self.stop_calls = 0
+
+    def play(self, step: SootheStepConfig) -> dict[str, object]:
+        self.played_steps.append(step)
+        return {"played": True, "play_seconds": step.play_seconds}
+
+    def pause_for_listen(self) -> dict[str, object]:
+        self.pause_calls += 1
+        return {"paused": True}
+
+    def resume(self, step: SootheStepConfig) -> dict[str, object]:
+        self.resume_steps.append(step)
+        return {"resumed": True, "play_seconds": step.play_seconds}
+
+    def stop_all(self) -> None:
+        self.stop_calls += 1
+
+
+def test_soothe_settle_waits_for_min_play_seconds() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=60.0,
+            steps=(
+                SootheStepConfig(
+                    name="short noise",
+                    wait_seconds=10.0,
+                    play_seconds=5.0,
+                ),
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    attempted = controller.observe(0.0, 0.9, (), escalation_due=True)
+    cry_ended = Event(
+        kind="cry_ended",
+        occurred_at=started + timedelta(seconds=30.0),
+        offset_seconds=30.0,
+        score=0.1,
+        duration_seconds=30.0,
+    )
+    early = controller.observe(30.0, 0.1, (cry_ended,), escalation_due=False)
+    before_minimum = controller.observe(59.0, 0.1, (), escalation_due=False)
+    released = controller.observe(60.0, 0.1, (), escalation_due=False)
+
+    assert attempted.events[0].details["play_seconds"] == 60.0
+    assert player.played_steps[0].play_seconds == 60.0
+    assert early == soothe.SootheResult()
+    assert before_minimum == soothe.SootheResult()
+    assert player.stop_calls == 1
+    assert [event.kind for event in released.events] == ["soothe_settled"]
+    assert released.events[0].offset_seconds == 60.0
+    assert released.events[0].details == {
+        "reason": "crying_settled_before_notification"
+    }
+
+
+def test_quiet_check_resolution_waits_for_min_play_seconds() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=60.0,
+            steps=(
+                SootheStepConfig(
+                    name="short noise",
+                    wait_seconds=120.0,
+                    play_seconds=5.0,
+                ),
+            ),
+            quiet_check=QuietCheckConfig(
+                enabled=True,
+                check_interval_seconds=10.0,
+                listen_seconds=5.0,
+                required_checks=2,
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    controller.observe(10.0, 0.1, (), escalation_due=False)
+    first_quiet = controller.observe(15.0, 0.1, (), escalation_due=False)
+    controller.observe(25.0, 0.1, (), escalation_due=False)
+    second_quiet = controller.observe(30.0, 0.1, (), escalation_due=False)
+    before_minimum = controller.observe(59.0, 0.1, (), escalation_due=False)
+    released = controller.observe(60.0, 0.1, (), escalation_due=False)
+
+    assert [event.kind for event in first_quiet.events] == ["soothe_quiet_check"]
+    assert [event.kind for event in second_quiet.events] == ["soothe_quiet_check"]
+    assert second_quiet.events[0].details["consecutive_quiet"] == 2
+    assert before_minimum == soothe.SootheResult()
+    assert player.stop_calls == 1
+    assert len(player.resume_steps) == 2
+    assert [event.kind for event in released.events] == ["soothe_quiet_confirmed"]
+    assert released.events[0].offset_seconds == 60.0
+    assert released.events[0].details == {
+        "reason": "quiet_checks_passed",
+        "quiet_checks": 2,
+    }
 
 
 def test_playback_command_loops_selected_supported_backend(

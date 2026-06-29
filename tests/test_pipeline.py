@@ -226,6 +226,7 @@ def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
         soothe=SootheConfig(
             enabled=True,
             player="none",
+            min_play_seconds=0.0,
             steps=(SootheStepConfig(name="white noise", wait_seconds=10.0),),
         ),
     )
@@ -269,6 +270,7 @@ def test_quiet_check_requires_repeated_quiet_before_resolving(
         soothe=SootheConfig(
             enabled=True,
             player="none",
+            min_play_seconds=0.0,
             steps=(SootheStepConfig(name="white noise", wait_seconds=10.0),),
             quiet_check=QuietCheckConfig(
                 enabled=True,

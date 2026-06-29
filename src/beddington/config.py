@@ -136,6 +136,7 @@ class SootheConfig:
     enabled: bool = False
     player: str = "none"
     preset: str = "white_noise"
+    min_play_seconds: float = 600.0
     presets: dict[str, SootheStepConfig] = field(default_factory=dict)
     steps: tuple[SootheStepConfig, ...] = (
         SootheStepConfig(name="white noise dry run", wait_seconds=30.0),
@@ -229,6 +230,12 @@ def load_config(path: Path | None = None) -> AppConfig:
                 enabled=bool(soothe.get("enabled", config.soothe.enabled)),
                 player=str(soothe.get("player", config.soothe.player)),
                 preset=soothe_preset,
+                min_play_seconds=float(
+                    soothe.get(
+                        "min_play_seconds",
+                        config.soothe.min_play_seconds,
+                    )
+                ),
                 presets=soothe_presets,
                 steps=soothe_steps,
                 quiet_check=quiet_check,
@@ -520,6 +527,8 @@ def _validate(config: AppConfig) -> None:
             raise ValueError(f"detection.{name} must be non-negative")
     if config.soothe.player not in {"none", "auto"}:
         raise ValueError("soothe.player must be 'none' or 'auto'")
+    if config.soothe.min_play_seconds < 0:
+        raise ValueError("soothe.min_play_seconds must be non-negative")
     if config.soothe.enabled and not config.soothe.steps:
         raise ValueError(
             "soothe must include one selected preset or one step when enabled"

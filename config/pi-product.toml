@@ -28,6 +28,8 @@ enabled = true
 # "auto" plays a real local WAV via the system player (aplay/paplay on Pi OS).
 player = "auto"
 preset = "white_noise"
+# Keep soothe audio playing for at least ten minutes once triggered.
+min_play_seconds = 600.0
 
 [soothe.learn]
 # Learn which sound calms this baby. Lower min_samples so the learning visibly

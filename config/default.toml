@@ -24,6 +24,8 @@ enabled = false
 player = "none"
 # Pick exactly one preset listed below.
 preset = "white_noise"
+# Keep soothe audio playing for at least ten minutes once triggered.
+min_play_seconds = 600.0
 
 [soothe.learn]
 # Use on-device outcome counts to choose a preset. On by default — learns which

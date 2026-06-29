@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -129,6 +129,7 @@ class SootheController:
         self.player = player
         self.quiet_threshold = quiet_threshold
         self._active = False
+        self._active_started_offset: float | None = None
         self._step_index = 0
         self._current_step: SootheStepConfig | None = None
         self._next_step_offset: float | None = None
@@ -137,6 +138,7 @@ class SootheController:
         self._quiet_check_started_offset: float | None = None
         self._quiet_check_failed = False
         self._quiet_checks_passed = 0
+        self._pending_resolution: _PendingResolution | None = None
 
     def observe(
         self,
@@ -146,13 +148,18 @@ class SootheController:
         escalation_due: bool,
     ) -> SootheResult:
         events: list[Event] = []
+        events.extend(self._release_pending_resolution(offset_seconds, score))
+        if events:
+            return SootheResult(tuple(events), notify=False)
+
         if any(event.kind == "cry_ended" for event in tracker_events):
             if not self._quiet_check_enabled:
-                events.extend(self._settle_from(tracker_events))
+                events.extend(self._settle_from(tracker_events, offset_seconds))
                 return SootheResult(tuple(events), notify=False)
 
         if escalation_due and not self._active:
             self._active = True
+            self._active_started_offset = offset_seconds
             self._step_index = 0
             events.extend(self._attempt_due_steps(offset_seconds, score))
             notify = self._notification_due(offset_seconds)
@@ -178,6 +185,8 @@ class SootheController:
             self._reset()
             self.player.stop_all()
             return result
+        if not self._active:
+            return result
         event = Event(
             kind="soothe_unresolved",
             occurred_at=self._at(offset_seconds),
@@ -194,7 +203,11 @@ class SootheController:
         while self._step_index < len(self.config.steps) and (
             self._next_step_offset is None or offset_seconds >= self._next_step_offset
         ):
-            step = self.config.steps[self._step_index]
+            configured_step = self.config.steps[self._step_index]
+            step = _with_min_play_seconds(
+                configured_step,
+                self.config.min_play_seconds,
+            )
             self._current_step = step
             playback = self.player.play(step)
             events.append(
@@ -214,7 +227,7 @@ class SootheController:
                 )
             )
             self._step_index += 1
-            due_offset = offset_seconds + step.wait_seconds
+            due_offset = offset_seconds + configured_step.wait_seconds
             if self._step_index < len(self.config.steps):
                 self._next_step_offset = due_offset
             else:
@@ -225,6 +238,8 @@ class SootheController:
         return tuple(events)
 
     def _notification_due(self, offset_seconds: float) -> bool:
+        if self._pending_resolution is not None:
+            return False
         if self._notify_due_offset is None or offset_seconds < self._notify_due_offset:
             return False
         self._reset()
@@ -232,20 +247,27 @@ class SootheController:
             self.player.stop_all()
         return True
 
-    def _settle_from(self, tracker_events: tuple[Event, ...]) -> tuple[Event, ...]:
+    def _settle_from(
+        self,
+        tracker_events: tuple[Event, ...],
+        offset_seconds: float,
+    ) -> tuple[Event, ...]:
         if not self._active:
             return ()
         cry_ended = next(event for event in tracker_events if event.kind == "cry_ended")
+        if not self._minimum_elapsed(offset_seconds):
+            self._pending_resolution = _PendingResolution(
+                kind="settled",
+                duration_seconds=cry_ended.duration_seconds,
+            )
+            return ()
         self.player.stop_all()
         self._reset()
         return (
-            Event(
-                kind="soothe_settled",
-                occurred_at=cry_ended.occurred_at,
-                offset_seconds=cry_ended.offset_seconds,
-                score=cry_ended.score,
-                duration_seconds=cry_ended.duration_seconds,
-                details={"reason": "crying_settled_before_notification"},
+            self._settled_event(
+                cry_ended.offset_seconds,
+                cry_ended.score,
+                cry_ended.duration_seconds,
             ),
         )
 
@@ -340,16 +362,24 @@ class SootheController:
         self._quiet_check_failed = False
 
         if self._quiet_checks_passed >= self.config.quiet_check.required_checks:
+            if not self._minimum_elapsed(offset_seconds):
+                self._pending_resolution = _PendingResolution(
+                    kind="quiet",
+                    quiet_checks=self._quiet_checks_passed,
+                )
+                self._next_quiet_check_offset = None
+                resume = (
+                    self.player.resume(self._current_step)
+                    if self.config.quiet_check.pause_during_check and self._current_step
+                    else {"resumed": False, "reason": "pause_disabled"}
+                )
+                events[-1].details["resume"] = resume
+                return _QuietCheckResult(events=tuple(events))
             events.append(
-                Event(
-                    kind="soothe_quiet_confirmed",
-                    occurred_at=self._at(offset_seconds),
-                    offset_seconds=offset_seconds,
-                    score=score,
-                    details={
-                        "reason": "quiet_checks_passed",
-                        "quiet_checks": self._quiet_checks_passed,
-                    },
+                self._quiet_confirmed_event(
+                    offset_seconds,
+                    score,
+                    self._quiet_checks_passed,
                 )
             )
             self.player.stop_all()
@@ -373,11 +403,77 @@ class SootheController:
             offset_seconds + self.config.quiet_check.check_interval_seconds
         )
 
+    def _minimum_elapsed(self, offset_seconds: float) -> bool:
+        if self._active_started_offset is None:
+            return True
+        return (
+            offset_seconds - self._active_started_offset
+            >= self.config.min_play_seconds
+        )
+
+    def _release_pending_resolution(
+        self,
+        offset_seconds: float,
+        score: float,
+    ) -> tuple[Event, ...]:
+        pending = self._pending_resolution
+        if pending is None or not self._minimum_elapsed(offset_seconds):
+            return ()
+
+        if pending.kind == "settled":
+            event = self._settled_event(
+                offset_seconds,
+                score,
+                pending.duration_seconds,
+            )
+        else:
+            event = self._quiet_confirmed_event(
+                offset_seconds,
+                score,
+                pending.quiet_checks or self._quiet_checks_passed,
+            )
+        self.player.stop_all()
+        self._reset()
+        return (event,)
+
+    def _settled_event(
+        self,
+        offset_seconds: float,
+        score: float | None,
+        duration_seconds: float | None,
+    ) -> Event:
+        return Event(
+            kind="soothe_settled",
+            occurred_at=self._at(offset_seconds),
+            offset_seconds=offset_seconds,
+            score=score,
+            duration_seconds=duration_seconds,
+            details={"reason": "crying_settled_before_notification"},
+        )
+
+    def _quiet_confirmed_event(
+        self,
+        offset_seconds: float,
+        score: float,
+        quiet_checks: int,
+    ) -> Event:
+        return Event(
+            kind="soothe_quiet_confirmed",
+            occurred_at=self._at(offset_seconds),
+            offset_seconds=offset_seconds,
+            score=score,
+            details={
+                "reason": "quiet_checks_passed",
+                "quiet_checks": quiet_checks,
+            },
+        )
+
     def _at(self, offset_seconds: float) -> datetime:
         return self.started_at + timedelta(seconds=offset_seconds)
 
     def _reset(self) -> None:
         self._active = False
+        self._active_started_offset = None
         self._step_index = 0
         self._current_step = None
         self._next_step_offset = None
@@ -386,12 +482,20 @@ class SootheController:
         self._quiet_check_started_offset = None
         self._quiet_check_failed = False
         self._quiet_checks_passed = 0
+        self._pending_resolution = None
 
 
 @dataclass(frozen=True)
 class _QuietCheckResult:
     events: tuple[Event, ...] = ()
     resolved: bool = False
+
+
+@dataclass(frozen=True)
+class _PendingResolution:
+    kind: str
+    duration_seconds: float | None = None
+    quiet_checks: int | None = None
 
 
 def build_soothe_player(config: SootheConfig) -> SoothePlayer:
@@ -404,6 +508,15 @@ def _play_seconds(step: SootheStepConfig) -> float:
     if step.play_seconds is not None:
         return step.play_seconds
     return step.wait_seconds
+
+
+def _with_min_play_seconds(
+    step: SootheStepConfig,
+    min_play_seconds: float,
+) -> SootheStepConfig:
+    if _play_seconds(step) >= min_play_seconds:
+        return step
+    return replace(step, play_seconds=min_play_seconds)
 
 
 def _playback_command(path: Path, play_seconds: float) -> list[str] | None:

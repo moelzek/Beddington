@@ -42,6 +42,7 @@ threshold = 0.3
 enabled = true
 player = "none"
 preset = "white_noise"
+min_play_seconds = 42.5
 
 [soothe.quiet_check]
 enabled = true
@@ -104,6 +105,7 @@ gpio_pin = 4
     assert config.notifications.desktop is False
     assert config.soothe.enabled is True
     assert config.soothe.preset == "white_noise"
+    assert config.soothe.min_play_seconds == 42.5
     assert config.soothe.steps[0].name == "white noise"
     assert config.soothe.steps[0].sound_path == tmp_path / "white-noise.wav"
     assert config.soothe.steps[0].wait_seconds == 2.5
@@ -143,6 +145,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     config = load_config(Path("config/default.toml"))
 
     assert config.soothe.preset == "white_noise"
+    assert config.soothe.min_play_seconds == 600.0
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
     assert config.soothe.steps[0].play_seconds == 1800.0
@@ -165,6 +168,7 @@ def test_pi_product_config_points_at_generated_soothe_assets() -> None:
     config = load_config(Path("config/pi-product.toml"))
 
     assert config.soothe.preset == "white_noise"
+    assert config.soothe.min_play_seconds == 600.0
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
     assert config.soothe.steps[0].play_seconds == 1800.0
@@ -251,6 +255,20 @@ def test_soothe_learn_requires_positive_min_samples(tmp_path: Path) -> None:
     path.write_text("[soothe.learn]\nmin_samples = 0\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="soothe.learn.min_samples"):
+        load_config(path)
+
+
+def test_soothe_min_play_seconds_defaults_to_ten_minutes() -> None:
+    config = load_config()
+
+    assert config.soothe.min_play_seconds == 600.0
+
+
+def test_soothe_min_play_seconds_must_be_non_negative(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[soothe]\nmin_play_seconds = -1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="soothe.min_play_seconds"):
         load_config(path)
 
 
