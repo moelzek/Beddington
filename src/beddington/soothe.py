@@ -139,6 +139,7 @@ class SootheController:
         self._quiet_check_failed = False
         self._quiet_checks_passed = 0
         self._pending_resolution: _PendingResolution | None = None
+        self._crying = False
 
     def observe(
         self,
@@ -148,17 +149,22 @@ class SootheController:
         escalation_due: bool,
     ) -> SootheResult:
         events: list[Event] = []
+        self._track_cry_events(tracker_events)
         events.extend(self._release_pending_resolution(offset_seconds, score))
         if events:
             return SootheResult(tuple(events), notify=False)
 
-        if any(event.kind == "cry_ended" for event in tracker_events):
+        if (
+            not self._crying
+            and any(event.kind == "cry_ended" for event in tracker_events)
+        ):
             if not self._quiet_check_enabled:
                 events.extend(self._settle_from(tracker_events, offset_seconds))
                 return SootheResult(tuple(events), notify=False)
 
         if escalation_due and not self._active:
             self._active = True
+            self._crying = True
             self._active_started_offset = offset_seconds
             self._step_index = 0
             events.extend(self._attempt_due_steps(offset_seconds, score))
@@ -270,6 +276,13 @@ class SootheController:
                 cry_ended.duration_seconds,
             ),
         )
+
+    def _track_cry_events(self, tracker_events: tuple[Event, ...]) -> None:
+        for event in tracker_events:
+            if event.kind == "cry_started":
+                self._crying = True
+            elif event.kind == "cry_ended":
+                self._crying = False
 
     @property
     def _quiet_check_enabled(self) -> bool:
@@ -483,6 +496,7 @@ class SootheController:
         self._quiet_check_failed = False
         self._quiet_checks_passed = 0
         self._pending_resolution = None
+        self._crying = False
 
 
 @dataclass(frozen=True)

@@ -146,6 +146,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
 
     assert config.soothe.preset == "white_noise"
     assert config.soothe.min_play_seconds == 600.0
+    assert config.soothe.quiet_check.enabled is False
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
     assert config.soothe.steps[0].play_seconds == 1800.0
@@ -169,6 +170,7 @@ def test_pi_product_config_points_at_generated_soothe_assets() -> None:
 
     assert config.soothe.preset == "white_noise"
     assert config.soothe.min_play_seconds == 600.0
+    assert config.soothe.quiet_check.enabled is False
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
     assert [step.name for step in config.soothe.steps] == ["white noise"]
     assert config.soothe.steps[0].play_seconds == 1800.0

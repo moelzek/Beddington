@@ -38,9 +38,9 @@ enabled = true
 min_samples = 3
 
 [soothe.quiet_check]
-# Listen back after playing to confirm the room went quiet -> records a success
-# outcome. Short windows here so a test settles quickly.
-enabled = true
+# Keep playback continuous; cry_started/cry_ended tracker events tell us whether
+# crying is still active without pausing the sound to listen back.
+enabled = false
 check_interval_seconds = 15.0
 listen_seconds = 4.0
 required_checks = 2

@@ -17,6 +17,7 @@ from beddington.config import (
     SootheConfig,
     SootheStepConfig,
     SoundsConfig,
+    load_config,
 )
 from beddington.models import AudioWindow
 from beddington.pipeline import run_pipeline
@@ -251,6 +252,34 @@ def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
     assert result.report.events[3].details == {
         "reason": "crying_settled_before_notification"
     }
+
+
+def test_pi_product_soothe_plays_continuously_and_tracks_crying(
+    tmp_path: Path,
+) -> None:
+    scores = [0.8] * 36 + [0.1] * 4
+    notifier = FakeNotifier()
+    soothe_player = FakeSoothePlayer()
+    config = load_config(Path("config/pi-product.toml"))
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=notifier,
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+        soothe_player=soothe_player,
+    )
+
+    kinds = [event.kind for event in result.report.events]
+    assert notifier.calls == 0
+    assert soothe_player.steps == ["white noise"]
+    assert soothe_player.pause_calls == 0
+    assert "cry_started" in kinds
+    assert "cry_ended" in kinds
+    assert "soothe_quiet_check_started" not in kinds
+    assert "soothe_quiet_check" not in kinds
 
 
 def test_quiet_check_requires_repeated_quiet_before_resolving(
