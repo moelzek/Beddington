@@ -50,18 +50,18 @@ None; the cli wiring for next/volume/autosoothe is covered.
 ### VC3 — follow-up questions (light conversation memory)
 Give the assistant short multi-turn context so pronoun/topic follow-ups resolve.
 Track the last answered intent; when the next question is a bare follow-up that
-refers to it ("is that hot for a baby?", "is that ok?", "what about humidity?",
+refers to it ("is that hot for Rayan?", "is that ok?", "what about humidity?",
 "and the humidity?"), resolve it to the right intent and answer deterministically
 (reuse the existing per-intent phrases, which already include comfort notes). The
 value ALWAYS comes from the deterministic sensor read — never invented. Keep it a
 small, explicit carry-over (e.g. last intent + a follow-up detector), not a free LLM.
-Tests: ask temperature, then "is that hot for a baby?" -> returns the temperature
+Tests: ask temperature, then "is that hot for Rayan?" -> returns the temperature
 comfort answer (not the fallback); "what about humidity?" after any reading ->
 humidity answer.
 
 ### VC4 — history questions (counts + trends)
 Add deterministic intents answered from the persisted history (the night store):
-- "how many times did she cry tonight?" / "how many cries" -> count of cry episodes
+- "how many times did Rayan cry tonight?" / "how many cries" -> count of cry episodes
   from the stored events/history for the night window.
 - "is it getting colder/warmer / more humid?" / "is the temperature rising?" ->
   simple trend (compare the recent average vs earlier average from the sensor

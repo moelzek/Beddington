@@ -24,6 +24,7 @@ import json
 import re
 import urllib.request
 
+from .child_profile import CHILD_NAME
 from .config import NarratorConfig
 from .grounding import has_unsupported_additions
 from .narrator import _BANNED_NARRATION_WORDS
@@ -47,8 +48,8 @@ _SYSTEM_PROMPT = (
     "- make any medical comment.\n"
     "\n"
     "Example\n"
-    "Fact: The room is about 21 degrees Celsius, a touch warm for a baby.\n"
-    "You say: The room is about 21 degrees Celsius, a touch warm for a little one, if I may."
+    f"Fact: The room is about 21 degrees Celsius, a touch warm for {CHILD_NAME}.\n"
+    f"You say: The room is about 21 degrees Celsius, a touch warm for {CHILD_NAME}, if I may."
 )
 
 # Markers of a medically-sensitive answer (radar vitals readout / no-lock / the
@@ -143,6 +144,9 @@ def _validate(candidate: str, plain: str) -> bool:
     if _unit_set(text) != _unit_set(plain):
         return False
     if has_unsupported_additions(text, plain):
+        return False
+    child_token = f" {CHILD_NAME.lower()} "
+    if child_token in _norm(plain) and child_token not in _norm(text):
         return False
     # On-topic: the restyle must share most of the plain answer's content words,
     # so a small model can't pass with off-topic / meta text (e.g. echoing the

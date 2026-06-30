@@ -42,17 +42,25 @@ def _mock(monkeypatch: pytest.MonkeyPatch, response_text: str) -> None:
     monkeypatch.setattr("beddington.persona.urllib.request.urlopen", fake_urlopen)
 
 
-PLAIN = "The room is about 20 degrees Celsius, comfortable for a baby."
+PLAIN = "The room is about 20 degrees Celsius, comfortable for Rayan."
 
 
 def test_clean_restyle_used(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock(
         monkeypatch,
-        "If I may, the room is about 20 degrees Celsius, comfortable for a little one.",
+        "If I may, the room is about 20 degrees Celsius, comfortable for Rayan.",
     )
     out = paddingtonise(PLAIN, _cfg())
     assert "20 degrees" in out
     assert out != PLAIN  # actually restyled
+
+
+def test_dropped_child_name_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock(
+        monkeypatch,
+        "If I may, the room is about 20 degrees Celsius, comfortable for a little one.",
+    )
+    assert paddingtonise(PLAIN, _cfg()) == PLAIN
 
 
 def test_added_reassurance_word_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:

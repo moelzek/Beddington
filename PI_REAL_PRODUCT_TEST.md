@@ -74,7 +74,7 @@ beddington --config config/pi-product.toml digest
 ```
 
 You should get a plain-English recap **re-voiced by llama3.2:1b**, including the
-new trend lines, e.g. *"When white noise played, she quieted 4/5 times (best
+new trend lines, e.g. *"When white noise played, Rayan quieted 4/5 times (best
 guess)."* Confirm the model actually ran:
 
 ```bash
@@ -103,8 +103,8 @@ To hear answers spoken aloud, set up Piper and flip `voice_enabled = true` in
 
 | Feature | What you'll observe | Uses AI? |
 |---|---|---|
-| Soothe memory | after step 3, it auto-picks the sound that calmed her | no — just counts |
-| Night trends | step 4 recap shows "stirs ~Xam" / "what calmed her" (best guess) | no |
+| Soothe memory | after step 3, it auto-picks the sound that helped Rayan quiet | no — just counts |
+| Night trends | step 4 recap shows "Rayan usually stirs ~Xam" / "what helped Rayan quiet" (best guess) | no |
 | Llama translator | step 5 understands "crack a window?" | yes — llama3.2:1b |
 | Narrated recap | step 4 reads like sentences, not stats | yes — llama3.2:1b |
 

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .audio import AudioSource
+from .child_profile import CHILD_NAME
 from .config import AppConfig
 from .detector import CryDetector, dominant_baby_sound
 from .digest import build_digest
@@ -95,7 +96,7 @@ def run_pipeline(
             )
             targets = notifier.notify(
                 "Beddington",
-                message + f"(model score {score:.2f}). Please check the baby.",
+                message + f"(model score {score:.2f}). Please check {CHILD_NAME}.",
             )
             events.append(
                 Event(
@@ -166,7 +167,7 @@ def run_pipeline(
                 "Beddington",
                 (
                     "Sustained crying still detected "
-                    f"(model score {peak_score:.2f}). Please check the baby."
+                    f"(model score {peak_score:.2f}). Please check {CHILD_NAME}."
                 ),
             )
             events.append(

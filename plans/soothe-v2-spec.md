@@ -23,7 +23,7 @@ Mo's desired behaviour:
 1. **No cutting** — the soothe plays continuously.
 2. **Switch sound after 5 min still-crying** — if still crying 5 min into a sound,
    switch to the next-best sound by the learning.
-3. **Hold 10 min after she STOPS** — keep soothing until 10 minutes after the last
+3. **Hold 10 min after he STOPS** — keep soothing until 10 minutes after the last
    cry (extend while crying continues), then stop and record the outcome.
 4. **Voice stop** — "Hi Beddington, stop" (stop soothe/sound/music) stops it.
 5. Learning stays smart explore-then-settle (`best_preset` already favours

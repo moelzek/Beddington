@@ -19,6 +19,7 @@ import re
 from collections.abc import Callable, Mapping
 
 from .assistant import _air_label, _bright_label, _humid_label, _temp_label
+from .child_profile import CHILD_NAME
 
 _TREND_MIN_COUNT = 2
 _BANNED_WORDS = {
@@ -85,7 +86,10 @@ def _trend_lines(aggregates: Mapping[str, object] | None) -> list[str]:
                 hours.append((hour, count))
         if hours:
             hour, _count = min(hours, key=lambda item: (-item[1], item[0]))
-            lines.append(f"• Usually stirs around {_hour_label(hour)} (best guess).")
+            lines.append(
+                f"• {CHILD_NAME} usually stirs around {_hour_label(hour)} "
+                "(best guess)."
+            )
 
     soothe_tallies = aggregates.get("soothe_tallies")
     if isinstance(soothe_tallies, list):
@@ -109,7 +113,7 @@ def _trend_lines(aggregates: Mapping[str, object] | None) -> list[str]:
                 key=lambda item: (-(item[1] / item[2]), -item[2], item[0].lower()),
             )
             lines.append(
-                f"• When {label} played, she quieted {successes}/{attempts} times "
+                f"• When {label} played, {CHILD_NAME} quieted {successes}/{attempts} times "
                 "(best guess)."
             )
 

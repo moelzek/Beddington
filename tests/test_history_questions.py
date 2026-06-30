@@ -23,13 +23,13 @@ def test_history_cry_count_from_seeded_store(tmp_path: Path) -> None:
     store.append_cry_episode(now - 13 * 3600.0, now - 13 * 3600.0 + 60.0, 60.0)
 
     answer = answer_history_question(
-        "how many times did she cry tonight?",
+        "how many times did Rayan cry tonight?",
         store,
         window_seconds=12 * 3600,
         now_ts=now,
     )
 
-    assert answer == "I found 2 crying episodes tonight."
+    assert answer == "I found 2 crying episodes for Rayan tonight."
     store.close()
 
 

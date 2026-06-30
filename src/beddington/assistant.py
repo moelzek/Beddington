@@ -21,6 +21,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from .child_profile import CHILD_NAME
 from .ears import _edit_distance, normalize_transcript
 from .intent import INTENT_KEYWORDS, AskLlm, translate_intent
 
@@ -65,6 +66,10 @@ _UNSUPPORTED_VITALS = (
 _BABY_VITALS_PHRASES = (
     "how is the baby", "how s the baby", "the baby okay", "the baby alright",
     "the baby doing", "check the baby", "check on the baby",
+    f"how is {CHILD_NAME.lower()}", f"how s {CHILD_NAME.lower()}",
+    f"{CHILD_NAME.lower()} okay", f"{CHILD_NAME.lower()} alright",
+    f"{CHILD_NAME.lower()} doing", f"check {CHILD_NAME.lower()}",
+    f"check on {CHILD_NAME.lower()}",
 )
 
 
@@ -137,10 +142,10 @@ def _pressure_label(p: float) -> str:
 
 def _temperature_phrase(c: float) -> str:
     if 16 <= c <= 20:
-        return f"The room is about {c:.0f} degrees Celsius, comfortable for a baby."
+        return f"The room is about {c:.0f} degrees Celsius, comfortable for {CHILD_NAME}."
     side = "cool" if c < 16 else "warm"
     return (
-        f"The room is about {c:.0f} degrees Celsius, a bit {side} for a baby; "
+        f"The room is about {c:.0f} degrees Celsius, a bit {side} for {CHILD_NAME}; "
         "around 16 to 20 degrees is the usual comfortable range."
     )
 
@@ -241,7 +246,7 @@ def _vitals_phrase(snapshot: dict[str, object]) -> str:
     if resp is None and heart is None:
         return (
             "I don't have a clear reading right now. The radar only picks up "
-            "breathing and heart rate when the baby is very still and close."
+            f"breathing and heart rate when {CHILD_NAME} is very still and close."
         )
     bits: list[str] = []
     if resp is not None:
@@ -433,7 +438,7 @@ def answer_history_question(
         except Exception:
             return "I don't have enough cry history yet for tonight."
         episode = "episode" if count == 1 else "episodes"
-        return f"I found {count} crying {episode} tonight."
+        return f"I found {count} crying {episode} for {CHILD_NAME} tonight."
 
     topic = _trend_topic(q)
     if topic is None:
@@ -479,7 +484,7 @@ _SOOTHE_STOP_WORDS = (
 )
 _SOOTHE_PLAY_WORDS = ("play", "put on", "soothe", "comfort", "calm")
 _SOOTHE_GENERIC_PLAY_WORDS = ("soothe", "comfort", "calm")
-_SOOTHE_GENERIC_PLAY_CONTEXT = ("baby", "cry", "crying")
+_SOOTHE_GENERIC_PLAY_CONTEXT = ("baby", CHILD_NAME.lower(), "cry", "crying")
 _SOOTHE_AUTOSOOTHE_ON = (
     "start watching for crying",
     "start watching",

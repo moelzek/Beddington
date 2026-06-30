@@ -27,7 +27,7 @@ Tests live in `tests/`, config in `pyproject.toml` (`pythonpath = ["src"]`, `add
 
 ## Safety — banned words in any user-facing/digest text
 
-Never produce: `asleep, sleeping, slept, safe, healthy, fine, normal, well, breathing` (as a vital sign), or any SIDS/apnoea/fever wording. The night-digest test enforces this; new digest lines must pass it. Label inferences `(best guess)`. Never claim causation ("the sound calmed her") — state the observation ("when <sound> played, she quieted k/n times (best guess)").
+Never produce: `asleep, sleeping, slept, safe, healthy, fine, normal, well, breathing` (as a vital sign), or any SIDS/apnoea/fever wording. The night-digest test enforces this; new digest lines must pass it. Label inferences `(best guess)`. Never claim causation ("the sound calmed him") — state the observation ("when <sound> played, Rayan quieted k/n times (best guess)").
 
 ## Codebase map & patterns to mirror (all under src/beddington/)
 
@@ -59,10 +59,10 @@ In `src/beddington/cli.py` `_AutoSootheWatcher.feed()`, when `config.soothe.lear
 Add a nested `learn` config to `SootheConfig`: `[soothe.learn] enabled (bool, default false)`, `min_samples (int, default 10)`. Add a `_load_soothe_learn()` loader mirroring `_load_quiet_check`, wire it into `load_config`, default it in `config/default.toml` and `config/tier1-demo.toml`, and validate `min_samples >= 1` in `_validate`. Extend `tests/test_config.py`.
 
 ### U6 — cross-night aggregates
-Add a `SensorStore` query that returns, over the last N nights, (a) the typical times the baby stirs (from cry-related readings/events already stored) and (b) per-sound success tallies (reuse the U1 table). Keep it a simple deterministic aggregate (bucket by hour). Add tests with seeded rows.
+Add a `SensorStore` query that returns, over the last N nights, (a) the typical times Rayan stirs (from cry-related readings/events already stored) and (b) per-sound success tallies (reuse the U1 table). Keep it a simple deterministic aggregate (bucket by hour). Add tests with seeded rows.
 
 ### U7 — night-digest trend lines
-In `src/beddington/night_digest.py` `summarise_night`, add up to two `•` lines: "Usually stirs around ~Xam (best guess)." and "When <sound> played, she quieted k/n times (best guess)." Only emit when there is enough data; never emit a banned word; always carry `(best guess)`. Extend `tests/test_night_digest.py` (assert the lines appear with seeded data and that the banned-word guard still passes).
+In `src/beddington/night_digest.py` `summarise_night`, add up to two `•` lines: "Rayan usually stirs around ~Xam (best guess)." and "When <sound> played, Rayan quieted k/n times (best guess)." Only emit when there is enough data; never emit a banned word; always carry `(best guess)`. Extend `tests/test_night_digest.py` (assert the lines appear with seeded data and that the banned-word guard still passes).
 
 ### U8 — llama intent translator (pure-ish, fallback-safe)
 New `src/beddington/intent.py` with `translate_intent(question, config, ask_llm=None) -> str | None`: when enabled, ask the local LLM (reuse narrator's `urllib`/`/api/generate` pattern; `ask_llm` injectable for tests) to pick exactly one keyword from a fixed allow-list of existing intents; return that keyword or None. On any error / disabled / unavailable → return None. **It never returns a value, only an intent keyword.** New `tests/test_intent.py` using a fake `ask_llm` via injection/`monkeypatch`.

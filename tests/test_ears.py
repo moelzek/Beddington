@@ -50,8 +50,8 @@ def test_extract_bare_wake_returns_empty_string() -> None:
 def test_vitals_question_answered_from_radar() -> None:
     # The ears produce text only; the deterministic brain answers vitals from the
     # radar (no medical disclaimer, per Mo's preference; still never reassurance).
-    question = extract_wake_question("paddington what is her breathing rate")
-    assert question == "what is her breathing rate"
+    question = extract_wake_question("paddington what is his breathing rate")
+    assert question == "what is his breathing rate"
     answer = answer_question(question, {"radar_heart_rate_bpm": 90.0})
     assert "90" in answer
     assert "from the radar" in answer.lower()

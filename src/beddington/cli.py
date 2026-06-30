@@ -24,7 +24,7 @@ from .assistant import (
     is_night_question,
     match_soothe_command,
 )
-from .persona import paddingtonise
+from .child_profile import CHILD_NAME
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
@@ -34,6 +34,7 @@ from .llm import polish_digest
 from .models import Event, NightReport
 from .narrator import narrate, speak
 from .notifications import LocalNotifier
+from .persona import paddingtonise
 from .pipeline import run_pipeline
 from .radar_vitals import (
     RADAR_VITALS_DISCLAIMER,
@@ -418,7 +419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Bench/research only: a separate, deterministic, clearly-labelled vitals
     # readout. It is never produced by the LLM and never mixed into the recap
     # above, so the radar's breathing/heart values can never become a product
-    # claim about the baby.
+    # claim about Rayan.
     if config.sensors.radar.bench_vitals:
         vitals_summary = summarise_radar_vitals_from_events(result.report.events)
         if vitals_summary:
@@ -1049,7 +1050,7 @@ def _radar_vitals_command(args: argparse.Namespace, config: AppConfig) -> int:
     )
     print(f"Radar bench readout from {host} ({RADAR_VITALS_DISCLAIMER}).")
     print("Presence, brightness, distance, breathing and heart are raw radar data.")
-    print("None of this is a medical or safety signal or a claim about the baby.")
+    print(f"None of this is a medical or safety signal or a claim about {CHILD_NAME}.")
     reader.read()  # start the background connection
 
     samples: list[dict[str, object]] = []
