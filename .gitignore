@@ -92,6 +92,8 @@ launch-strategy.md
 camera-mount-plan.md
 hardware-guide.md
 tier2-video-gate.md
+PI_REAL_PRODUCT_TEST.md
+plans/
 Archive/
 sample_data/
 # Override the earlier !.env.example exception — keep this file local only
