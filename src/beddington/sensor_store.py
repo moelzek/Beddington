@@ -115,7 +115,7 @@ class SensorStore:
                 )
                 rows = cursor.fetchall()
                 if max_points and len(rows) > max_points:
-                    step = len(rows) // max_points
+                    step = math.ceil(len(rows) / max_points)
                     rows = rows[::step]
                 scale = float(spec.get("scale", 1))
                 out[key] = {

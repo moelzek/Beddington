@@ -76,6 +76,14 @@ class FakeControllerPlayer:
         self.stop_calls += 1
 
 
+class FailingSwitchPlayer(FakeControllerPlayer):
+    def play(self, step: SootheStepConfig) -> dict[str, object]:
+        self.played_steps.append(step)
+        if step.name == "waves":
+            return {"played": False, "reason": "backend_failed"}
+        return {"played": True, "play_seconds": step.play_seconds}
+
+
 def test_soothe_settle_waits_for_min_play_seconds() -> None:
     started = datetime(2026, 6, 29, tzinfo=UTC)
     player = FakeControllerPlayer()
@@ -274,6 +282,40 @@ def test_soothe_switches_to_best_other_preset_after_escalate() -> None:
     assert switched.events[0].details == {"from": "rain", "to": "waves"}
 
 
+def test_soothe_switch_failure_is_not_logged_as_switched() -> None:
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FailingSwitchPlayer()
+    presets = {
+        "rain": SootheStepConfig(name="rain", wait_seconds=600.0, play_seconds=600.0),
+        "waves": SootheStepConfig(name="waves", wait_seconds=600.0, play_seconds=600.0),
+    }
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            preset="rain",
+            min_play_seconds=0.0,
+            escalate_after_seconds=5.0,
+            presets=presets,
+            steps=(presets["rain"],),
+            learn=SootheLearnConfig(enabled=True, min_samples=1),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+        soothe_outcomes=((1.0, "waves", True),),
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    failed = controller.observe(5.0, 0.9, (), escalation_due=False)
+
+    assert [event.kind for event in failed.events] == ["soothe_switch_failed"]
+    assert failed.events[0].details == {
+        "from": "rain",
+        "to": "waves",
+        "playback": {"played": False, "reason": "backend_failed"},
+    }
+
+
 def test_soothe_does_not_switch_if_crying_stops_before_escalate() -> None:
     started = datetime(2026, 6, 29, tzinfo=UTC)
     player = FakeControllerPlayer()
@@ -465,6 +507,28 @@ def test_playback_command_uses_mpg123_for_mp3(
         soothe.shutil,
         "which",
         lambda command: f"/usr/bin/{command}" if command == "mpg123" else None,
+    )
+
+    assert soothe._playback_command(sound, play_seconds=0.0) == [
+        "mpg123",
+        "-q",
+        str(sound),
+    ]
+
+
+def test_playback_command_prefers_mpg123_over_pw_play_for_mp3(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "white-noise.mp3"
+    sound.write_bytes(b"ID3")
+
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}"
+        if command in {"mpg123", "pw-play", "ffplay"}
+        else None,
     )
 
     assert soothe._playback_command(sound, play_seconds=0.0) == [

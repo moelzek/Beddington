@@ -50,6 +50,8 @@ def run_pipeline(
     windows_processed = 0
     peak_score = 0.0
     sensor_sample_interval = config.sensors.sample_interval_seconds
+    if sensor_sample_interval <= 0:
+        raise ValueError("sensors.sample_interval_seconds must be positive")
     next_sensor_sample_offset = 0.0
     # Motion→listen: sharpen the sound diary while the sensors see activity. Only
     # active when we have both sensors and a sound classifier.

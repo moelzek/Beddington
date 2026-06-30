@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import threading
 import time
 from collections import deque
@@ -15,6 +16,7 @@ from .audio import (
     MicrophoneAudioSource,
     RealtimeWavFileAudioSource,
     WavFileAudioSource,
+    _put_drop_oldest,
 )
 from .assistant import (
     ConversationMemory,
@@ -72,6 +74,7 @@ _SOOTHE_AUDIO_SUFFIXES = {
 _NIGHT_DIGEST_TREND_NIGHTS = 7
 _SOOTHE_SUCCESS_EVENTS = {"soothe_quiet_confirmed", "soothe_settled"}
 _SOOTHE_FAILURE_EVENTS = {"soothe_unresolved"}
+_LIVE_VIEW_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{12,}$")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,6 +196,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--wake-word",
         action="append",
         help="Override the wake word(s); repeatable (default: Beddington)",
+    )
+    listen_assistant.add_argument(
+        "--dashboard-port",
+        type=int,
+        default=8088,
+        help="Live-view dashboard port for soothe stop/play commands",
     )
     listen_assistant.add_argument(
         "--no-speak", action="store_true", help="Print answers only, do not speak"
@@ -726,7 +735,8 @@ def _transcribe(model: object, audio: object) -> str:
         # them less ("Beddington"/"Paddington", "temperature" not "up virtual").
         initial_prompt=(
             "Hey Beddington. Hi Paddington. What is the temperature, humidity, "
-            "air pressure, brightness, or air quality? How was the night?"
+            "air pressure, brightness, or air quality? How was the night? "
+            "Hi Beddington stop. Stop the music. Play rain. Switch sound."
         ),
     )
     text = " ".join(segment.text for segment in segments).strip()
@@ -759,8 +769,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     target_rate = 16_000
     frame_ms = 30
     frame_samples = max(1, round(native_rate * frame_ms / 1000))
-    start_speech_frames = 6
-    end_silence_frames = max(1, round(500 / frame_ms))  # ~0.5 s of silence closes it
+    start_speech_frames = 3
+    end_silence_frames = max(1, round(350 / frame_ms))  # ~0.35 s closes it
     max_frames = max(1, round(8000 / frame_ms))  # 8 s hard cap
 
     print(f"Loading speech-to-text ({args.model_size})...")
@@ -786,6 +796,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         night_store = None
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
+    dashboard_port = int(getattr(args, "dashboard_port", 8088))
     auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms, debug=args.debug)
     soothe_presets = _build_soothe_presets(config)
     conversation_memory = ConversationMemory()
@@ -798,10 +809,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         except Exception:
             pass
 
-    frames_q: queue.Queue = queue.Queue()
+    frames_q: queue.Queue = queue.Queue(maxsize=max(20, round(3000 / frame_ms)))
 
     def on_audio(indata, frames, time_info, status) -> None:  # pragma: no cover
-        frames_q.put(indata[:, 0].copy())
+        _put_drop_oldest(frames_q, indata[:, 0].copy())
 
     def drain_captured_frames() -> None:
         try:
@@ -851,12 +862,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     if levels
                     else noise_floor
                 )
-                # Keep the bar above room/speaker bleed. A too-low threshold opens
-                # long noise blobs, which Whisper turns into empty text or repeated
-                # wake words; 0.032 still catches close speech on the Pi mic.
+                # Keep the bar above room/speaker bleed, but low enough for short
+                # "Hi Beddington" phrases from the Pi mic to open quickly.
                 threshold = max(
-                    0.032,
-                    min(0.060, round(max(noise_floor * 2.2, high_noise * 1.35), 4)),
+                    0.024,
+                    min(0.055, round(max(noise_floor * 2.0, high_noise * 1.25), 4)),
                 )
                 adapt = True
             print(
@@ -873,7 +883,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     continue
                 now = time.monotonic()
                 if pending_wake_until and now >= pending_wake_until:
-                    resumed = _resume_dashboard_soothe(pending_wake_soothe)
+                    resumed = _resume_dashboard_soothe(
+                        pending_wake_soothe,
+                        port=dashboard_port,
+                    )
                     if args.debug and pending_wake_soothe is not None:
                         print(f"  [debug] wake follow-up timed out; resumed soothe: {resumed}")
                     pending_wake_until = 0.0
@@ -882,7 +895,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 auto_preset = auto_watcher.feed(frame, now)
                 if auto_preset:
                     auto_result = _soothe_via_dashboard(
-                        {"action": "play", "preset": auto_preset}
+                        {"action": "play", "preset": auto_preset},
+                        port=dashboard_port,
                     )
                     print(f"  [auto-soothe] sustained crying -> {auto_result}")
                 rms = float(np.sqrt(np.mean(frame**2)))
@@ -890,7 +904,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Track the noise floor from quiet frames and keep the bar
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
-                    threshold = max(0.032, min(0.060, round(noise_floor * 2.2, 4)))
+                    threshold = max(0.024, min(0.055, round(noise_floor * 2.0, 4)))
                 is_speech = rms > threshold
                 if args.debug:
                     frames_seen += 1
@@ -907,7 +921,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     if is_speech:
                         speech_run += 1
                         if speech_run >= start_speech_frames:
-                            ducked_soothe = _duck_dashboard_soothe()
+                            ducked_soothe = _duck_dashboard_soothe(port=dashboard_port)
                             if args.debug and ducked_soothe is not None:
                                 print(
                                     "  [debug] paused soothe for voice: "
@@ -943,6 +957,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     question = extract_wake_question(text, wake_words)
                     resume_after_answer = resume_soothe
                     now = time.monotonic()
+                    from_pending_wake = False
                     if (
                         question is None
                         and pending_wake_until
@@ -951,6 +966,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         pending_text = normalize_transcript(text)
                         if pending_text:
                             question = pending_text
+                            from_pending_wake = True
                             resume_after_answer = resume_after_answer or pending_wake_soothe
                             pending_wake_until = 0.0
                             pending_wake_soothe = None
@@ -962,11 +978,18 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     if args.debug:
                         print(f'  [debug] transcript="{text}" -> question={question!r}')
                     if question is None:
-                        resumed = _resume_dashboard_soothe(resume_soothe)
+                        resumed = _resume_dashboard_soothe(
+                            resume_soothe,
+                            port=dashboard_port,
+                        )
                         if args.debug and resume_soothe is not None:
                             print(f"  [debug] resumed soothe: {resumed}")
                         continue  # no wake word — ignore silently
-                    chime = _maybe_play_wake_chime(question, config)
+                    chime = _maybe_play_wake_chime(
+                        question,
+                        config,
+                        already_acknowledged=from_pending_wake,
+                    )
                     if args.debug:
                         print(f"  [debug] chime: {chime}")
                     drain_captured_frames()
@@ -978,7 +1001,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         continue
                     llm_config = _assistant_llm_translator_config(config)
                     soothe_cmd = match_soothe_command(question, soothe_presets)
-                    if str((soothe_cmd or {}).get("action") or "") != "stop":
+                    if soothe_cmd is None:
                         llama_soothe_cmd = translate_soothe_command(
                             question,
                             llm_config,
@@ -986,10 +1009,12 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         )
                         if llama_soothe_cmd is not None:
                             soothe_cmd = llama_soothe_cmd
-                    if soothe_cmd is None:
-                        soothe_cmd = match_soothe_command(question, soothe_presets)
                     if soothe_cmd is not None:
-                        answer = _soothe_via_dashboard(soothe_cmd, config=config)
+                        answer = _soothe_via_dashboard(
+                            soothe_cmd,
+                            port=dashboard_port,
+                            config=config,
+                        )
                     elif is_history_question(question):
                         answer = answer_history_question(question, night_store) or (
                             "I don't have enough history yet to answer that."
@@ -1008,7 +1033,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Re-voice grounded sensor/action answers as Beddington.
                     # Medically-sensitive vitals are spoken verbatim, and model-led
                     # conversational replies still pass through the same speech path.
-                    answer = paddingtonise(answer, speak_config)
+                    if soothe_cmd is None:
+                        answer = paddingtonise(answer, speak_config)
                     print(f'  heard: "{question}"  ->  {answer}')
                     if not args.no_speak:
                         spoken = speak(answer, speak_config)
@@ -1018,7 +1044,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         # never transcribes its own voice as a new command.
                         drain_captured_frames()
                     if not _soothe_command_replaces_playback(soothe_cmd):
-                        resumed = _resume_dashboard_soothe(resume_after_answer)
+                        resumed = _resume_dashboard_soothe(
+                            resume_after_answer,
+                            port=dashboard_port,
+                        )
                         if args.debug and resume_after_answer is not None:
                             print(f"  [debug] resumed soothe: {resumed}")
     except KeyboardInterrupt:
@@ -1030,9 +1059,13 @@ def _maybe_play_wake_chime(
     question: str | None,
     config: AppConfig,
     player: Callable[[Path], dict[str, object]] | None = None,
+    *,
+    already_acknowledged: bool = False,
 ) -> dict[str, object]:
     if question is None:
         return {"played": False, "reason": "no_wake_word"}
+    if already_acknowledged:
+        return {"played": False, "reason": "already_acknowledged"}
     if not config.assistant.chime_enabled:
         return {"played": False, "reason": "disabled"}
     play = player or _play_audio_file_once
@@ -1410,9 +1443,12 @@ class _SensorSampler:
         self._override: str | None = None  # "day"/"night" forces; None = auto (lux)
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._closed_store = False
 
     def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
 
     def _run(self) -> None:
         from .liveview import day_night_mode
@@ -1466,6 +1502,16 @@ class _SensorSampler:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._thread is not None and self._thread is not threading.current_thread():
+            self._thread.join(timeout=self._interval + 0.5)
+        if self._store is not None and not self._closed_store:
+            close = getattr(self._store, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+            self._closed_store = True
 
 
 def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
@@ -1644,7 +1690,10 @@ def _resolve_live_view_token(explicit: str | None) -> str:
     """Return a stable access token. An explicit --token wins; otherwise reuse a
     persisted one (so the phone URL survives restarts/reboots) or create it."""
     if explicit:
-        return explicit
+        token = explicit.strip()
+        if not _LIVE_VIEW_TOKEN_RE.fullmatch(token):
+            raise SystemExit("--token must be at least 12 URL-safe characters")
+        return token
     import os
     import secrets
 
@@ -2169,6 +2218,9 @@ class _AutoSootheWatcher:
         self._last_state = -10.0
         self._last_enabled: bool | None = None
         self._state: dict[str, object] = {"enabled": False, "preset": ""}
+        self._build_failures = 0
+        self._build_retry_until = 0.0
+        self._build_error = ""
 
     def feed(self, frame: object, now: float) -> str | None:
         from .autosoothe import read_state
@@ -2195,7 +2247,7 @@ class _AutoSootheWatcher:
         if self._watcher is None:
             # Build the YAMNet detector off the audio thread so the first enable
             # never blocks the wake-word loop (load is ~1.5 s). Skip until ready.
-            self._ensure_building()
+            self._ensure_building(now)
             return None
         import numpy as np
 
@@ -2264,8 +2316,18 @@ class _AutoSootheWatcher:
                 except Exception:
                     pass
 
-    def _ensure_building(self) -> None:
+    def _ensure_building(self, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
         if self._building:
+            return
+        if now < self._build_retry_until:
+            if self._debug:
+                wait = max(0.0, self._build_retry_until - now)
+                print(
+                    "  [debug] YAMNet cry watcher unavailable; "
+                    f"retrying in {wait:.0f}s",
+                    flush=True,
+                )
             return
         self._building = True
         if self._debug:
@@ -2277,11 +2339,22 @@ class _AutoSootheWatcher:
             watcher = self._build()
             self._start = time.monotonic()
             self._watcher = watcher
+            self._build_failures = 0
+            self._build_retry_until = 0.0
+            self._build_error = ""
             if self._debug:
                 print("  [debug] YAMNet cry watcher ready", flush=True)
         except Exception as exc:
+            self._build_failures += 1
+            delay = min(300.0, 30.0 * (2 ** (self._build_failures - 1)))
+            self._build_retry_until = time.monotonic() + delay
+            self._build_error = str(exc)
             if self._debug:
-                print(f"  [debug] YAMNet cry watcher failed: {exc}", flush=True)
+                print(
+                    f"  [debug] YAMNet cry watcher failed: {exc}; "
+                    f"retrying in {delay:.0f}s",
+                    flush=True,
+                )
         finally:
             self._building = False
 

@@ -502,7 +502,21 @@ class SootheController:
             self.config.min_play_seconds,
         )
         self.player.stop_all()
-        self.player.play(step)
+        playback = self.player.play(step)
+        if not playback.get("played"):
+            return (
+                Event(
+                    kind="soothe_switch_failed",
+                    occurred_at=self._at(offset_seconds),
+                    offset_seconds=offset_seconds,
+                    score=score,
+                    details={
+                        "from": previous_key,
+                        "to": next_key,
+                        "playback": playback,
+                    },
+                ),
+            )
         self._current_step = step
         self._current_preset_key = next_key
         self._current_sound_started_offset = offset_seconds
@@ -816,8 +830,8 @@ def _single_playback_commands(path: Path) -> tuple[list[str], ...]:
     if path.suffix.lower() == ".mp3":
         return (
             *commands,
-            ["pw-play", "--volume", volume, str(path)],
             ["mpg123", "-q", str(path)],
+            ["pw-play", "--volume", volume, str(path)],
             [
                 "ffplay",
                 "-nodisp",

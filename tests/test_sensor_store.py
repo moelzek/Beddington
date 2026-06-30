@@ -38,6 +38,17 @@ def test_store_since_filters_by_time(tmp_path: Path) -> None:
     store.close()
 
 
+def test_store_series_downsamples_to_max_points(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    for index in range(401):
+        store.append(float(index), {"room_temperature_c": float(index)})
+
+    points = store.series(0.0, max_points=400)["room_temperature_c"]["points"]
+
+    assert len(points) <= 400
+    store.close()
+
+
 def test_store_persists_across_reopen(tmp_path: Path) -> None:
     db = str(tmp_path / "s.db")
     first = SensorStore(db)

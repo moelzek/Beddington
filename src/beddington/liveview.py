@@ -19,9 +19,11 @@ the viewer page, the auth check, the rpicam command) are all unit-tested.
 from __future__ import annotations
 
 import hmac
+import html
 import json
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -29,6 +31,14 @@ from urllib.parse import parse_qs, urlparse
 _SOI = b"\xff\xd8"  # JPEG start-of-image
 _EOI = b"\xff\xd9"  # JPEG end-of-image
 _BOUNDARY = b"frame"
+
+
+def _html_attr(value: object) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def _js_string_content(value: object) -> str:
+    return json.dumps(str(value))[1:-1]
 
 
 def iter_jpeg_frames(chunks: Iterable[bytes]) -> Iterator[bytes]:
@@ -386,12 +396,12 @@ def _dashboard_page(
         ]
     )
     return (
-        _DASHBOARD_TEMPLATE.replace("__TITLE__", title)
-        .replace("__STREAM__", stream_path)
-        .replace("__READINGS__", readings_path)
-        .replace("__HISTORY__", history_path)
-        .replace("__DIGEST__", digest_path)
-        .replace("__SOOTHE__", soothe_path)
+        _DASHBOARD_TEMPLATE.replace("__TITLE__", _html_attr(title))
+        .replace("__STREAM__", _html_attr(stream_path))
+        .replace("__READINGS__", _js_string_content(readings_path))
+        .replace("__HISTORY__", _js_string_content(history_path))
+        .replace("__DIGEST__", _js_string_content(digest_path))
+        .replace("__SOOTHE__", _js_string_content(soothe_path))
         .replace("__ROTATE__", str(int(rotate)))
         .replace("__SENSORS__", spec)
     )
@@ -437,7 +447,7 @@ def build_viewer_html(
         )
         script = (
             "<script>"
-            f'const RP="{readings_path}";'
+            f"const RP={json.dumps(readings_path)};"
             "function set(id,v){var e=document.getElementById(id);"
             "e.textContent=v||'';e.style.display=v?'inline':'none';}"
             "async function poll(){try{const r=await fetch(RP,{cache:'no-store'});"
@@ -450,7 +460,7 @@ def build_viewer_html(
         "<!doctype html><html><head>"
         '<meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{title}</title>"
+        f"<title>{_html_attr(title)}</title>"
         "<style>html,body{margin:0;background:#000;height:100%;}"
         "img{width:100vw;height:100vh;object-fit:contain;display:block;}"
         ".panel{position:fixed;left:0;right:0;bottom:0;display:flex;gap:16px;"
@@ -458,7 +468,7 @@ def build_viewer_html(
         "font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}"
         ".panel span{white-space:nowrap;}</style>"
         "</head><body>"
-        f'<img src="{stream_path}" alt="Live camera view">'
+        f'<img src="{_html_attr(stream_path)}" alt="Live camera view">'
         f"{overlay}{script}"
         "</body></html>"
     )
@@ -535,8 +545,12 @@ class FrameBroker:
     ) -> tuple[int, bytes | None]:
         """Block until a frame newer than ``last_seq`` is published (or timeout)."""
         with self._cond:
-            if self._seq == last_seq and not self._closed:
-                self._cond.wait(timeout)
+            deadline = time.monotonic() + timeout
+            while self._seq == last_seq and not self._closed:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return self._seq, None
+                self._cond.wait(remaining)
             if self._closed:
                 return self._seq, None
             return self._seq, self._frame

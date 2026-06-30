@@ -38,6 +38,16 @@ def test_extract_question_beddington_wake() -> None:
     assert extract_wake_question("hey beddington how warm is it") == "how warm is it"
 
 
+def test_extract_question_tolerates_split_beddington_wake() -> None:
+    # Whisper can split the name into ordinary words on the Pi mic.
+    assert extract_wake_question("hi bed in ten stop") == "stop"
+    assert extract_wake_question("hey bedding ten play rain") == "play rain"
+    assert (
+        extract_wake_question("hi bennington what is the temperature")
+        == "what is the temperature"
+    )
+
+
 def test_extract_none_without_wake_word() -> None:
     assert extract_wake_question("just two parents chatting about dinner") is None
 

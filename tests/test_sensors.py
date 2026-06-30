@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -251,6 +252,39 @@ def test_bme680_reader_stays_available_when_data_not_ready(monkeypatch) -> None:
     assert reader._available is True
 
 
+def test_bme680_reader_retries_after_transient_read_failure(monkeypatch) -> None:
+    attempts = 0
+
+    class FakeBmeSensor:
+        data = SimpleNamespace(temperature=22.0, humidity=48.0, pressure=1010.0)
+
+        def __init__(self, i2c_addr: int):
+            pass
+
+        def get_sensor_data(self) -> bool:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OSError("i2c hiccup")
+            return True
+
+    monkeypatch.setitem(
+        sys.modules,
+        "bme680",
+        SimpleNamespace(
+            I2C_ADDR_PRIMARY=0x76,
+            I2C_ADDR_SECONDARY=0x77,
+            BME680=FakeBmeSensor,
+        ),
+    )
+
+    reader = Bme680AirReader(0x76)
+
+    assert reader.read() == {}
+    assert reader._available is True
+    assert reader.read()["room_temperature_c"] == 22.0
+
+
 def test_pir_motion_reader_parses_high(monkeypatch) -> None:
     commands: list[list[str]] = []
 
@@ -290,6 +324,25 @@ def test_pir_motion_reader_degrades_when_pinctrl_missing(monkeypatch) -> None:
     assert reader.read() == {}
 
 
+def test_pir_motion_reader_retries_after_transient_timeout(monkeypatch) -> None:
+    calls = 0
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise subprocess.TimeoutExpired(["pinctrl"], timeout=1.0)
+        return SimpleNamespace(returncode=0, stdout="4: ip    pd | hi // GPIO4")
+
+    monkeypatch.setattr("beddington.sensors.subprocess.run", fake_run)
+
+    reader = PirMotionReader(gpio_pin=4)
+
+    assert reader.read() == {}
+    assert reader._available is True
+    assert reader.read() == {"motion_detected": True}
+
+
 def test_radar_field_routing_drops_vitals_and_keeps_context() -> None:
     # Vital-sign entities must never be routed into narration.
     assert _radar_field_for_name("Real-time respiratory rate") is None
@@ -299,6 +352,7 @@ def test_radar_field_routing_drops_vitals_and_keeps_context() -> None:
     assert _radar_field_for_name("Seeed MR60BHA2 Illuminance") == "room_illuminance_lx"
     assert _radar_field_for_name("Distance to detection object") == "target_distance_cm"
     assert _radar_field_for_name("Target Number") == "target_count"
+    assert _radar_field_for_name("Target Count") == "target_count"
     # The controllable RGB light is not a sensor we narrate.
     assert _radar_field_for_name("Seeed MR60BHA2 RGB Light") is None
 
@@ -313,6 +367,13 @@ def test_radar_field_routing_respects_include_flags() -> None:
 def test_coerce_radar_value() -> None:
     assert _coerce_radar_value("person_present", True) is True
     assert _coerce_radar_value("person_present", False) is False
+    assert _coerce_radar_value("person_present", "true") is True
+    assert _coerce_radar_value("person_present", "on") is True
+    assert _coerce_radar_value("person_present", "1") is True
+    assert _coerce_radar_value("person_present", "false") is False
+    assert _coerce_radar_value("person_present", "off") is False
+    assert _coerce_radar_value("person_present", "0") is False
+    assert _coerce_radar_value("person_present", "not-sure") is None
     assert _coerce_radar_value("target_count", 2.0) == 2
     assert _coerce_radar_value("room_illuminance_lx", 96.2106) == 96.2
     assert _coerce_radar_value("target_distance_cm", None) is None

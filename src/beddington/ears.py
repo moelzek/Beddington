@@ -25,6 +25,13 @@ from dataclasses import dataclass
 WAKE_WORDS: tuple[str, ...] = (
     "beddington",
     "bedington",
+    "bed in ten",
+    "bed in ton",
+    "bedding ten",
+    "bedding ton",
+    "bendington",
+    "bellington",
+    "bennington",
     "paddington",
     "badington",
     "bangton",
@@ -72,12 +79,29 @@ def extract_wake_question(
     words = normalize_transcript(transcript).split()
     if not words:
         return None
-    # The distinctive token of each wake phrase (e.g. "beddington"); a leading
-    # "hi"/"hey" before it is stripped naturally by returning the trailing words.
-    core_tokens = {phrase.split()[-1] for phrase in wake_words if phrase.split()}
+    # Match one-token wake words ("beddington") and common Whisper splits
+    # ("bed in ten"). Joining short spans keeps the function pure while catching
+    # marginal Pi-mic transcripts that split the name into ordinary words.
+    wake_targets = {
+        "".join(normalize_transcript(phrase).split())
+        for phrase in wake_words
+        if normalize_transcript(phrase)
+    }
     for index, word in enumerate(words):
-        if any(_edit_distance(word, core) <= max_edits for core in core_tokens):
-            return " ".join(words[index + 1 :]).strip()
+        span_lengths = (1, 3, 2) if len(word) <= 7 else (1,)
+        for span_length in span_lengths:
+            end = index + span_length
+            if end > len(words):
+                continue
+            candidate = "".join(words[index:end])
+            if len(candidate) < 4:
+                continue
+            allowed_edits = max_edits if span_length == 1 else max_edits + 1
+            if any(
+                _edit_distance(candidate, target) <= allowed_edits
+                for target in wake_targets
+            ):
+                return " ".join(words[end:]).strip()
     return None
 
 

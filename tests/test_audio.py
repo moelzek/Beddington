@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import wave
+import queue
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ from beddington.audio import (
     SAMPLE_RATE,
     WINDOW_SAMPLES,
     _choose_input_sample_rate,
+    _put_drop_oldest,
     iter_windows,
     read_wav,
 )
@@ -37,6 +39,17 @@ def test_short_audio_is_padded_to_one_model_window() -> None:
 
     assert len(windows) == 1
     assert windows[0].samples.shape == (WINDOW_SAMPLES,)
+
+
+def test_put_drop_oldest_bounds_audio_queue() -> None:
+    items: queue.Queue[int] = queue.Queue(maxsize=2)
+
+    _put_drop_oldest(items, 1)
+    _put_drop_oldest(items, 2)
+    _put_drop_oldest(items, 3)
+
+    assert [items.get_nowait(), items.get_nowait()] == [2, 3]
+    assert items.empty()
 
 
 def test_microphone_sample_rate_falls_back_to_device_default() -> None:

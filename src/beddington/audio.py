@@ -18,6 +18,22 @@ WINDOW_SECONDS = WINDOW_SAMPLES / SAMPLE_RATE
 HOP_SECONDS = HOP_SAMPLES / SAMPLE_RATE
 
 
+def _put_drop_oldest(target: queue.Queue, item: object) -> None:
+    try:
+        target.put_nowait(item)
+        return
+    except queue.Full:
+        pass
+    try:
+        target.get_nowait()
+    except queue.Empty:
+        pass
+    try:
+        target.put_nowait(item)
+    except queue.Full:
+        pass
+
+
 class AudioSource(Protocol):
     name: str
 
@@ -92,7 +108,9 @@ class MicrophoneAudioSource:
 
         input_sample_rate = _choose_input_sample_rate(sd, self.device)
         input_block_samples = max(1, round(HOP_SECONDS * input_sample_rate))
-        blocks: queue.Queue[np.ndarray] = queue.Queue()
+        blocks: queue.Queue[np.ndarray] = queue.Queue(
+            maxsize=max(4, round(3.0 / HOP_SECONDS))
+        )
 
         def callback(indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
             # Keep the audio thread light: just copy + enqueue the raw block.
@@ -100,7 +118,7 @@ class MicrophoneAudioSource:
             del frames, time_info
             if status:
                 print(f"Microphone warning: {status}")
-            blocks.put(indata[:, 0].astype(np.float32, copy=True))
+            _put_drop_oldest(blocks, indata[:, 0].astype(np.float32, copy=True))
 
         buffer = np.empty(0, dtype=np.float32)
         offset = 0.0

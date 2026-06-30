@@ -62,6 +62,18 @@ def test_build_viewer_html_embeds_stream() -> None:
     assert "readings.json" not in html  # no dashboard unless asked
 
 
+def test_build_viewer_html_escapes_title_and_paths() -> None:
+    html = build_viewer_html(
+        '/stream.mjpg?token=abc" onerror="alert(1)',
+        'Cot <script>alert("x")</script>',
+        readings_path='/readings.json?token=abc"bad',
+    )
+
+    assert 'Cot &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;' in html
+    assert 'token=abc&quot; onerror=&quot;alert(1)' in html
+    assert 'const RP="/readings.json?token=abc\\"bad";' in html
+
+
 def test_build_viewer_html_dashboard_overlay() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t", readings_path="/readings.json?token=t"
@@ -164,6 +176,15 @@ def test_frame_broker_delivers_and_closes() -> None:
     assert broker.closed
     _, frame = broker.wait_for_frame(seq, timeout=1.0)
     assert frame is None  # closed -> no frame
+
+
+def test_frame_broker_timeout_returns_no_frame() -> None:
+    broker = FrameBroker()
+
+    seq, frame = broker.wait_for_frame(0, timeout=0.01)
+
+    assert seq == 0
+    assert frame is None
 
 
 class _FakeFrameSource:

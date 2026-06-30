@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from beddington.config import (
     AppConfig,
@@ -57,6 +58,19 @@ class FakeNotifier:
         assert "Sustained crying" in message
         self.calls += 1
         return {"console": True, "desktop": False}
+
+
+def test_run_pipeline_rejects_non_positive_sensor_interval(tmp_path: Path) -> None:
+    config = AppConfig(sensors=SensorsConfig(sample_interval_seconds=0.0))
+
+    with pytest.raises(ValueError, match="sensors.sample_interval_seconds"):
+        run_pipeline(
+            FakeSource([]),
+            FakeDetector([]),
+            FakeNotifier(),
+            config,
+            tmp_path,
+        )
 
 
 class FakeSoothePlayer:

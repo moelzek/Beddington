@@ -11,6 +11,7 @@ import pytest
 from beddington.cli import (
     _AutoSootheWatcher,
     _DashboardSoothe,
+    _SensorSampler,
     _build_soothe_presets,
     _duck_dashboard_soothe,
     _format_sensor_line,
@@ -19,6 +20,7 @@ from beddington.cli import (
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
     _resume_dashboard_soothe,
+    _resolve_live_view_token,
     _soothe_command_replaces_playback,
     _soothe_via_dashboard,
     main,
@@ -259,6 +261,20 @@ def test_wake_chime_honours_disabled_config() -> None:
     assert played == []
 
 
+def test_wake_chime_suppressed_for_followup_after_bare_wake() -> None:
+    played: list[Path] = []
+
+    result = _maybe_play_wake_chime(
+        "stop",
+        AppConfig(assistant=AssistantConfig(chime_enabled=True)),
+        player=lambda path: played.append(path) or {"played": True},
+        already_acknowledged=True,
+    )
+
+    assert result == {"played": False, "reason": "already_acknowledged"}
+    assert played == []
+
+
 def test_bundled_chime_is_not_a_soothe_preset() -> None:
     presets = _build_soothe_presets(AppConfig())
 
@@ -298,6 +314,29 @@ class _FakeDashboardPlayer:
 
     def stop_all(self) -> None:
         self.stop_calls += 1
+
+
+def test_resolve_live_view_token_rejects_weak_explicit_token() -> None:
+    assert _resolve_live_view_token("abc_DEF-12345") == "abc_DEF-12345"
+    with pytest.raises(SystemExit, match="12 URL-safe"):
+        _resolve_live_view_token("x")
+    with pytest.raises(SystemExit, match="12 URL-safe"):
+        _resolve_live_view_token("not safe enough")
+
+
+def test_sensor_sampler_stop_closes_store() -> None:
+    class Store:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    store = Store()
+    sampler = _SensorSampler([], 1.0, store=store)
+
+    sampler.stop()
+
+    assert store.closed is True
 
 
 def test_voice_stop_command_stops_dashboard_soothe_player(
@@ -639,6 +678,44 @@ def test_auto_soothe_watcher_debug_prints_yamnet_score(
     assert "YAMNet cry score=0.720" in output
     assert "threshold=0.250" in output
     assert "trigger=True" in output
+
+
+def test_auto_soothe_watcher_backs_off_after_build_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    watcher = _AutoSootheWatcher(
+        _auto_soothe_config(False, 2),
+        16_000,
+        frame_ms=1000,
+    )
+    now = [10.0]
+
+    def fail_build() -> object:
+        raise RuntimeError("model missing")
+
+    class FakeThread:
+        def __init__(self, target, daemon: bool) -> None:
+            self.target = target
+            self.daemon = daemon
+
+        def start(self) -> None:
+            started.append(self.target)
+
+    started: list[object] = []
+    monkeypatch.setattr("beddington.cli.time.monotonic", lambda: now[0])
+    monkeypatch.setattr(watcher, "_build", fail_build)
+
+    watcher._do_build()
+
+    assert watcher._build_failures == 1
+    assert watcher._build_retry_until == 40.0
+
+    monkeypatch.setattr("beddington.cli.threading.Thread", FakeThread)
+    watcher._ensure_building(20.0)
+    assert started == []
+
+    watcher._ensure_building(40.1)
+    assert len(started) == 1
 
 
 def test_preview_soothe_dry_run_uses_selected_preset(

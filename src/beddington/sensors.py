@@ -58,7 +58,9 @@ class Bme680AirReader:
                     pass
             return reading
         except Exception:
-            self._available = False
+            # A read-time I2C hiccup should not kill the reader for the rest of
+            # the process. Drop the cached handle and retry on the next read.
+            self._sensor = None
             return {}
 
     def _open_sensor(self) -> Any | None:
@@ -103,12 +105,13 @@ class PirMotionReader:
                 timeout=self.timeout_seconds,
                 check=False,
             )
-        except (OSError, subprocess.SubprocessError):
+        except FileNotFoundError:
             self._available = False
+            return {}
+        except (OSError, subprocess.SubprocessError):
             return {}
 
         if result.returncode != 0:
-            self._available = False
             return {}
 
         value = _parse_pinctrl_level(result.stdout)
@@ -273,8 +276,26 @@ def _radar_field_for_name(
         return "room_illuminance_lx"
     if include_distance and "distance" in lowered:
         return "target_distance_cm"
-    if include_target_count and "target number" in lowered:
+    if include_target_count and (
+        "target number" in lowered or "target count" in lowered
+    ):
         return "target_count"
+    return None
+
+
+def _coerce_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if math.isnan(float(value)) or math.isinf(float(value)):
+            return None
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "on", "yes", "present", "detected"}:
+            return True
+        if lowered in {"0", "false", "off", "no", "absent", "clear", "none"}:
+            return False
     return None
 
 
@@ -282,7 +303,7 @@ def _coerce_radar_value(field: str, value: object) -> object | None:
     if value is None:
         return None
     if field == "person_present":
-        return bool(value)
+        return _coerce_bool(value)
     try:
         number = float(value)
     except (TypeError, ValueError):
