@@ -57,13 +57,13 @@ def test_temperature_followup_uses_last_intent_and_current_reading() -> None:
     assert memory.last_intent == "temperature"
 
     answer = answer_question(
-        "is that hot for a baby?",
+        "is that hot for Rayan?",
         {"room_temperature_c": 23.0},
         memory=memory,
     )
 
     assert "23 degrees" in answer
-    assert "warm for a baby" in answer
+    assert "warm for Rayan" in answer
     assert "say it again" not in answer
 
 
@@ -84,7 +84,7 @@ def test_bare_ok_followup_uses_last_intent_without_llm() -> None:
     )
 
     assert "19 degrees" in answer
-    assert "comfortable for a baby" in answer
+    assert "comfortable for Rayan" in answer
 
 
 def test_humidity_followup_switches_topic_after_any_reading() -> None:
@@ -234,7 +234,8 @@ _REASSURANCE = {
     "sleeping", "well", "good", "stable", "calm", "settled",
 }
 _REASSURANCE_PHRASES = (
-    "breathing normally", "she s okay", "all good", "perfectly fine", "doing well",
+    "breathing normally", "he s okay", "rayan is okay",
+    "all good", "perfectly fine", "doing well",
 )
 
 
@@ -262,13 +263,13 @@ def test_vitals_questions_answered_without_reassurance() -> None:
     }
     for question in (
         "how many breaths per minute",
-        "is she breathing",
-        "is she still breathing",
-        "what is her heart rate",
-        "what is her heart rate and how warm is the room",
-        "what is her pulse",
+        "is he breathing",
+        "is he still breathing",
+        "what is his heart rate",
+        "what is his heart rate and how warm is the room",
+        "what is his pulse",
         "what is the respiratory rate",
-        "how is the baby",
+        "how is Rayan",
     ):
         answer = answer_question(question, loaded)
         assert "90" in answer or "16" in answer, question  # the radar numbers
@@ -279,14 +280,14 @@ def test_vitals_questions_answered_without_reassurance() -> None:
 def test_vitals_no_lock_is_honest() -> None:
     # No vitals in the snapshot (radar not locked / bench_vitals off): say so,
     # never fabricate, never reassure.
-    answer = answer_question("what is her heart rate", {})
+    answer = answer_question("what is his heart rate", {})
     assert "don't have a clear reading" in answer.lower()
     assert _no_reassurance(answer)
 
 
 def test_vitals_surface_the_numbers() -> None:
     answer = answer_question(
-        "what is her breathing rate", {"radar_respiratory_rate": 16.0}
+        "what is his breathing rate", {"radar_respiratory_rate": 16.0}
     )
     assert "16" in answer
     assert _no_reassurance(answer)
@@ -302,8 +303,8 @@ def test_unsupported_vitals_are_declined_not_misrouted() -> None:
     }
     for question in (
         "what is the baby's blood pressure",
-        "what's her oxygen saturation",
-        "does she have a fever",
+        "what's his oxygen saturation",
+        "does he have a fever",
     ):
         answer = answer_question(question, loaded)
         assert "don't have that particular reading" in answer.lower(), question
@@ -322,7 +323,7 @@ def test_chest_movement_is_vitals_not_motion() -> None:
 
 def test_non_vitals_baby_questions_do_not_speak_vitals() -> None:
     loaded = {"radar_respiratory_rate": 16.0, "radar_heart_rate_bpm": 90.0}
-    for question in ("is the baby asleep", "why is the baby crying", "is the baby hungry"):
+    for question in ("is Rayan asleep", "why is Rayan crying", "is Rayan hungry"):
         answer = answer_question(question, loaded)
         assert "say it again" in answer, question
         assert "90" not in answer, question
@@ -448,7 +449,7 @@ def test_match_soothe_command() -> None:
         "action": "play", "preset": "soothing_music"
     }
     # generic comfort -> default preset
-    assert match_soothe_command("soothe the baby") == {
+    assert match_soothe_command("soothe Rayan") == {
         "action": "play", "preset": "white_noise"
     }
     assert match_soothe_command(extract_wake_question("Hi Beddington, stop") or "") == {
@@ -464,7 +465,7 @@ def test_match_soothe_command() -> None:
     # not soothe commands
     assert match_soothe_command("what is the temperature") is None
     assert match_soothe_command("is anyone there") is None
-    assert match_soothe_command("what's her heart rate") is None
+    assert match_soothe_command("what's his heart rate") is None
 
 
 def test_match_soothe_command_vc2_play_names_and_controls() -> None:

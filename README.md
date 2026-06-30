@@ -68,7 +68,7 @@ beddington --config config/default.toml analyze path/to/crying.wav \
 The first run downloads and verifies the official 3.9 MB YAMNet TFLite model into `~/.cache/beddington/models/`, then processes the audio locally. You should see something like:
 
 ```text
-[Beddington] Sustained crying detected (...). Please check the baby.
+[Beddington] Sustained crying detected (...). Please check Rayan.
 Beddington detected 1 sustained crying episode...
 Events: output/sample-night/events.json
 Readable log: output/sample-night/night-log.txt

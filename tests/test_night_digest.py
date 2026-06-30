@@ -47,8 +47,8 @@ def test_summarise_night_adds_trend_lines() -> None:
         },
     )
 
-    assert "• Usually stirs around ~2am (best guess)." in text
-    assert "• When rain played, she quieted 2/3 times (best guess)." in text
+    assert "• Rayan usually stirs around ~2am (best guess)." in text
+    assert "• When rain played, Rayan quieted 2/3 times (best guess)." in text
 
 
 def test_summarise_night_skips_sparse_trends() -> None:
@@ -63,8 +63,8 @@ def test_summarise_night_skips_sparse_trends() -> None:
         },
     )
 
-    assert "Usually stirs" not in text
-    assert "she quieted" not in text
+    assert "usually stirs" not in text
+    assert "Rayan quieted" not in text
 
 
 def test_summarise_night_makes_no_safety_claim() -> None:
