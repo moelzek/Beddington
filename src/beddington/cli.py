@@ -56,6 +56,17 @@ _DEFAULT_HISTORY_DB = "~/.local/share/beddington/sensors.db"
 _WAKE_CHIME_PATH = (
     Path(__file__).resolve().parents[2] / "assets" / "soothe" / "chime.wav"
 )
+_SOOTHE_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets" / "soothe"
+_SOOTHE_AUDIO_SUFFIXES = {
+    ".aif",
+    ".aiff",
+    ".flac",
+    ".m4a",
+    ".mp3",
+    ".ogg",
+    ".opus",
+    ".wav",
+}
 _NIGHT_DIGEST_TREND_NIGHTS = 7
 _SOOTHE_SUCCESS_EVENTS = {"soothe_quiet_confirmed", "soothe_settled"}
 _SOOTHE_FAILURE_EVENTS = {"soothe_unresolved"}
@@ -1420,20 +1431,46 @@ def _dashboard_fields(snapshot: dict[str, object]) -> dict[str, object]:
 
 
 def _build_soothe_presets(config: AppConfig) -> dict[str, SootheStepConfig]:
-    """Soothe presets for the dashboard: the configured ones, plus any bundled
-    assets/soothe/*.wav not already configured (so white noise/heartbeat/music
-    all appear even if only some are in the config)."""
+    """Soothe presets for the dashboard: configured ones, plus bundled audio."""
     presets: dict[str, SootheStepConfig] = dict(config.soothe.presets)
-    assets_dir = Path(__file__).resolve().parents[2] / "assets" / "soothe"
-    if assets_dir.is_dir():
-        for wav in sorted(assets_dir.glob("*.wav")):
-            if wav.name == "chime.wav":
+    catalog = _load_soothe_catalog()
+    if _SOOTHE_ASSETS_DIR.is_dir():
+        for path in sorted(_SOOTHE_ASSETS_DIR.iterdir()):
+            if (
+                path.name == "chime.wav"
+                or path.suffix.lower() not in _SOOTHE_AUDIO_SUFFIXES
+            ):
                 continue
-            if wav.stem not in presets:
-                presets[wav.stem] = SootheStepConfig(
-                    name=wav.stem.replace("_", " "), sound_path=wav
+            if path.stem not in presets:
+                entry = catalog.get(path.stem, {})
+                label = str(entry.get("label") or path.stem.replace("_", " "))
+                presets[path.stem] = SootheStepConfig(
+                    name=label, sound_path=path
                 )
     return presets
+
+
+def _load_soothe_catalog() -> dict[str, dict[str, str]]:
+    path = _SOOTHE_ASSETS_DIR / "catalog.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    sounds = raw.get("presets")
+    if not isinstance(sounds, dict):
+        return {}
+    catalog: dict[str, dict[str, str]] = {}
+    for key, value in sounds.items():
+        if not isinstance(value, dict):
+            continue
+        catalog[str(key)] = {
+            str(field): str(text)
+            for field, text in value.items()
+            if isinstance(field, str) and isinstance(text, str)
+        }
+    return catalog
 
 
 class _DashboardSoothe:
@@ -1447,12 +1484,26 @@ class _DashboardSoothe:
 
         self._player = SubprocessSoothePlayer()
         self._presets = presets
+        self._catalog = _load_soothe_catalog()
         self._default = default if default in presets else next(iter(presets), None)
         self._playing: str | None = None
         self._lock = threading.Lock()
 
     def presets(self) -> list[dict[str, str]]:
-        return [{"key": key, "label": step.name or key} for key, step in self._presets.items()]
+        result: list[dict[str, str]] = []
+        for key, step in self._presets.items():
+            entry = self._catalog.get(key, {})
+            result.append(
+                {
+                    "key": key,
+                    "label": entry.get("label") or step.name or key,
+                    "category": entry.get("category", "sounds"),
+                    "feel": entry.get("feel", ""),
+                    "use": entry.get("use", ""),
+                    "avoid": entry.get("avoid", ""),
+                }
+            )
+        return result
 
     def default(self) -> str | None:
         return self._default

@@ -275,7 +275,7 @@ def test_pi_product_soothe_plays_continuously_and_tracks_crying(
 
     kinds = [event.kind for event in result.report.events]
     assert notifier.calls == 0
-    assert soothe_player.steps == ["white noise"]
+    assert soothe_player.steps == ["White"]
     assert soothe_player.pause_calls == 0
     assert "cry_started" in kinds
     assert "cry_ended" in kinds

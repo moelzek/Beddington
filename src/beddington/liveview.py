@@ -162,6 +162,12 @@ padding:14px 18px;font-size:15px}
 .sbtn.on{background:#2F8F5B;border-color:#2F8F5B}
 .sbtn.stop{background:#5a2330;border-color:#7a3340}
 .sbtn.cry{background:#7a3340;border-color:#9a4350;font-weight:700;width:100%}
+.sgroup{width:100%;display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.shead{width:100%;color:#bcd;font-weight:700;margin:8px 0 0}
+.sitem{width:min(100%,260px);border:1px solid #252d44;border-radius:8px;padding:10px;background:#101522}
+.sitem .sbtn{width:100%;margin-bottom:8px}
+.smeta{color:#aab;font-size:12px;line-height:1.45}
+.smeta b{color:#dde}
 .note{color:#777;padding:12px 14px;font-size:12px}
 </style></head><body>
 <div id="tabs"></div>
@@ -208,9 +214,8 @@ if(d.default){const cb=document.createElement("button");cb.className="sbtn cry";
 cb.textContent="👶 Baby crying — comfort now";
 cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default))};
 box.appendChild(cb);}
-(d.presets||[]).forEach(function(p){const b=document.createElement("button");b.className="sbtn";
-b.textContent=p.label;if(d.playing===p.key)b.classList.add("on");
-b.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(p.key))};box.appendChild(b);});
+addPresetGroups(box,d.presets||[],d.playing,function(p){
+soothePost("action=play&preset="+encodeURIComponent(p.key))},"");
 const st=document.createElement("button");st.className="sbtn stop";st.textContent="⏹ Stop";
 st.onclick=function(){soothePost("action=stop")};box.appendChild(st);
 const as=d.autosoothe||{enabled:false,preset:""};
@@ -220,9 +225,28 @@ lbl.textContent="🔁 Auto-soothe: listen for crying, then play this sound autom
 const tg=document.createElement("button");tg.className="sbtn"+(as.enabled?" on":"");
 tg.textContent=as.enabled?("Auto-soothe ON — "+String(as.preset||"").replace(/_/g," ")):"Auto-soothe OFF";
 tg.onclick=function(){autoPost(as.enabled?0:1, as.preset||d.default||"")};box.appendChild(tg);
-(d.presets||[]).forEach(function(p){const pb=document.createElement("button");
-pb.className="sbtn"+(as.preset===p.key?" on":"");pb.textContent="🔁 "+p.label;
-pb.onclick=function(){autoPost(1, p.key)};box.appendChild(pb);});}
+addPresetGroups(box,d.presets||[],as.preset,function(p){autoPost(1,p.key)},"🔁 ");}
+function addPresetGroups(box,presets,activeKey,onClick,prefix){
+const grouped={sounds:[],music:[],other:[]};
+presets.forEach(function(p){const c=String(p.category||"sounds").toLowerCase();
+(grouped[c==="music"?"music":(c==="sounds"?"sounds":"other")]).push(p);});
+[["sounds","Sounds"],["music","Music"],["other","Other"]].forEach(function(pair){
+const items=grouped[pair[0]];if(!items.length)return;
+const group=document.createElement("div");group.className="sgroup";
+const head=document.createElement("div");head.className="shead";head.textContent=pair[1];group.appendChild(head);
+items.forEach(function(p){group.appendChild(presetCard(p,activeKey===p.key,onClick,prefix));});
+box.appendChild(group);});}
+function presetCard(p,isActive,onClick,prefix){
+const card=document.createElement("div");card.className="sitem";
+const b=document.createElement("button");b.className="sbtn"+(isActive?" on":"");
+b.textContent=(prefix||"")+String(p.label||p.key);b.onclick=function(){onClick(p)};
+const tip=["Feel: "+(p.feel||""),"Use: "+(p.use||""),"Avoid: "+(p.avoid||"")].join("\\n");
+b.title=tip;card.appendChild(b);
+const meta=document.createElement("div");meta.className="smeta";
+[["Feel",p.feel],["Use",p.use],["Avoid",p.avoid]].forEach(function(row){
+if(!row[1])return;const line=document.createElement("div");const strong=document.createElement("b");
+strong.textContent=row[0]+": ";line.appendChild(strong);line.appendChild(document.createTextNode(row[1]));
+meta.appendChild(line);});card.appendChild(meta);return card;}
 async function autoPost(enabled,preset){try{await fetch(SOOTHE.replace("/soothe?","/autosoothe?")
 +"&enabled="+enabled+"&preset="+encodeURIComponent(preset),{method:"POST",cache:"no-store"});}catch(e){}loadSoothe();}
 async function soothePost(qs){try{const r=await fetch(SOOTHE+"&"+qs,{method:"POST",cache:"no-store"});

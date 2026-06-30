@@ -6,14 +6,22 @@ from beddington.config import NarratorConfig, load_config
 
 
 EXPECTED_SOOTHE_PRESETS = [
+    "dreams",
+    "drums",
     "fan_hum",
     "forest_breeze",
     "heartbeat",
+    "impromptu",
+    "lofi_rain",
+    "meditation",
     "music_box_lullaby",
+    "music_chimes",
     "night_sky",
     "ocean_waves",
+    "piano",
     "pink_noise",
     "rain",
+    "river",
     "shushing",
     "soothing_music",
     "uterine_whoosh",
@@ -158,7 +166,7 @@ def test_default_config_points_at_generated_soothe_assets() -> None:
     assert config.soothe.escalate_after_seconds == 300.0
     assert config.soothe.quiet_check.enabled is False
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
-    assert [step.name for step in config.soothe.steps] == ["white noise"]
+    assert [step.name for step in config.soothe.steps] == ["White"]
     assert config.soothe.steps[0].play_seconds == 1800.0
     for preset in config.soothe.presets.values():
         assert preset.sound_path is not None
@@ -185,7 +193,7 @@ def test_pi_product_config_points_at_generated_soothe_assets() -> None:
     assert config.soothe.escalate_after_seconds == 300.0
     assert config.soothe.quiet_check.enabled is False
     assert sorted(config.soothe.presets) == EXPECTED_SOOTHE_PRESETS
-    assert [step.name for step in config.soothe.steps] == ["white noise"]
+    assert [step.name for step in config.soothe.steps] == ["White"]
     assert config.soothe.steps[0].play_seconds == 1800.0
     for preset in config.soothe.presets.values():
         assert preset.sound_path is not None

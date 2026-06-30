@@ -39,7 +39,7 @@ Beddington runs the cry detection on your own hardware, a Raspberry Pi or a lapt
 | On-device cry detection | The official YAMNet TFLite "Baby cry, infant cry" model, run locally on your audio |
 | Fewer false alarms | A confidence threshold, sustained-duration debounce, release delay, and notification cooldown you can tune |
 | Readable night log + morning digest | Plain-text `night-log.txt` and `morning-digest.txt`, plus a structured `events.json` |
-| One soothing sound, your choice | Optional Tier 1 plays a single preset (white noise, heartbeat, womb-style whoosh, or music) before it notifies you |
+| One soothing sound, your choice | Optional Tier 1 plays one selected sound or music preset before it notifies you |
 | Quiet checks while soothing | Pauses, listens, and requires repeated quiet readings before it logs that crying has stopped |
 | Laptop or Raspberry Pi | A `.wav` file or a live USB microphone runs the same detector and state machine |
 | Private by construction | Raw audio and video never leave the device; cloud features are off by default |
@@ -136,7 +136,7 @@ Everything lives in [config/default.toml](config/default.toml). The knobs that m
 
 YAMNet scores are uncalibrated model scores, not probabilities. Tune them against recordings from your own room before you rely on notifications. Soothe behaviour (`soothe.enabled`, `soothe.preset`, `soothe.player`, and the `quiet_check` block) is documented in the same file.
 
-The bundled soothe sounds in [assets/soothe/](assets/soothe/) are synthetic placeholders for testing the preset path. The womb-style file is a generated rumble, not a recording, and not evidence that any sound will settle a given baby.
+The bundled soothe sounds in [assets/soothe/](assets/soothe/) are local audition assets for testing the preset path and dashboard controls. The womb-like file is research/audition material, not medical or safety evidence, and not evidence that any sound will settle a given baby.
 
 ## What's inside
 
@@ -144,7 +144,7 @@ The bundled soothe sounds in [assets/soothe/](assets/soothe/) are synthetic plac
 src/beddington/    application code
 tests/             hardware-free tests
 config/            deterministic thresholds and feature flags
-assets/soothe/     synthetic soothe sounds for testing
+assets/soothe/     local soothe sounds and dashboard catalog
 output/            generated logs (gitignored)
 ```
 

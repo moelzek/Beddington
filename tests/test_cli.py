@@ -258,6 +258,25 @@ def test_bundled_chime_is_not_a_soothe_preset() -> None:
     presets = _build_soothe_presets(AppConfig())
 
     assert "chime" not in presets
+    assert "white_noise" in presets
+    assert "drums" in presets
+
+
+def test_dashboard_soothe_presets_include_catalog_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "beddington.soothe.SubprocessSoothePlayer",
+        _FakeDashboardPlayer,
+    )
+    dashboard = _DashboardSoothe(_build_soothe_presets(AppConfig()), "white_noise")
+    presets = {preset["key"]: preset for preset in dashboard.presets()}
+
+    assert presets["white_noise"]["label"] == "White"
+    assert presets["white_noise"]["category"] == "sounds"
+    assert presets["drums"]["label"] == "Drums"
+    assert presets["drums"]["category"] == "music"
+    assert presets["uterine_whoosh"]["avoid"] == "safety or medical framing"
 
 
 class _FakeDashboardPlayer:
@@ -472,7 +491,7 @@ def test_preview_soothe_dry_run_uses_selected_preset(
     output = capsys.readouterr().out
 
     assert result == 0
-    assert "Preset: white_noise (white noise)" in output
+    assert "Preset: white_noise (White)" in output
     assert "Dry run: dry_run" in output
 
 

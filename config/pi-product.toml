@@ -25,7 +25,7 @@ threshold = 0.2
 [soothe]
 # ON for the real product: play the chosen preset through the Pi speaker.
 enabled = true
-# "auto" plays a real local WAV via the system player (aplay/paplay on Pi OS).
+# "auto" plays a real local audio file via a compatible system player.
 player = "auto"
 preset = "white_noise"
 # Keep soothe audio playing for at least ten minutes once triggered.
@@ -52,74 +52,122 @@ pause_during_check = true
 stop_on_notify = true
 
 [soothe.presets.white_noise]
-name = "white noise"
-sound_path = "../assets/soothe/white_noise.wav"
+name = "White"
+sound_path = "../assets/soothe/white_noise.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.heartbeat]
-name = "heartbeat-style pulses"
-sound_path = "../assets/soothe/heartbeat.wav"
+name = "Pulse"
+sound_path = "../assets/soothe/heartbeat.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.soothing_music]
-name = "soothing music"
-sound_path = "../assets/soothe/soothing_music.wav"
+name = "Gentle"
+sound_path = "../assets/soothe/soothing_music.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.uterine_whoosh]
-name = "uterine whoosh"
-sound_path = "../assets/soothe/uterine_whoosh.wav"
+name = "Womb"
+sound_path = "../assets/soothe/uterine_whoosh.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.pink_noise]
-name = "pink noise"
-sound_path = "../assets/soothe/pink_noise.wav"
+name = "Pink"
+sound_path = "../assets/soothe/pink_noise.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.rain]
-name = "rain"
-sound_path = "../assets/soothe/rain.wav"
+name = "Rain"
+sound_path = "../assets/soothe/rain.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.ocean_waves]
-name = "ocean waves"
-sound_path = "../assets/soothe/ocean_waves.wav"
+name = "Ocean"
+sound_path = "../assets/soothe/ocean_waves.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.forest_breeze]
-name = "forest breeze"
-sound_path = "../assets/soothe/forest_breeze.wav"
+name = "Forest"
+sound_path = "../assets/soothe/forest_breeze.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.night_sky]
-name = "night sky"
-sound_path = "../assets/soothe/night_sky.wav"
+name = "Night"
+sound_path = "../assets/soothe/night_sky.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.music_box_lullaby]
-name = "music box lullaby"
-sound_path = "../assets/soothe/music_box_lullaby.wav"
+name = "Lullaby"
+sound_path = "../assets/soothe/music_box_lullaby.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.shushing]
-name = "shushing"
-sound_path = "../assets/soothe/shushing.wav"
+name = "Shush"
+sound_path = "../assets/soothe/shushing.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 
 [soothe.presets.fan_hum]
-name = "fan hum"
-sound_path = "../assets/soothe/fan_hum.wav"
+name = "Fan"
+sound_path = "../assets/soothe/fan_hum.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.meditation]
+name = "Meditate"
+sound_path = "../assets/soothe/meditation.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.lofi_rain]
+name = "LoFi"
+sound_path = "../assets/soothe/lofi_rain.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.music_chimes]
+name = "Chimes"
+sound_path = "../assets/soothe/music_chimes.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.piano]
+name = "Piano"
+sound_path = "../assets/soothe/piano.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.impromptu]
+name = "Reflect"
+sound_path = "../assets/soothe/impromptu.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.dreams]
+name = "Dreams"
+sound_path = "../assets/soothe/dreams.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.river]
+name = "River"
+sound_path = "../assets/soothe/river.mp3"
+wait_seconds = 1800.0
+play_seconds = 1800.0
+
+[soothe.presets.drums]
+name = "Drums"
+sound_path = "../assets/soothe/drums.mp3"
 wait_seconds = 1800.0
 play_seconds = 1800.0
 

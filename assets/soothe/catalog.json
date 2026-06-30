@@ -1,0 +1,144 @@
+{
+  "presets": {
+    "white_noise": {
+      "label": "White",
+      "category": "sounds",
+      "feel": "bright steady static",
+      "use": "maximum masking or speaker testing",
+      "avoid": "bright speakers or long loud play"
+    },
+    "pink_noise": {
+      "label": "Pink",
+      "category": "sounds",
+      "feel": "warm steady masker",
+      "use": "default all-night masking at low volume",
+      "avoid": "when you want emotional character"
+    },
+    "ocean_waves": {
+      "label": "Ocean",
+      "category": "sounds",
+      "feel": "broad cyclical surf wash",
+      "use": "nature masking and sleep beds",
+      "avoid": "if low rumble bothers the room"
+    },
+    "rain": {
+      "label": "Rain",
+      "category": "sounds",
+      "feel": "bright textured rain hiss",
+      "use": "natural masking",
+      "avoid": "if high hiss feels sharp"
+    },
+    "fan_hum": {
+      "label": "Fan",
+      "category": "sounds",
+      "feel": "plain low-mid appliance hum",
+      "use": "ordinary non-intrusive masking",
+      "avoid": "if the room already hums"
+    },
+    "forest_breeze": {
+      "label": "Forest",
+      "category": "sounds",
+      "feel": "bright living rainforest detail",
+      "use": "daytime calm and nature demos",
+      "avoid": "overnight if chirps distract"
+    },
+    "night_sky": {
+      "label": "Night",
+      "category": "sounds",
+      "feel": "quiet frogs and crickets",
+      "use": "low-volume night texture",
+      "avoid": "bright speakers or sensitive sleepers"
+    },
+    "shushing": {
+      "label": "Shush",
+      "category": "sounds",
+      "feel": "direct repeated human shh",
+      "use": "short active soothing attempts",
+      "avoid": "continuous all-night looping"
+    },
+    "heartbeat": {
+      "label": "Pulse",
+      "category": "sounds",
+      "feel": "strong repetitive low thump",
+      "use": "short rhythmic soothe experiments",
+      "avoid": "medical or reassurance wording"
+    },
+    "uterine_whoosh": {
+      "label": "Womb",
+      "category": "sounds",
+      "feel": "low organic muffled rumble",
+      "use": "research-only womb-like audition",
+      "avoid": "safety or medical framing"
+    },
+    "music_box_lullaby": {
+      "label": "Lullaby",
+      "category": "music",
+      "feel": "bright toy-like melody",
+      "use": "short bedtime cue",
+      "avoid": "all-night looping"
+    },
+    "soothing_music": {
+      "label": "Gentle",
+      "category": "music",
+      "feel": "quiet familiar piano",
+      "use": "gentle soothing-music preset",
+      "avoid": "when real masking is needed"
+    },
+    "meditation": {
+      "label": "Meditate",
+      "category": "music",
+      "feel": "warm grounded meditation bed",
+      "use": "long wind-down ambience",
+      "avoid": "pure masking"
+    },
+    "lofi_rain": {
+      "label": "LoFi",
+      "category": "music",
+      "feel": "cosy low-heavy rain groove",
+      "use": "parent-friendly evening ambience",
+      "avoid": "boomy speakers or mic-adjacent use"
+    },
+    "music_chimes": {
+      "label": "Chimes",
+      "category": "music",
+      "feel": "ritual-like sparkle over a low bed",
+      "use": "transition or acknowledgement cue",
+      "avoid": "if bells startle"
+    },
+    "piano": {
+      "label": "Piano",
+      "category": "music",
+      "feel": "very quiet gentle piano",
+      "use": "gentle parent-facing background",
+      "avoid": "household-noise masking"
+    },
+    "impromptu": {
+      "label": "Reflect",
+      "category": "music",
+      "feel": "intimate midrange piano",
+      "use": "calm with human touch",
+      "avoid": "escalated crying"
+    },
+    "dreams": {
+      "label": "Dreams",
+      "category": "music",
+      "feel": "dreamy warm new-age pad",
+      "use": "sleepy room bed",
+      "avoid": "nature-only mode"
+    },
+    "river": {
+      "label": "River",
+      "category": "music",
+      "feel": "warm slow pulsing music",
+      "use": "calm with motion",
+      "avoid": "when stillness is needed"
+    },
+    "drums": {
+      "label": "Drums",
+      "category": "music",
+      "feel": "low rounded drum pulse",
+      "use": "rhythmic demo or settling experiment",
+      "avoid": "default overnight sleep"
+    }
+  }
+}

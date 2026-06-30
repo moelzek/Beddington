@@ -185,8 +185,22 @@ class _FakeSoothe:
 
     def presets(self) -> list[dict[str, str]]:
         return [
-            {"key": "white_noise", "label": "White noise"},
-            {"key": "heartbeat", "label": "Heartbeat"},
+            {
+                "key": "white_noise",
+                "label": "White",
+                "category": "sounds",
+                "feel": "steady",
+                "use": "masking",
+                "avoid": "loud play",
+            },
+            {
+                "key": "piano",
+                "label": "Piano",
+                "category": "music",
+                "feel": "gentle",
+                "use": "background",
+                "avoid": "masking",
+            },
         ]
 
     def default(self) -> str:
@@ -331,6 +345,9 @@ def test_build_viewer_html_has_soothe_tab() -> None:
     )
     assert "Soothe" in html
     assert "soothePost" in html
+    assert "addPresetGroups" in html
+    assert "Sounds" in html
+    assert "Music" in html
     assert "/soothe?token=t" in html
 
 

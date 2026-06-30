@@ -413,6 +413,42 @@ def test_playback_command_prefers_first_supported_backend(
     assert command == ["afplay", str(sound)]
 
 
+def test_playback_command_does_not_use_aplay_for_mp3(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "white-noise.mp3"
+    sound.write_bytes(b"ID3")
+
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}" if command == "aplay" else None,
+    )
+
+    assert soothe._playback_command(sound, play_seconds=0.0) is None
+
+
+def test_playback_command_uses_mpg123_for_mp3(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "white-noise.mp3"
+    sound.write_bytes(b"ID3")
+
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}" if command == "mpg123" else None,
+    )
+
+    assert soothe._playback_command(sound, play_seconds=0.0) == [
+        "mpg123",
+        "-q",
+        str(sound),
+    ]
+
+
 def test_playback_command_loops_afplay_backend(
     monkeypatch,
     tmp_path: Path,

@@ -661,12 +661,13 @@ def _playback_command(path: Path, play_seconds: float) -> list[str] | None:
 
 
 def _single_playback_commands(path: Path) -> tuple[list[str], ...]:
-    return (
+    commands = (
         ["afplay", str(path)],
         ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
-        ["paplay", str(path)],
-        ["aplay", str(path)],
     )
+    if path.suffix.lower() == ".mp3":
+        return (*commands, ["mpg123", "-q", str(path)])
+    return (*commands, ["paplay", str(path)], ["aplay", str(path)])
 
 
 def _player_name(command: list[str]) -> str:
