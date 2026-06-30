@@ -159,12 +159,20 @@ canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-r
 .sbtns{display:flex;flex-wrap:wrap;gap:10px}
 .sbtn{background:#26304a;color:#fff;border:1px solid #3a4668;border-radius:10px;
 padding:14px 18px;font-size:15px}
+.squick{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;
+align-items:end;border:1px solid #252d44;border-radius:8px;padding:10px;background:#101522}
+.squick label{display:block;color:#bcd;font-size:12px;font-weight:700;margin:0 0 6px}
+.sselect{width:100%;background:#080b12;color:#fff;border:1px solid #3a4668;
+border-radius:8px;padding:12px;font-size:15px}
+.squick .sbtn{min-width:92px;padding:12px 14px}
 .sbtn.on{background:#2F8F5B;border-color:#2F8F5B}
 .sbtn.stop{background:#5a2330;border-color:#7a3340}
 .sbtn.cry{background:#7a3340;border-color:#9a4350;font-weight:700;width:100%}
+.sstatus{width:100%;min-height:20px;color:#9fc;font-size:13px}
 .sgroup{width:100%;display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .shead{width:100%;color:#bcd;font-weight:700;margin:8px 0 0}
-.sitem{width:min(100%,260px);border:1px solid #252d44;border-radius:8px;padding:10px;background:#101522}
+.sitem{width:min(100%,260px);border:1px solid #252d44;border-radius:8px;padding:10px;background:#101522;cursor:pointer}
+.sitem.on{border-color:#2F8F5B}
 .sitem .sbtn{width:100%;margin-bottom:8px}
 .smeta{color:#aab;font-size:12px;line-height:1.45}
 .smeta b{color:#dde}
@@ -192,7 +200,7 @@ charts.appendChild(np);}
 if(SOOTHE){tab("soothe","Soothe");
 const sp=document.createElement("div");sp.className="panel";sp.id="p-soothe";
 sp.innerHTML='<div class="chartwrap"><div class="cur" id="soothe-now">—</div>'
-+'<div id="soothe-btns" class="sbtns"></div></div>';charts.appendChild(sp);}
++'<div id="soothe-status" class="sstatus"></div><div id="soothe-btns" class="sbtns"></div></div>';charts.appendChild(sp);}
 SENSORS.forEach(function(s){tab(s.key,s.label);
 const p=document.createElement("div");p.className="panel";p.id="p-"+s.key;
 p.innerHTML='<div class="chartwrap"><div class="cur" id="cur-'+s.key+'">collecting…</div>'
@@ -210,22 +218,45 @@ if(id==="night")loadDigest();else if(id==="soothe")loadSoothe();else if(id!=="ca
 function renderSoothe(d){const now=document.getElementById("soothe-now");
 if(now)now.textContent=d.playing?("▶ playing "+String(d.playing).replace(/_/g," ")):"Nothing playing";
 const box=document.getElementById("soothe-btns");if(!box)return;box.innerHTML="";
+const presets=d.presets||[];
+addCurrentSootheControl(box,presets,d.playing);
 if(d.default){const cb=document.createElement("button");cb.className="sbtn cry";
 cb.textContent="👶 Baby crying — comfort now";
-cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default))};
+cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default),"Playing "+String(d.default).replace(/_/g," "))};
 box.appendChild(cb);}
-addPresetGroups(box,d.presets||[],d.playing,function(p){
-soothePost("action=play&preset="+encodeURIComponent(p.key))},"");
-const st=document.createElement("button");st.className="sbtn stop";st.textContent="⏹ Stop";
-st.onclick=function(){soothePost("action=stop")};box.appendChild(st);
 const as=d.autosoothe||{enabled:false,preset:""};
+addAutoSootheControl(box,presets,as,d.default||"");
 const hr=document.createElement("div");hr.style.cssText="width:100%;border-top:1px solid #333;margin:14px 0 4px";box.appendChild(hr);
-const lbl=document.createElement("div");lbl.style.cssText="width:100%;color:#bcd;font-size:13px;margin-bottom:8px";
-lbl.textContent="🔁 Auto-soothe: listen for crying, then play this sound automatically";box.appendChild(lbl);
+const lbl=document.createElement("div");lbl.style.cssText="width:100%;color:#bcd;font-size:13px;margin-bottom:2px";
+lbl.textContent="Manual sounds";box.appendChild(lbl);
+addPresetGroups(box,presets,d.playing,function(p){
+soothePost("action=play&preset="+encodeURIComponent(p.key),"Playing "+presetText(p))},"");}
+function presetText(p){return String(p.label||p.key).replace(/_/g," ");}
+function presetSelect(presets,selected,placeholder){
+const sel=document.createElement("select");sel.className="sselect";
+const first=document.createElement("option");first.value="";first.textContent=placeholder;sel.appendChild(first);
+presets.forEach(function(p){const opt=document.createElement("option");opt.value=p.key;
+opt.textContent=presetText(p)+" · "+String(p.category||"sound");opt.selected=p.key===selected;sel.appendChild(opt);});
+return sel;}
+function addCurrentSootheControl(box,presets,playing){
+const row=document.createElement("div");row.className="squick";
+const wrap=document.createElement("div");const label=document.createElement("label");
+label.textContent="Current sound";wrap.appendChild(label);
+const sel=presetSelect(presets,playing||"","Choose sound…");
+sel.onchange=function(){if(sel.value)soothePost("action=play&preset="+encodeURIComponent(sel.value),"Playing "+sel.options[sel.selectedIndex].textContent);};
+wrap.appendChild(sel);row.appendChild(wrap);
+const st=document.createElement("button");st.className="sbtn stop";st.textContent="⏹ Stop";
+st.onclick=function(){soothePost("action=stop","Stopping sound")};row.appendChild(st);box.appendChild(row);}
+function addAutoSootheControl(box,presets,as,defaultPreset){
+const row=document.createElement("div");row.className="squick";
+const wrap=document.createElement("div");const label=document.createElement("label");
+label.textContent="Cry trigger sound";wrap.appendChild(label);
+const selected=as.preset||defaultPreset||"";
+const sel=presetSelect(presets,selected,"Choose sound…");
+sel.onchange=function(){if(sel.value)autoPost(1,sel.value);};wrap.appendChild(sel);row.appendChild(wrap);
 const tg=document.createElement("button");tg.className="sbtn"+(as.enabled?" on":"");
-tg.textContent=as.enabled?("Auto-soothe ON — "+String(as.preset||"").replace(/_/g," ")):"Auto-soothe OFF";
-tg.onclick=function(){autoPost(as.enabled?0:1, as.preset||d.default||"")};box.appendChild(tg);
-addPresetGroups(box,d.presets||[],as.preset,function(p){autoPost(1,p.key)},"🔁 ");}
+tg.textContent=as.enabled?"On":"Off";
+tg.onclick=function(){autoPost(as.enabled?0:1, selected)};row.appendChild(tg);box.appendChild(row);}
 function addPresetGroups(box,presets,activeKey,onClick,prefix){
 const grouped={sounds:[],music:[],other:[]};
 presets.forEach(function(p){const c=String(p.category||"sounds").toLowerCase();
@@ -237,9 +268,11 @@ const head=document.createElement("div");head.className="shead";head.textContent
 items.forEach(function(p){group.appendChild(presetCard(p,activeKey===p.key,onClick,prefix));});
 box.appendChild(group);});}
 function presetCard(p,isActive,onClick,prefix){
-const card=document.createElement("div");card.className="sitem";
+const card=document.createElement("div");card.className="sitem"+(isActive?" on":"");
+card.tabIndex=0;card.onclick=function(){onClick(p)};
+card.onkeydown=function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();onClick(p);}};
 const b=document.createElement("button");b.className="sbtn"+(isActive?" on":"");
-b.textContent=(prefix||"")+String(p.label||p.key);b.onclick=function(){onClick(p)};
+b.textContent=(prefix||"")+String(p.label||p.key);b.onclick=function(ev){ev.stopPropagation();onClick(p)};
 const tip=["Feel: "+(p.feel||""),"Use: "+(p.use||""),"Avoid: "+(p.avoid||"")].join("\\n");
 b.title=tip;card.appendChild(b);
 const meta=document.createElement("div");meta.className="smeta";
@@ -247,10 +280,18 @@ const meta=document.createElement("div");meta.className="smeta";
 if(!row[1])return;const line=document.createElement("div");const strong=document.createElement("b");
 strong.textContent=row[0]+": ";line.appendChild(strong);line.appendChild(document.createTextNode(row[1]));
 meta.appendChild(line);});card.appendChild(meta);return card;}
-async function autoPost(enabled,preset){try{await fetch(SOOTHE.replace("/soothe?","/autosoothe?")
-+"&enabled="+enabled+"&preset="+encodeURIComponent(preset),{method:"POST",cache:"no-store"});}catch(e){}loadSoothe();}
-async function soothePost(qs){try{const r=await fetch(SOOTHE+"&"+qs,{method:"POST",cache:"no-store"});
-if(r.ok)renderSoothe(await r.json());}catch(e){}}
+function setSootheStatus(text){const s=document.getElementById("soothe-status");if(s)s.textContent=text||"";}
+async function autoPost(enabled,preset){setSootheStatus(enabled?"Auto-soothe on":"Auto-soothe off");
+try{await fetch(SOOTHE.replace("/soothe?","/autosoothe?")
++"&enabled="+enabled+"&preset="+encodeURIComponent(preset),{method:"POST",cache:"no-store"});}
+catch(e){setSootheStatus("Could not reach auto-soothe");}loadSoothe();}
+async function soothePost(qs,pending){setSootheStatus(pending||"Sending…");
+try{const r=await fetch(SOOTHE+"&"+qs,{method:"POST",cache:"no-store"});
+if(r.ok){const d=await r.json();renderSoothe(d);
+if(d.ok===false){setSootheStatus("Could not play sound"+(d.reason?": "+d.reason:""));}
+else if(d.playing){setSootheStatus("Playing "+String(d.playing).replace(/_/g," "));}
+else{setSootheStatus("Stopped");}}else{setSootheStatus("Dashboard request failed");}}
+catch(e){setSootheStatus("Could not reach player");}}
 async function loadSoothe(){try{const r=await fetch(SOOTHE.replace("/soothe?","/soothe.json?"),{cache:"no-store"});
 if(r.ok)renderSoothe(await r.json());}catch(e){}}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
@@ -274,7 +315,7 @@ try{await fetch(MODEURL+"&set="+set,{method:"POST",cache:"no-store"});}catch(e){
 try{const r=await fetch(READINGS,{cache:"no-store"});if(r.ok)renderReadings(await r.json());}catch(e){}}
 async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
 if(r.ok)renderReadings(await r.json());}catch(e){}setTimeout(poll,3000);}
-async function load(){try{const r=await fetch(HISTORY,{cache:"no-store"});
+async function load(){if(!HISTORY){draw();return;}try{const r=await fetch(HISTORY,{cache:"no-store"});
 if(r.ok)HIST=await r.json();}catch(e){}
 SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
 const c=document.getElementById("cur-"+s.key);const n=h.points.length;
@@ -368,16 +409,17 @@ def build_viewer_html(
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
-    With ``history_path`` it renders the full tabbed dashboard (a Camera tab plus
-    one graph tab per sensor, a Night tab when ``digest_path`` is given, and a
-    Soothe tab when ``soothe_path`` is given). With only ``readings_path`` it
-    renders the simple bottom-overlay. With neither it is video only.
+    With dashboard data or controls it renders the full tabbed dashboard (a
+    Camera tab plus one graph tab per sensor, a Night tab when ``digest_path`` is
+    given, and a Soothe tab when ``soothe_path`` is given). With only
+    ``readings_path`` it renders the simple bottom-overlay. With neither it is
+    video only.
     """
-    if history_path:
+    if history_path or digest_path or soothe_path:
         return _dashboard_page(
             stream_path,
             readings_path or "",
-            history_path,
+            history_path or "",
             digest_path or "",
             soothe_path or "",
             sensors,
@@ -592,6 +634,7 @@ def _make_handler(
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
             elif path in ("/readings.json", "/history.json", "/digest.json"):
@@ -607,6 +650,7 @@ def _make_handler(
                     {
                         "presets": soothe.presets(),
                         "playing": soothe.playing(),
+                        "context": soothe.context(),
                         "default": soothe.default(),
                         "autosoothe": soothe.autosoothe(),
                     }
@@ -654,14 +698,17 @@ def _make_handler(
                 query = parse_qs(urlparse(self.path).query)
                 action = (query.get("action") or [""])[0]
                 preset = (query.get("preset") or [""])[0]
+                context = (query.get("context") or [""])[0]
                 if action == "play":
-                    state = dict(soothe.play(preset))
+                    state = dict(soothe.play(preset, context))
                 elif action == "stop":
                     state = dict(soothe.stop())
                 else:
                     state = {"ok": False, "playing": soothe.playing()}
                 state["presets"] = soothe.presets()
+                state["context"] = soothe.context()
                 state["default"] = soothe.default()
+                state["autosoothe"] = soothe.autosoothe()
                 self._send_json(state)
             elif path == "/mode" and mode_setter is not None:
                 query = parse_qs(urlparse(self.path).query)

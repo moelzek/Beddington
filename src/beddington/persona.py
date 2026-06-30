@@ -2,15 +2,17 @@
 answers in character (a gentle bear in the spirit of Paddington), grounded so it
 can never change a fact.
 
-The deterministic brain (assistant.answer_question / summarise_night / the soothe
-confirmations) computes the EXACT factual sentence. ``paddingtonise`` then asks a
-local Ollama model to re-voice *that sentence* in character and VALIDATES the
-result, falling back to the plain sentence on any failure. The model is never shown
-raw sensor numbers and never decides what is true — it may only change wording.
+The deterministic sensor layer (assistant.answer_question / summarise_night)
+computes the EXACT factual sentence. ``paddingtonise`` then asks a local Ollama
+model to re-voice *that sentence* in character and VALIDATES the result, falling
+back to the plain sentence on any failure. The model is never shown raw sensor
+numbers and never decides what is true — it may only change wording.
 
 Safety properties (fail-closed):
   * medically-sensitive answers (radar breathing/heart, the unsupported-vitals
     decline) are NEVER sent to the model — they are spoken verbatim;
+  * operational confirmations may be re-voiced, but with a stricter no-new-content
+    gate so action acknowledgements cannot turn into stories or made-up facts;
   * every number is preserved (digit-run multiset), every unit is preserved, and
     no reassurance/medical word may be ADDED that was not already in the plain
     sentence; any violation -> speak the plain deterministic sentence;
@@ -61,6 +63,20 @@ _VITALS_MARKERS = (
     "breathing and heart rate",
     "heart rate",
 )
+
+# Operational surfaces. These are actions/fallbacks, not sensor facts; they may
+# carry persona, but only if the restyle adds no substantive content.
+_OPERATIONAL_PREFIXES = (
+    "playing ",
+    "okay",
+    "sorry",
+    "noted",
+)
+
+_STYLE_WORDS = frozenset({
+    "aunt", "bear", "beddington", "dear", "kindly", "lucy", "marmalade",
+    "may", "please", "ready", "rather",
+})
 
 # Reassurance / medical words that must never be ADDED by the restyle. The plain
 # answer legitimately contains some (e.g. "normal", "comfortable"), so the gate
@@ -128,6 +144,17 @@ def is_medically_sensitive(plain: str) -> bool:
     return any(marker in low for marker in _VITALS_MARKERS)
 
 
+def is_operational_answer(plain: str) -> bool:
+    """True for action/fallback acknowledgements that need stricter grounding."""
+    low = plain.strip().lower()
+    return any(low.startswith(prefix) for prefix in _OPERATIONAL_PREFIXES)
+
+
+def _adds_operational_content(candidate: str, plain: str) -> bool:
+    added = _content_words(candidate) - _content_words(plain) - _STYLE_WORDS
+    return bool(added)
+
+
 def _validate(candidate: str, plain: str) -> bool:
     """Fail-closed gate: candidate may differ from plain only in wording."""
     text = candidate.strip()
@@ -166,6 +193,8 @@ def _validate(candidate: str, plain: str) -> bool:
         token = f" {phrase} "
         if token in cand_norm and token not in plain_norm:
             return False
+    if is_operational_answer(plain) and _adds_operational_content(candidate, plain):
+        return False
     return True
 
 
@@ -204,7 +233,7 @@ def paddingtonise(plain_answer: str, config: NarratorConfig) -> str:
     Returns the plain answer verbatim when persona is off, the answer is
     medically sensitive (vitals), the model is unreachable, or the restyle fails
     validation — so the spoken content is never less accurate than the
-    deterministic brain's.
+    deterministic sensor layer's.
     """
     plain = plain_answer or ""
     if not plain.strip():

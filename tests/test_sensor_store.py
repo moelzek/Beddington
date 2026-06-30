@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import time
 from pathlib import Path
 
@@ -68,11 +69,40 @@ def test_store_ignores_non_numeric_and_nan(tmp_path: Path) -> None:
 def test_store_soothe_outcomes_roundtrip(tmp_path: Path) -> None:
     store = SensorStore(str(tmp_path / "s.db"))
     store.append_soothe_outcome(100.0, "rain", True)
-    store.append_soothe_outcome(200.0, "pink-noise", False)
+    store.append_soothe_outcome(200.0, "pink-noise", False, "sleep")
     assert store.outcomes_since(150.0) == [(200.0, "pink-noise", False)]
     assert store.outcomes_since(0.0) == [
         (100.0, "rain", True),
         (200.0, "pink-noise", False),
+    ]
+    assert store.outcomes_since_context(0.0, "sleep") == [
+        (200.0, "pink-noise", False)
+    ]
+    assert store.outcomes_since_context(0.0, "feeding") == []
+    store.close()
+
+
+def test_store_migrates_old_soothe_outcomes_without_context(tmp_path: Path) -> None:
+    db_path = tmp_path / "old.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE soothe_outcomes"
+        " (ts REAL NOT NULL, sound_name TEXT NOT NULL, success INTEGER NOT NULL)"
+    )
+    conn.execute("INSERT INTO soothe_outcomes VALUES (100.0, 'rain', 1)")
+    conn.commit()
+    conn.close()
+
+    store = SensorStore(str(db_path))
+    store.append_soothe_outcome(200.0, "piano", False, "feeding")
+
+    assert store.outcomes_since(0.0) == [
+        (100.0, "rain", True),
+        (200.0, "piano", False),
+    ]
+    assert store.outcomes_since_context(0.0, "") == [(100.0, "rain", True)]
+    assert store.outcomes_since_context(0.0, "feeding") == [
+        (200.0, "piano", False)
     ]
     store.close()
 

@@ -22,8 +22,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .child_profile import CHILD_NAME
+from .context import describe_presence_scene
 from .ears import _edit_distance, normalize_transcript
-from .intent import INTENT_KEYWORDS, AskLlm, translate_intent
+from .intent import INTENT_KEYWORDS, AskLlm, lead_response, translate_intent
 
 _FALLBACK = "Sorry, I didn't catch that. Please say it again."
 
@@ -287,6 +288,44 @@ def _room_overview(snapshot: dict[str, object]) -> str:
     return "Here's the room: " + "; ".join(parts) + "."
 
 
+def _scene_phrase(snapshot: dict[str, object]) -> str:
+    """Describe only local derived room readings, never raw video or object labels."""
+    parts: list[str] = []
+    scene = describe_presence_scene(
+        snapshot.get("person_present"), snapshot.get("motion_detected")
+    )
+    if scene is not None:
+        parts.append(scene)
+
+    count = _num(snapshot, "target_count")
+    if count is not None:
+        n = round(count)
+        if n <= 0:
+            parts.append("no person target counted")
+        elif n == 1:
+            parts.append("about one person target counted")
+        else:
+            parts.append(f"about {n} person targets counted")
+
+    distance = _num(snapshot, "target_distance_cm")
+    if distance is not None:
+        parts.append(f"nearest target about {distance:.0f} centimetres away")
+
+    lux = _num(snapshot, "room_illuminance_lx")
+    if lux is not None:
+        parts.append(f"the room is {_bright_label(lux)}")
+
+    if not parts:
+        return (
+            "I don't have a camera description or room reading to describe right now."
+        )
+    return (
+        "From local room readings, "
+        + "; ".join(parts)
+        + "."
+    )
+
+
 # Questions that ask for the night recap rather than a current reading. The
 # listen loop answers these from the persisted sensor history (night_digest.py),
 # not the live snapshot.
@@ -482,7 +521,10 @@ _SOOTHE_STOP_WORDS = (
     "no more",
     "shush",
 )
-_SOOTHE_PLAY_WORDS = ("play", "put on", "soothe", "comfort", "calm")
+_SOOTHE_PLAY_WORDS = (
+    "play", "put on", "soothe", "comfort", "calm", "relax", "relaxing",
+    "flame",  # common Whisper slip for "play" in "play music" on the Pi mic
+)
 _SOOTHE_GENERIC_PLAY_WORDS = ("soothe", "comfort", "calm")
 _SOOTHE_GENERIC_PLAY_CONTEXT = ("baby", CHILD_NAME.lower(), "cry", "crying")
 _SOOTHE_AUTOSOOTHE_ON = (
@@ -502,6 +544,41 @@ _SOOTHE_AUTOSOOTHE_OFF = (
 _SOOTHE_NEXT_WORDS = ("next", "switch", "try another")
 _SOOTHE_VOLUME_UP = ("louder",)
 _SOOTHE_VOLUME_DOWN = ("quieter",)
+_SOOTHE_CONTEXTS: dict[str, tuple[str, ...]] = {
+    "sleep": (
+        "for sleep", "to sleep", "for bedtime", "for bed time", "for nap",
+        "for naptime", "for night", "for overnight",
+    ),
+    "feeding": (
+        "for feed", "for feeding", "during feeding", "while feeding", "for milk",
+        "for bottle", "for nursing", "for breastfeeding", "for breast feeding",
+    ),
+}
+_SOOTHE_SUCCESS_FEEDBACK = (
+    "that worked", "that helped", "that was good", "good one", "she liked that",
+    "he liked that",
+)
+_SOOTHE_FAILURE_FEEDBACK = (
+    "that did not work", "that didn t work", "that didn't work", "did not help",
+    "didn t help", "didn't help", "not that one", "that was not good",
+)
+
+
+def _soothe_context_from(q: str) -> str | None:
+    for context, phrases in _SOOTHE_CONTEXTS.items():
+        if _mentions(q, *phrases):
+            return context
+    return None
+
+
+def _broad_soothe_request(q: str) -> dict[str, str] | None:
+    if _mentions(q, "music") and not _mentions(q, "music box", "lullaby", "soothing music"):
+        return {"category": "music"}
+    if _mentions(q, "noise", "sound", "sounds") and not _mentions(q, "white noise", "pink noise"):
+        return {"category": "sounds"}
+    if _mentions(q, "relax", "relaxing", "calm", "calming"):
+        return {"mood": "relaxing"}
+    return None
 
 
 def _soothe_display_names(
@@ -566,12 +643,27 @@ def match_soothe_command(
     """Detect a soothe play/stop command, or None. Returns e.g.
     {"action": "play", "preset": "white_noise"} or {"action": "stop"}."""
     q = normalize_transcript(question)
+    soothe_context = _soothe_context_from(q)
+    if _mentions(q, *_SOOTHE_SUCCESS_FEEDBACK):
+        command: dict[str, object] = {"action": "feedback", "success": True}
+        if soothe_context is not None:
+            command["context"] = soothe_context
+        return command
+    if _mentions(q, *_SOOTHE_FAILURE_FEEDBACK):
+        command = {"action": "feedback", "success": False}
+        if soothe_context is not None:
+            command["context"] = soothe_context
+        return command
+
     if _mentions(q, *_SOOTHE_AUTOSOOTHE_ON):
         return {"action": "autosoothe", "enabled": True}
     if _mentions(q, *_SOOTHE_AUTOSOOTHE_OFF):
         return {"action": "autosoothe", "enabled": False}
 
     preset = _soothe_preset_from(q, presets)
+    broad = _broad_soothe_request(q)
+    if soothe_context is not None and broad is not None:
+        return {"action": "play_best", "context": soothe_context, **broad}
     context = preset is not None or _mentions(
         q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying", "cry"
     )
@@ -587,11 +679,22 @@ def match_soothe_command(
         return {"action": "volume", "dir": "down"}
     if _mentions(q, *_SOOTHE_PLAY_WORDS):
         if preset is not None:
-            return {"action": "play", "preset": preset}
+            command = {"action": "play", "preset": preset}
+            if soothe_context is not None:
+                command["context"] = soothe_context
+            return command
         if _mentions(q, *_SOOTHE_GENERIC_PLAY_WORDS) and _mentions(
             q, *_SOOTHE_GENERIC_PLAY_CONTEXT
         ):
-            return {"action": "play", "preset": "white_noise"}
+            command = {"action": "play", "preset": "white_noise"}
+            if soothe_context is not None:
+                command["context"] = soothe_context
+            return command
+        if broad is not None:
+            command = {"action": "play_best", **broad}
+            if soothe_context is not None:
+                command["context"] = soothe_context
+            return command
     return None
 
 
@@ -634,7 +737,30 @@ def _answer_intent_result(intent: str, snapshot: dict[str, object]) -> _AnswerRe
             )
     if intent == "overview":
         return _AnswerResult(_room_overview(snapshot), intent)
+    if intent == "scene":
+        return _AnswerResult(_scene_phrase(snapshot), intent)
     return _AnswerResult(_FALLBACK)
+
+
+_MISSING_READING_LABELS = {
+    "temperature": "temperature",
+    "humidity": "humidity",
+    "pressure": "air pressure",
+    "air quality": "air quality",
+    "brightness": "brightness",
+    "motion": "movement",
+    "distance": "distance",
+}
+
+
+def _answer_or_missing_intent(intent: str, snapshot: dict[str, object]) -> _AnswerResult:
+    result = _answer_intent_result(intent, snapshot)
+    if result.answer != _FALLBACK:
+        return result
+    label = _MISSING_READING_LABELS.get(intent)
+    if label is None:
+        return result
+    return _AnswerResult(f"I don't have a {label} reading right now.", intent)
 
 
 _FOLLOWUP_PREFIXES = ("what about ", "how about ", "and ")
@@ -726,7 +852,7 @@ def answer_question(
     if memory is not None:
         followup_intent = _resolve_followup_intent(question, memory.last_intent)
         if followup_intent is not None:
-            followup = _answer_intent_result(followup_intent, snapshot)
+            followup = _answer_or_missing_intent(followup_intent, snapshot)
             _remember_answer(memory, followup)
             return followup.answer
 
@@ -739,13 +865,13 @@ def answer_question(
 
     intent = translate_intent(question, llm_translator, ask_llm=ask_llm)
     if intent not in INTENT_KEYWORDS:
-        return result.answer
+        return lead_response(question, llm_translator, ask_llm=ask_llm)
 
-    translated = _answer_intent_result(intent, snapshot)
+    translated = _answer_or_missing_intent(intent, snapshot)
     if translated.answer != _FALLBACK:
         _remember_answer(memory, translated)
         return translated.answer
-    return result.answer
+    return lead_response(question, llm_translator, ask_llm=ask_llm)
 
 
 def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -> str:
@@ -777,35 +903,25 @@ def _deterministic_answer_result(
         q, "temperature", "warm", "hot", "cold", "chilly", "degree", "degrees",
         fuzzy=("temperature",),
     ):
-        result = _answer_intent_result("temperature", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("temperature", snapshot)
 
     if _mentions(q, "humid", "humidity", "muggy", "dry", "damp", fuzzy=("humidity",)):
-        result = _answer_intent_result("humidity", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("humidity", snapshot)
 
     if _mentions(q, "pressure", "barometer", fuzzy=("pressure",)):
-        result = _answer_intent_result("pressure", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("pressure", snapshot)
 
     if _mentions(
         q, "air quality", "gas", "smell", "smelly", "voc", "stuffy", "fresh", "nappy",
         fuzzy=("quality",),
     ):
-        result = _answer_intent_result("air quality", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("air quality", snapshot)
 
     if _mentions(
         q, "light", "lighting", "lit", "bright", "dark", "dim", "lux",
         fuzzy=("brightness",),
     ):
-        result = _answer_intent_result("brightness", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("brightness", snapshot)
 
     if _mentions(q, "how many", "number of people", "headcount", "count"):
         return _answer_intent_result("count", snapshot)
@@ -813,9 +929,7 @@ def _deterministic_answer_result(
     # Motion before presence, so "is there any movement" reaches motion rather
     # than being captured by a generic presence phrase.
     if _mentions(q, "moving", "movement", "motion", "still", "activity"):
-        result = _answer_intent_result("motion", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("motion", snapshot)
 
     if _mentions(
         q, "anyone", "anybody", "someone", "somebody", "everyone", "everybody",
@@ -824,9 +938,7 @@ def _deterministic_answer_result(
         return _answer_intent_result("anyone", snapshot)
 
     if _mentions(q, "how far", "distance", "close"):
-        result = _answer_intent_result("distance", snapshot)
-        if result.answer != _FALLBACK:
-            return result
+        return _answer_or_missing_intent("distance", snapshot)
 
     # A wellbeing check about the baby (not the room) surfaces the labelled radar
     # vitals, checked after the specific room/presence/motion branches so "is the
@@ -835,6 +947,18 @@ def _deterministic_answer_result(
     # fall through to the fallback rather than being answered with vitals numbers.
     if _mentions(q, *_BABY_VITALS_PHRASES):
         return _AnswerResult(_vitals_phrase(snapshot))
+
+    if _mentions(
+        q,
+        "what do you see",
+        "what can you see",
+        "describe what you see",
+        "describe the scene",
+        "describe the room",
+        "what s in the room",
+        "what is in the room",
+    ):
+        return _answer_intent_result("scene", snapshot)
 
     # General "how is the room?" — a whole-room overview, checked last so specific
     # questions win.

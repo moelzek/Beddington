@@ -12,10 +12,14 @@ from beddington.cli import (
     _AutoSootheWatcher,
     _DashboardSoothe,
     _build_soothe_presets,
+    _duck_dashboard_soothe,
     _format_sensor_line,
+    _is_degenerate,
     _maybe_play_wake_chime,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
+    _resume_dashboard_soothe,
+    _soothe_command_replaces_playback,
     _soothe_via_dashboard,
     main,
 )
@@ -199,6 +203,7 @@ def test_record_soothe_outcomes_uses_switched_preset_key(tmp_path: Path) -> None
 
 def _auto_soothe_config(learn_enabled: bool, min_samples: int) -> SimpleNamespace:
     return SimpleNamespace(
+        detection=SimpleNamespace(threshold=0.25),
         soothe=SimpleNamespace(
             preset="rain",
             presets={
@@ -317,10 +322,62 @@ def test_voice_stop_command_stops_dashboard_soothe_player(
     stopped = dashboard.stop() if command["action"] == "stop" else {}
     safe_stop = dashboard.stop()
 
-    assert stopped == {"ok": True, "playing": None}
-    assert safe_stop == {"ok": True, "playing": None}
+    assert stopped == {"ok": True, "playing": None, "context": ""}
+    assert safe_stop == {"ok": True, "playing": None, "context": ""}
     assert dashboard.playing() is None
     assert _FakeDashboardPlayer.instances[0].stop_calls == 2
+
+
+def test_voice_stop_music_wake_phrase_is_fast_stop_command() -> None:
+    from beddington.assistant import match_soothe_command
+    from beddington.ears import extract_wake_question
+
+    question = extract_wake_question("Hi Beddington, stop music")
+
+    assert question == "stop music"
+    assert match_soothe_command(question) == {"action": "stop"}
+    assert _soothe_command_replaces_playback({"action": "stop"})
+
+
+def test_repeated_wake_word_transcript_is_degenerate() -> None:
+    text = " ".join(["Hi Paddington"] * 20)
+
+    assert _is_degenerate(text)
+
+
+def test_duck_and_resume_dashboard_soothe(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, dict[str, object] | None, str]] = []
+
+    def fake_live_view_json(
+        path: str,
+        token: str,
+        port: int,
+        params: dict[str, object] | None = None,
+        method: str = "GET",
+    ) -> dict[str, object]:
+        del token, port
+        calls.append((path, params, method))
+        if path == "/soothe.json":
+            return {"playing": "piano", "context": "sleep"}
+        if params and params.get("action") == "stop":
+            return {"ok": True, "playing": None, "context": ""}
+        if params and params.get("action") == "play":
+            return {"ok": True, "playing": params["preset"], "context": params.get("context", "")}
+        return {"ok": False}
+
+    monkeypatch.setattr("beddington.cli._read_live_view_token", lambda: "token")
+    monkeypatch.setattr("beddington.cli._live_view_json", fake_live_view_json)
+
+    paused = _duck_dashboard_soothe()
+    resumed = _resume_dashboard_soothe(paused)
+
+    assert paused == {"preset": "piano", "context": "sleep"}
+    assert resumed == {"ok": True, "playing": "piano", "context": "sleep"}
+    assert calls == [
+        ("/soothe.json", None, "GET"),
+        ("/soothe", {"action": "stop"}, "POST"),
+        ("/soothe", {"action": "play", "preset": "piano", "context": "sleep"}, "POST"),
+    ]
 
 
 def test_soothe_via_dashboard_next_uses_best_preset_excluding_current(
@@ -375,6 +432,92 @@ def test_soothe_via_dashboard_next_uses_best_preset_excluding_current(
         {"action": "play", "preset": "ocean_waves"},
         "POST",
     )
+
+
+def test_soothe_via_dashboard_play_best_uses_context_specific_music(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object] | None, str]] = []
+
+    def fake_live_view_json(
+        path: str,
+        token: str,
+        port: int,
+        params: dict[str, object] | None = None,
+        method: str = "GET",
+    ) -> dict[str, object]:
+        del token, port
+        calls.append((path, params, method))
+        if path == "/soothe.json":
+            return {
+                "presets": [
+                    {"key": "dreams", "label": "Dreams", "category": "music"},
+                    {"key": "piano", "label": "Piano", "category": "music"},
+                    {"key": "white_noise", "label": "White", "category": "sounds"},
+                ],
+                "playing": None,
+                "default": "dreams",
+            }
+        return {"ok": True, "playing": params["preset"] if params else None}
+
+    def fake_outcomes(_db: str, context: str | None = None) -> list[tuple[float, str, bool]]:
+        assert context == "sleep"
+        return [
+            (1.0, "dreams", False),
+            (2.0, "piano", True),
+            (3.0, "piano", True),
+        ]
+
+    monkeypatch.setattr("beddington.cli._read_live_view_token", lambda: "token")
+    monkeypatch.setattr("beddington.cli._live_view_json", fake_live_view_json)
+    monkeypatch.setattr("beddington.cli._load_soothe_outcomes", fake_outcomes)
+    config = AppConfig(
+        soothe=SootheConfig(
+            preset="dreams",
+            learn=SootheLearnConfig(enabled=True, min_samples=1),
+        )
+    )
+
+    assert _soothe_via_dashboard(
+        {"action": "play_best", "category": "music", "context": "sleep"},
+        config=config,
+    ) == "Playing piano for sleep."
+    assert calls[-1] == (
+        "/soothe",
+        {"action": "play", "preset": "piano", "context": "sleep"},
+        "POST",
+    )
+
+
+def test_soothe_via_dashboard_feedback_records_current_context(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "history.db"
+
+    def fake_live_view_json(
+        path: str,
+        token: str,
+        port: int,
+        params: dict[str, object] | None = None,
+        method: str = "GET",
+    ) -> dict[str, object]:
+        del token, port, params, method
+        assert path == "/soothe.json"
+        return {"playing": "piano", "context": "feeding"}
+
+    monkeypatch.setattr("beddington.cli._DEFAULT_HISTORY_DB", str(db_path))
+    monkeypatch.setattr("beddington.cli._read_live_view_token", lambda: "token")
+    monkeypatch.setattr("beddington.cli._live_view_json", fake_live_view_json)
+    monkeypatch.setattr("beddington.cli.time.time", lambda: 123.0)
+
+    assert _soothe_via_dashboard({"action": "feedback", "success": True}) == (
+        "Noted, I'll remember that piano helped for feeding."
+    )
+
+    store = SensorStore(str(db_path))
+    assert store.outcomes_since_context(0.0, "feeding") == [(123.0, "piano", True)]
+    store.close()
 
 
 def test_soothe_via_dashboard_volume_uses_best_effort(
@@ -472,6 +615,30 @@ def test_auto_soothe_watcher_keeps_configured_preset_with_sparse_data(
     watcher = _AutoSootheWatcher(_auto_soothe_config(True, 2), 16_000, frame_ms=1000)
 
     assert _trigger_auto_soothe(watcher) == "rain"
+
+
+def test_auto_soothe_watcher_debug_prints_yamnet_score(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    watcher = _AutoSootheWatcher(
+        _auto_soothe_config(False, 2),
+        16_000,
+        frame_ms=1000,
+        debug=True,
+    )
+    watcher._state = {"enabled": True, "preset": "rain"}
+    watcher._last_state = 10.0
+    watcher._watcher = SimpleNamespace(
+        last_score=0.72,
+        observe=lambda _elapsed, _audio: True,
+    )
+
+    assert watcher.feed(np.zeros(15_600, dtype=np.float32), 10.0) == "rain"
+
+    output = capsys.readouterr().out
+    assert "YAMNet cry score=0.720" in output
+    assert "threshold=0.250" in output
+    assert "trigger=True" in output
 
 
 def test_preview_soothe_dry_run_uses_selected_preset(

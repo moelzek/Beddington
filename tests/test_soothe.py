@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 import os
 import subprocess
 import sys
@@ -429,6 +430,30 @@ def test_playback_command_does_not_use_aplay_for_mp3(
     assert soothe._playback_command(sound, play_seconds=0.0) is None
 
 
+def test_playback_command_prefers_pw_play_for_mp3(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "white-noise.mp3"
+    sound.write_bytes(b"ID3")
+
+    monkeypatch.delenv("BEDDINGTON_SOOTHE_VOLUME", raising=False)
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}"
+        if command in {"pw-play", "ffplay"}
+        else None,
+    )
+
+    assert soothe._playback_command(sound, play_seconds=0.0) == [
+        "pw-play",
+        "--volume",
+        "0.45",
+        str(sound),
+    ]
+
+
 def test_playback_command_uses_mpg123_for_mp3(
     monkeypatch,
     tmp_path: Path,
@@ -445,6 +470,28 @@ def test_playback_command_uses_mpg123_for_mp3(
     assert soothe._playback_command(sound, play_seconds=0.0) == [
         "mpg123",
         "-q",
+        str(sound),
+    ]
+
+
+def test_playback_command_uses_bounded_env_volume_for_pw_play(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "white-noise.mp3"
+    sound.write_bytes(b"ID3")
+
+    monkeypatch.setenv("BEDDINGTON_SOOTHE_VOLUME", "1.4")
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}" if command == "pw-play" else None,
+    )
+
+    assert soothe._playback_command(sound, play_seconds=0.0) == [
+        "pw-play",
+        "--volume",
+        "1",
         str(sound),
     ]
 
@@ -496,7 +543,8 @@ def test_subprocess_soothe_player_starts_and_stops_backend(
         return process
 
     monkeypatch.setattr(soothe.subprocess, "Popen", fake_popen)
-    player = SubprocessSoothePlayer()
+    pid_file = tmp_path / "soothe-player.json"
+    player = SubprocessSoothePlayer(pid_file=pid_file)
 
     playback = player.play(
         SootheStepConfig(
@@ -512,7 +560,62 @@ def test_subprocess_soothe_player_starts_and_stops_backend(
     assert playback["player"] == "loop:aplay"
     assert playback["sound_path"] == str(sound)
     assert processes[0].command[4:] == ["aplay", str(sound)]
+    assert processes[0].kwargs["start_new_session"] is True
     assert processes[0].terminated is True
+    assert not pid_file.exists()
+
+
+def test_subprocess_soothe_player_stops_remembered_previous_instance(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "rain.wav"
+    sound.write_bytes(b"RIFF")
+    pid_file = tmp_path / "soothe-player.json"
+    pid_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "processes": [{"pid": 54321, "sound_path": str(sound)}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    processes: list[FakeProcess] = []
+    stopped: list[tuple[int, object]] = []
+
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}" if command == "aplay" else None,
+    )
+    monkeypatch.setattr(
+        soothe,
+        "_pid_still_matches_sound",
+        lambda pid, sound_path: pid == 54321 and sound_path == str(sound),
+    )
+    monkeypatch.setattr(
+        soothe,
+        "_signal_pid_group",
+        lambda pid, sig: stopped.append((pid, sig)) or True,
+    )
+
+    def fake_popen(command: list[str], **kwargs: object) -> FakeProcess:
+        process = FakeProcess(command, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(soothe.subprocess, "Popen", fake_popen)
+    player = SubprocessSoothePlayer(pid_file=pid_file)
+
+    playback = player.play(SootheStepConfig(name="rain", sound_path=sound))
+
+    assert playback["played"] is True
+    assert stopped == [(54321, soothe.signal.SIGTERM)]
+    remembered = json.loads(pid_file.read_text(encoding="utf-8"))
+    assert remembered["processes"] == [
+        {"pid": processes[0].pid, "sound_path": str(sound)}
+    ]
 
 
 def test_subprocess_soothe_player_kills_stubborn_process(
@@ -535,7 +638,7 @@ def test_subprocess_soothe_player_kills_stubborn_process(
         return process
 
     monkeypatch.setattr(soothe.subprocess, "Popen", fake_popen)
-    player = SubprocessSoothePlayer()
+    player = SubprocessSoothePlayer(pid_file=tmp_path / "soothe-player.json")
     player.play(SootheStepConfig(name="white noise", sound_path=sound))
 
     player.stop_all()
@@ -569,7 +672,7 @@ def test_subprocess_soothe_player_loop_stops_child_process(
         lambda path: ([sys.executable, str(child_script), str(child_pid)],),
     )
     monkeypatch.setattr(soothe.shutil, "which", lambda command: command)
-    player = SubprocessSoothePlayer()
+    player = SubprocessSoothePlayer(pid_file=tmp_path / "soothe-player.json")
 
     playback = player.play(
         SootheStepConfig(
@@ -596,7 +699,7 @@ def test_subprocess_soothe_player_reports_missing_backend(
     sound.write_bytes(b"RIFF")
     monkeypatch.setattr(soothe.shutil, "which", lambda command: None)
 
-    playback = SubprocessSoothePlayer().play(
+    playback = SubprocessSoothePlayer(pid_file=tmp_path / "soothe-player.json").play(
         SootheStepConfig(name="white noise", sound_path=sound)
     )
 

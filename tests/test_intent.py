@@ -4,8 +4,13 @@ import json
 
 import pytest
 
-from beddington.config import NarratorConfig
-from beddington.intent import INTENT_KEYWORDS, translate_intent
+from beddington.config import NarratorConfig, SootheStepConfig
+from beddington.intent import (
+    INTENT_KEYWORDS,
+    lead_response,
+    translate_intent,
+    translate_soothe_command,
+)
 
 
 class FakeResponse:
@@ -116,3 +121,79 @@ def test_translate_intent_uses_ollama_generate(monkeypatch: pytest.MonkeyPatch) 
     assert payload["model"] == "llama3.2:1b"
     assert payload["options"] == {"num_predict": 8, "temperature": 0.0}
     assert "is the air dry?" in payload["prompt"]
+
+
+def test_lead_response_handles_non_sensor_conversation() -> None:
+    def fake(prompt: str, config: object) -> str:
+        del config
+        assert "non-sensor conversation" in prompt
+        return "I don't know her name yet, but I can remember it once you tell me."
+
+    assert "don't know her name yet" in lead_response(
+        "what is my baby's name?",
+        _cfg(),
+        ask_llm=fake,
+    )
+
+
+def test_lead_response_rejects_sensor_or_safety_claim() -> None:
+    def fake(prompt: str, config: object) -> str:
+        del prompt, config
+        return "She is safe and sleeping."
+
+    assert lead_response("is she okay?", _cfg(), ask_llm=fake) == (
+        "Sorry, I can't answer that from here."
+    )
+
+
+def test_translate_soothe_command_maps_music_context() -> None:
+    presets = {
+        "piano": SootheStepConfig(name="Piano"),
+        "white_noise": SootheStepConfig(name="White noise"),
+    }
+
+    def fake(prompt: str, config: object) -> str:
+        del config
+        assert "play music for sleep" in prompt
+        return '{"action":"play_best","category":"music","context":"sleep"}'
+
+    assert translate_soothe_command(
+        "play music for sleep",
+        _cfg(),
+        presets,
+        ask_llm=fake,
+    ) == {"action": "play_best", "category": "music", "context": "sleep"}
+
+
+def test_translate_soothe_command_rejects_unknown_preset() -> None:
+    presets = {"piano": SootheStepConfig(name="Piano")}
+
+    def fake(prompt: str, config: object) -> str:
+        del prompt, config
+        return '{"action":"play","preset":"washing_machine"}'
+
+    assert translate_soothe_command(
+        "play washing machine",
+        _cfg(),
+        presets,
+        ask_llm=fake,
+    ) is None
+
+
+def test_translate_soothe_command_uses_longer_ollama_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[tuple[object, float]] = []
+
+    def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        requests.append((request, timeout))
+        return FakeResponse({"response": '{"action":"stop"}'})
+
+    monkeypatch.setattr("beddington.intent.urllib.request.urlopen", fake_urlopen)
+
+    assert translate_soothe_command("stop the music", _cfg()) == {"action": "stop"}
+
+    request, timeout = requests[0]
+    payload = json.loads(request.data.decode("utf-8"))
+    assert timeout == 8.0
+    assert payload["options"] == {"num_predict": 80, "temperature": 0.0}

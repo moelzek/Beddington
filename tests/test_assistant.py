@@ -194,7 +194,7 @@ def test_presence_does_not_invent_empty_without_reading() -> None:
 
 
 def test_nan_reading_is_refused() -> None:
-    assert "say it again" in answer_question(
+    assert "temperature reading" in answer_question(
         "what is the temperature", {"room_temperature_c": float("nan")}
     )
 
@@ -359,8 +359,8 @@ def test_answer_fallback_when_unknown() -> None:
 
 
 def test_answer_fallback_when_value_missing() -> None:
-    assert "say it again" in answer_question(
-        "what is the humidity?", {}
+    assert answer_question("what is the humidity?", {}) == (
+        "I don't have a humidity reading right now."
     )
 
 
@@ -381,6 +381,27 @@ def test_llm_translator_disabled_keeps_fallback() -> None:
 
     assert "say it again" in answer
     assert calls == []
+
+
+def test_llama_leads_unknown_non_sensor_question() -> None:
+    calls: list[str] = []
+
+    def fake(prompt: str, config: object) -> str:
+        del config
+        calls.append(prompt)
+        if prompt.endswith("Keyword:"):
+            return "none"
+        return "I don't know her name yet, but I can remember it once you tell me."
+
+    answer = answer_question(
+        "what is my baby's name?",
+        SNAPSHOT,
+        _translator_config(),
+        ask_llm=fake,
+    )
+
+    assert "don't know her name yet" in answer
+    assert len(calls) == 2
 
 
 def test_llm_translator_only_runs_after_fallback() -> None:
@@ -448,6 +469,20 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("play some music") == {
         "action": "play", "preset": "soothing_music"
     }
+    assert match_soothe_command("play music for sleep") == {
+        "action": "play_best",
+        "context": "sleep",
+        "category": "music",
+    }
+    assert match_soothe_command("flame music") == {
+        "action": "play",
+        "preset": "soothing_music",
+    }
+    assert match_soothe_command("relaxing for feeding") == {
+        "action": "play_best",
+        "context": "feeding",
+        "mood": "relaxing",
+    }
     # generic comfort -> default preset
     assert match_soothe_command("soothe Rayan") == {
         "action": "play", "preset": "white_noise"
@@ -462,6 +497,12 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("stop the noise") == {"action": "stop"}
     assert match_soothe_command("turn off the music") == {"action": "stop"}
     assert match_soothe_command("switch off the music") == {"action": "stop"}
+    assert match_soothe_command("that worked") == {
+        "action": "feedback", "success": True
+    }
+    assert match_soothe_command("that didn't work for feeding") == {
+        "action": "feedback", "success": False, "context": "feeding"
+    }
     # not soothe commands
     assert match_soothe_command("what is the temperature") is None
     assert match_soothe_command("is anyone there") is None
@@ -527,6 +568,15 @@ def test_match_soothe_command_vc2_play_names_and_controls() -> None:
 def test_answer_falls_back_on_unrelated_word() -> None:
     # A garbled word that is not close to any topic must NOT false-match.
     assert "say it again" in answer_question("western", SNAPSHOT)
+
+
+def test_what_do_you_see_uses_local_room_readings() -> None:
+    answer = answer_question("what do you see?", SNAPSHOT)
+
+    assert "From local room readings" in answer
+    assert "active near the cot" in answer
+    assert "120 centimetres" in answer
+    assert "best guess" not in answer
 
 
 def test_answer_ignores_substring_false_match() -> None:

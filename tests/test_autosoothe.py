@@ -54,6 +54,7 @@ class _FakeTracker:
 def test_crywatcher_triggers_then_respects_cooldown() -> None:
     watcher = CryWatcher(_FakeDetector(0.9), _FakeTracker(notify_at=2), cooldown_seconds=10)
     assert watcher.observe(0.0, None) is False  # not yet sustained
+    assert watcher.last_score == 0.9
     assert watcher.observe(1.0, None) is True  # sustained -> trigger
     assert watcher.observe(2.0, None) is False  # still crying, but within cooldown
     assert watcher.observe(15.0, None) is True  # cooldown elapsed -> trigger again

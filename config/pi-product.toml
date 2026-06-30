@@ -204,7 +204,7 @@ enabled = true
 # Morning recap narrated by the local llama3.2:1b.
 enabled = true
 backend = "ollama"
-model = "llama3.2:1b"
+model = "llama3.2:3b"
 host = "http://127.0.0.1:11434"
 num_predict = 140
 temperature = 0.3

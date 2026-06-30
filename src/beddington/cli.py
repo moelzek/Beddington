@@ -25,10 +25,11 @@ from .assistant import (
     match_soothe_command,
 )
 from .child_profile import CHILD_NAME
+from .intent import translate_soothe_command
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
-from .ears import WAKE_WORDS, extract_wake_question
+from .ears import WAKE_WORDS, extract_wake_question, normalize_transcript
 from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
@@ -497,13 +498,17 @@ def _record_soothe_outcomes(
     presets: Mapping[str, SootheStepConfig] | None = None,
 ) -> None:
     sound_name: str | None = None
+    context = ""
     for event in events:
         if event.kind == "soothe_attempted":
             name = event.details.get("name")
             sound_name = _soothe_outcome_key(name, presets)
+            context = _normalise_soothe_context(event.details.get("context", ""))
             continue
         if event.kind == "soothe_switched":
             sound_name = _soothe_outcome_key(event.details.get("to"), presets)
+            if "context" in event.details:
+                context = _normalise_soothe_context(event.details.get("context", ""))
             continue
         if event.kind in _SOOTHE_SUCCESS_EVENTS or event.kind in _SOOTHE_FAILURE_EVENTS:
             if sound_name:
@@ -511,8 +516,10 @@ def _record_soothe_outcomes(
                     event.occurred_at.timestamp(),
                     sound_name,
                     event.kind in _SOOTHE_SUCCESS_EVENTS,
+                    context,
                 )
             sound_name = None
+            context = ""
 
 
 def _soothe_outcome_key(
@@ -532,7 +539,14 @@ def _soothe_outcome_key(
     return sound_name
 
 
-def _load_soothe_outcomes(history_db: str) -> list[tuple[float, str, bool]]:
+def _normalise_soothe_context(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _load_soothe_outcomes(
+    history_db: str,
+    context: str | None = None,
+) -> list[tuple[float, str, bool]]:
     import os
 
     from .sensor_store import SensorStore
@@ -540,6 +554,8 @@ def _load_soothe_outcomes(history_db: str) -> list[tuple[float, str, bool]]:
     store = None
     try:
         store = SensorStore(os.path.expanduser(history_db))
+        if context:
+            return store.outcomes_since_context(0.0, context)
         return store.outcomes_since(0.0)
     except Exception:
         return []
@@ -686,9 +702,11 @@ def _read_sensor_snapshot(
 def _is_degenerate(text: str) -> bool:
     """True for Whisper's repetition hallucination on noise (e.g. 'No. No. No.'
     repeated), so it can be dropped instead of mistaken for a command."""
-    words = text.split()
+    words = normalize_transcript(text).split()
     if len(words) < 6:
         return False
+    if len(words) >= 12 and len(set(words)) / len(words) < 0.35:
+        return True
     from collections import Counter
 
     most_common = Counter(words).most_common(1)[0][1]
@@ -741,7 +759,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     target_rate = 16_000
     frame_ms = 30
     frame_samples = max(1, round(native_rate * frame_ms / 1000))
-    start_speech_frames = 3
+    start_speech_frames = 6
     end_silence_frames = max(1, round(500 / frame_ms))  # ~0.5 s of silence closes it
     max_frames = max(1, round(8000 / frame_ms))  # 8 s hard cap
 
@@ -768,7 +786,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         night_store = None
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
-    auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms)
+    auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms, debug=args.debug)
     soothe_presets = _build_soothe_presets(config)
     conversation_memory = ConversationMemory()
     # Warm the persona model so the first real reply isn't cold-start slow. Off the
@@ -797,6 +815,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     in_utterance = False
     speech_run = 0
     silence_run = 0
+    ducked_soothe: dict[str, str] | None = None
+    pending_wake_until = 0.0
+    pending_wake_soothe: dict[str, str] | None = None
     deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
     try:
         with sd.InputStream(
@@ -825,10 +846,18 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     levels.append(float(np.sqrt(np.mean(f**2))))
                 levels.sort()
                 noise_floor = levels[len(levels) // 2] if levels else 0.012
-                # Floor 0.024 keeps the bar above a muffled/buried-mic noise floor
-                # (~0.02) so room noise never opens a long blob that Whisper would
-                # hallucinate on; cap 0.032 so a close voice (~0.034+) still clears.
-                threshold = max(0.024, min(0.032, round(noise_floor * 1.6, 4)))
+                high_noise = (
+                    levels[min(len(levels) - 1, int(len(levels) * 0.9))]
+                    if levels
+                    else noise_floor
+                )
+                # Keep the bar above room/speaker bleed. A too-low threshold opens
+                # long noise blobs, which Whisper turns into empty text or repeated
+                # wake words; 0.032 still catches close speech on the Pi mic.
+                threshold = max(
+                    0.032,
+                    min(0.060, round(max(noise_floor * 2.2, high_noise * 1.35), 4)),
+                )
                 adapt = True
             print(
                 f"Listening (speech threshold {threshold:.4f}) — say "
@@ -842,8 +871,15 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     frame = frames_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
+                now = time.monotonic()
+                if pending_wake_until and now >= pending_wake_until:
+                    resumed = _resume_dashboard_soothe(pending_wake_soothe)
+                    if args.debug and pending_wake_soothe is not None:
+                        print(f"  [debug] wake follow-up timed out; resumed soothe: {resumed}")
+                    pending_wake_until = 0.0
+                    pending_wake_soothe = None
                 pre_roll.append(frame)
-                auto_preset = auto_watcher.feed(frame, time.monotonic())
+                auto_preset = auto_watcher.feed(frame, now)
                 if auto_preset:
                     auto_result = _soothe_via_dashboard(
                         {"action": "play", "preset": auto_preset}
@@ -854,7 +890,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Track the noise floor from quiet frames and keep the bar
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
-                    threshold = max(0.024, min(0.032, round(noise_floor * 1.6, 4)))
+                    threshold = max(0.032, min(0.060, round(noise_floor * 2.2, 4)))
                 is_speech = rms > threshold
                 if args.debug:
                     frames_seen += 1
@@ -871,6 +907,12 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     if is_speech:
                         speech_run += 1
                         if speech_run >= start_speech_frames:
+                            ducked_soothe = _duck_dashboard_soothe()
+                            if args.debug and ducked_soothe is not None:
+                                print(
+                                    "  [debug] paused soothe for voice: "
+                                    f"{ducked_soothe['preset']}"
+                                )
                             in_utterance = True
                             buffer = list(pre_roll)
                             silence_run = 0
@@ -888,6 +930,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     speech_run = 0
                     silence_run = 0
                     buffer = []
+                    resume_soothe = ducked_soothe
+                    ducked_soothe = None
                     if native_rate != target_rate:
                         count = int(len(audio) * target_rate / native_rate)
                         audio = np.interp(
@@ -897,15 +941,53 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         ).astype(np.float32)
                     text = _transcribe(model, audio)
                     question = extract_wake_question(text, wake_words)
+                    resume_after_answer = resume_soothe
+                    now = time.monotonic()
+                    if (
+                        question is None
+                        and pending_wake_until
+                        and now < pending_wake_until
+                    ):
+                        pending_text = normalize_transcript(text)
+                        if pending_text:
+                            question = pending_text
+                            resume_after_answer = resume_after_answer or pending_wake_soothe
+                            pending_wake_until = 0.0
+                            pending_wake_soothe = None
+                            if args.debug:
+                                print(
+                                    "  [debug] using wake follow-up as question: "
+                                    f"{question!r}"
+                                )
                     if args.debug:
                         print(f'  [debug] transcript="{text}" -> question={question!r}')
                     if question is None:
+                        resumed = _resume_dashboard_soothe(resume_soothe)
+                        if args.debug and resume_soothe is not None:
+                            print(f"  [debug] resumed soothe: {resumed}")
                         continue  # no wake word — ignore silently
                     chime = _maybe_play_wake_chime(question, config)
                     if args.debug:
                         print(f"  [debug] chime: {chime}")
                     drain_captured_frames()
+                    if question == "":
+                        pending_wake_until = time.monotonic() + 6.0
+                        pending_wake_soothe = resume_after_answer or pending_wake_soothe
+                        if args.debug:
+                            print("  [debug] wake heard; waiting for follow-up")
+                        continue
+                    llm_config = _assistant_llm_translator_config(config)
                     soothe_cmd = match_soothe_command(question, soothe_presets)
+                    if str((soothe_cmd or {}).get("action") or "") != "stop":
+                        llama_soothe_cmd = translate_soothe_command(
+                            question,
+                            llm_config,
+                            soothe_presets,
+                        )
+                        if llama_soothe_cmd is not None:
+                            soothe_cmd = llama_soothe_cmd
+                    if soothe_cmd is None:
+                        soothe_cmd = match_soothe_command(question, soothe_presets)
                     if soothe_cmd is not None:
                         answer = _soothe_via_dashboard(soothe_cmd, config=config)
                     elif is_history_question(question):
@@ -920,12 +1002,12 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         answer = answer_question(
                             question,
                             snapshot,
-                            _assistant_llm_translator_config(config),
+                            llm_config,
                             memory=conversation_memory,
                         )
-                    # Re-voice the deterministic answer as Beddington (grounded +
-                    # validated; medically-sensitive vitals are spoken verbatim).
-                    # One chokepoint, so every spoken surface is covered.
+                    # Re-voice grounded sensor/action answers as Beddington.
+                    # Medically-sensitive vitals are spoken verbatim, and model-led
+                    # conversational replies still pass through the same speech path.
                     answer = paddingtonise(answer, speak_config)
                     print(f'  heard: "{question}"  ->  {answer}')
                     if not args.no_speak:
@@ -935,6 +1017,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         # Drop frames captured while we were speaking, so Beddington
                         # never transcribes its own voice as a new command.
                         drain_captured_frames()
+                    if not _soothe_command_replaces_playback(soothe_cmd):
+                        resumed = _resume_dashboard_soothe(resume_after_answer)
+                        if args.debug and resume_after_answer is not None:
+                            print(f"  [debug] resumed soothe: {resumed}")
     except KeyboardInterrupt:
         print("Stopped.")
     return 0
@@ -1488,6 +1574,7 @@ class _DashboardSoothe:
         self._catalog = _load_soothe_catalog()
         self._default = default if default in presets else next(iter(presets), None)
         self._playing: str | None = None
+        self._context = ""
         self._lock = threading.Lock()
 
     def presets(self) -> list[dict[str, str]]:
@@ -1524,7 +1611,11 @@ class _DashboardSoothe:
         with self._lock:
             return self._playing
 
-    def play(self, name: str) -> dict[str, object]:
+    def context(self) -> str:
+        with self._lock:
+            return self._context
+
+    def play(self, name: str, context: str = "") -> dict[str, object]:
         step = self._presets.get(name)
         if step is None:
             return {"ok": False, "playing": self.playing()}
@@ -1533,9 +1624,11 @@ class _DashboardSoothe:
             loop_step = replace(step, play_seconds=6 * 3600)
             result = self._player.play(loop_step)
             self._playing = name if result.get("played") else None
+            self._context = _normalise_soothe_context(context) if self._playing else ""
             return {
                 "ok": bool(result.get("played")),
                 "playing": self._playing,
+                "context": self._context,
                 "reason": result.get("reason"),
             }
 
@@ -1543,7 +1636,8 @@ class _DashboardSoothe:
         with self._lock:
             self._player.stop_all()
             self._playing = None
-            return {"ok": True, "playing": None}
+            self._context = ""
+            return {"ok": True, "playing": None, "context": ""}
 
 
 def _resolve_live_view_token(explicit: str | None) -> str:
@@ -1606,6 +1700,220 @@ def _live_view_json(
     return payload if isinstance(payload, dict) else {}
 
 
+def _duck_dashboard_soothe(port: int = 8088) -> dict[str, str] | None:
+    """Temporarily stop dashboard soothe playback so the wake word can be heard."""
+    token = _read_live_view_token()
+    if token is None:
+        return None
+    try:
+        state = _live_view_json("/soothe.json", token, port)
+    except Exception:
+        return None
+    preset = str(state.get("playing") or "")
+    if not preset:
+        return None
+    context = _normalise_soothe_context(state.get("context", ""))
+    try:
+        stopped = _live_view_json(
+            "/soothe", token, port, {"action": "stop"}, method="POST"
+        )
+    except Exception:
+        return None
+    if stopped.get("ok") is False:
+        return None
+    return {"preset": preset, "context": context}
+
+
+def _resume_dashboard_soothe(
+    ducked: Mapping[str, str] | None,
+    port: int = 8088,
+) -> dict[str, object]:
+    """Resume a sound paused by ``_duck_dashboard_soothe``."""
+    if not ducked:
+        return {"ok": True, "playing": None}
+    preset = str(ducked.get("preset") or "")
+    if not preset:
+        return {"ok": True, "playing": None}
+    token = _read_live_view_token()
+    if token is None:
+        return {"ok": False, "reason": "no_token"}
+    params: dict[str, object] = {"action": "play", "preset": preset}
+    context = _normalise_soothe_context(ducked.get("context", ""))
+    if context:
+        params["context"] = context
+    try:
+        return _live_view_json("/soothe", token, port, params, method="POST")
+    except Exception:
+        return {"ok": False, "reason": "request_failed"}
+
+
+def _soothe_command_replaces_playback(cmd: Mapping[str, object] | None) -> bool:
+    if cmd is None:
+        return False
+    return str(cmd.get("action") or "") in {"play", "play_best", "next", "stop"}
+
+
+def _soothe_spoken_name(preset: str) -> str:
+    return preset.replace("_", " ")
+
+
+def _soothe_context_suffix(context: str) -> str:
+    return f" for {context}" if context else ""
+
+
+def _state_preset_metadata(
+    state: Mapping[str, object],
+    config: AppConfig | None,
+) -> dict[str, dict[str, str]]:
+    raw_presets = state.get("presets")
+    metadata: dict[str, dict[str, str]] = {}
+    if isinstance(raw_presets, list):
+        for item in raw_presets:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "")
+            if not key:
+                continue
+            metadata[key] = {
+                str(field): str(value)
+                for field, value in item.items()
+                if isinstance(field, str) and isinstance(value, str)
+            }
+    if metadata or config is None:
+        return metadata
+
+    catalog = _load_soothe_catalog()
+    for key, step in _build_soothe_presets(config).items():
+        entry = catalog.get(key, {})
+        metadata[key] = {
+            "key": key,
+            "label": entry.get("label") or step.name or key,
+            "category": entry.get("category", "sounds"),
+            "feel": entry.get("feel", ""),
+            "use": entry.get("use", ""),
+            "avoid": entry.get("avoid", ""),
+        }
+    return metadata
+
+
+def _is_relaxing_candidate(meta: Mapping[str, str]) -> bool:
+    text = " ".join(
+        meta.get(field, "") for field in ("key", "label", "category", "feel", "use")
+    ).lower()
+    markers = (
+        "gentle", "quiet", "calm", "soothing", "meditation", "wind-down",
+        "sleepy", "warm", "slow", "piano", "dream",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _candidate_soothe_presets(
+    state: Mapping[str, object],
+    config: AppConfig | None,
+    *,
+    category: str = "",
+    mood: str = "",
+) -> dict[str, object]:
+    metadata = _state_preset_metadata(state, config)
+    if not metadata:
+        return {}
+
+    candidates = dict(metadata)
+    if category in {"music", "sounds"}:
+        filtered = {
+            key: meta
+            for key, meta in candidates.items()
+            if meta.get("category", "sounds").lower() == category
+        }
+        if filtered:
+            candidates = filtered
+
+    if mood == "relaxing":
+        filtered = {
+            key: meta
+            for key, meta in candidates.items()
+            if _is_relaxing_candidate(meta)
+        }
+        if filtered:
+            candidates = filtered
+    return candidates
+
+
+def _preferred_soothe_default(
+    candidates: Mapping[str, object],
+    state: Mapping[str, object],
+    config: AppConfig | None,
+    *,
+    category: str = "",
+    mood: str = "",
+    context: str = "",
+) -> str:
+    preferred: list[str] = []
+    if context == "sleep":
+        preferred.extend(["dreams", "music_box_lullaby", "soothing_music", "night_sky"])
+    elif context == "feeding":
+        preferred.extend(["piano", "soothing_music", "river", "pink_noise"])
+    if category == "music":
+        preferred.extend(["soothing_music", "music_box_lullaby", "dreams", "piano"])
+    if mood == "relaxing":
+        preferred.extend(["soothing_music", "meditation", "piano", "pink_noise"])
+    preferred.append(str(state.get("default") or ""))
+    if config is not None:
+        preferred.append(config.soothe.preset)
+    preferred.extend(sorted(candidates))
+    for key in preferred:
+        if key in candidates:
+            return key
+    return next(iter(candidates), "")
+
+
+def _soothe_min_samples(config: AppConfig | None) -> int:
+    learn = getattr(getattr(config, "soothe", None), "learn", None)
+    try:
+        return max(1, int(getattr(learn, "min_samples", 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _soothe_learning_enabled(config: AppConfig | None) -> bool:
+    learn = getattr(getattr(config, "soothe", None), "learn", None)
+    return bool(getattr(learn, "enabled", False))
+
+
+def _select_best_soothe_preset(
+    state: Mapping[str, object],
+    config: AppConfig | None,
+    *,
+    category: str = "",
+    mood: str = "",
+    context: str = "",
+) -> str | None:
+    candidates = _candidate_soothe_presets(
+        state, config, category=category, mood=mood
+    )
+    if not candidates:
+        return None
+    default = _preferred_soothe_default(
+        candidates,
+        state,
+        config,
+        category=category,
+        mood=mood,
+        context=context,
+    )
+    if _soothe_learning_enabled(config):
+        outcomes = (
+            _load_soothe_outcomes(_DEFAULT_HISTORY_DB, context)
+            if context
+            else _load_soothe_outcomes(_DEFAULT_HISTORY_DB)
+        )
+    else:
+        outcomes = ()
+    from .soothe_memory import best_preset
+
+    return best_preset(outcomes, candidates, _soothe_min_samples(config), default)
+
+
 def _select_next_soothe_preset(
     state: Mapping[str, object],
     config: AppConfig | None,
@@ -1632,16 +1940,18 @@ def _select_next_soothe_preset(
     if default not in candidates:
         default = config_default if config_default in candidates else sorted(candidates)[0]
 
-    learn = getattr(getattr(config, "soothe", None), "learn", None)
-    learn_enabled = bool(getattr(learn, "enabled", False))
-    try:
-        min_samples = int(getattr(learn, "min_samples", 1)) if learn_enabled else 1
-    except (TypeError, ValueError):
-        min_samples = 1
     from .soothe_memory import best_preset
 
-    outcomes = _load_soothe_outcomes(_DEFAULT_HISTORY_DB) if learn_enabled else ()
-    return best_preset(outcomes, candidates, max(1, min_samples), default)
+    context = _normalise_soothe_context(state.get("context", ""))
+    if _soothe_learning_enabled(config):
+        outcomes = (
+            _load_soothe_outcomes(_DEFAULT_HISTORY_DB, context)
+            if context
+            else _load_soothe_outcomes(_DEFAULT_HISTORY_DB)
+        )
+    else:
+        outcomes = ()
+    return best_preset(outcomes, candidates, _soothe_min_samples(config), default)
 
 
 def _autosoothe_preset(config: AppConfig | None, requested: object = None) -> str:
@@ -1714,6 +2024,37 @@ def _adjust_playback_volume(direction: str) -> dict[str, object]:
     return {"ok": False, "reason": "unsupported"}
 
 
+def _record_dashboard_soothe_feedback(
+    state: Mapping[str, object],
+    success: bool,
+    context: str,
+) -> str:
+    preset = str(state.get("playing") or "")
+    if not preset:
+        return "I don't have a playing sound to remember right now."
+    outcome_context = context or _normalise_soothe_context(state.get("context", ""))
+    import os
+
+    from .sensor_store import SensorStore
+
+    store = None
+    try:
+        store = SensorStore(os.path.expanduser(_DEFAULT_HISTORY_DB))
+        store.append_soothe_outcome(time.time(), preset, success, outcome_context)
+    except Exception:
+        return "Sorry, I couldn't remember that soothe result."
+    finally:
+        if store is not None:
+            try:
+                store.close()
+            except Exception:
+                pass
+    suffix = _soothe_context_suffix(outcome_context)
+    if success:
+        return f"Noted, I'll remember that {_soothe_spoken_name(preset)} helped{suffix}."
+    return f"Noted, I'll try something else next time{suffix}."
+
+
 def _soothe_via_dashboard(
     cmd: Mapping[str, object],
     port: int = 8088,
@@ -1722,6 +2063,7 @@ def _soothe_via_dashboard(
     """Trigger the live-view soothe player over local HTTP so the voice command
     and the dashboard share ONE player (single source of truth)."""
     action = str(cmd.get("action") or "")
+    context = _normalise_soothe_context(cmd.get("context", ""))
     if action == "volume":
         direction = str(cmd.get("dir") or "")
         result = _adjust_playback_volume(direction)
@@ -1742,6 +2084,16 @@ def _soothe_via_dashboard(
     if action == "stop":
         params: dict[str, object] = {"action": "stop"}
         spoken = "Okay, stopping the sound."
+    elif action == "feedback":
+        try:
+            state = _live_view_json("/soothe.json", token, port)
+            return _record_dashboard_soothe_feedback(
+                state,
+                cmd.get("success") is True,
+                context,
+            )
+        except Exception:
+            return "Sorry, I couldn't reach the soothe player."
     elif action == "next":
         try:
             state = _live_view_json("/soothe.json", token, port)
@@ -1749,13 +2101,36 @@ def _soothe_via_dashboard(
             if preset is None:
                 return "Sorry, there isn't another soothe sound available."
             params = {"action": "play", "preset": preset}
-            spoken = f"Playing {preset.replace('_', ' ')}."
+            state_context = _normalise_soothe_context(state.get("context", ""))
+            if state_context:
+                params["context"] = state_context
+            spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(state_context)}."
+        except Exception:
+            return "Sorry, I couldn't reach the soothe player."
+    elif action == "play_best":
+        try:
+            state = _live_view_json("/soothe.json", token, port)
+            preset = _select_best_soothe_preset(
+                state,
+                config,
+                category=str(cmd.get("category") or ""),
+                mood=str(cmd.get("mood") or ""),
+                context=context,
+            )
+            if preset is None:
+                return "Sorry, I don't have a matching soothe sound available."
+            params = {"action": "play", "preset": preset}
+            if context:
+                params["context"] = context
+            spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(context)}."
         except Exception:
             return "Sorry, I couldn't reach the soothe player."
     elif action == "play":
         preset = str(cmd.get("preset") or "white_noise")
         params = {"action": "play", "preset": preset}
-        spoken = f"Playing {preset.replace('_', ' ')}."
+        if context:
+            params["context"] = context
+        spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(context)}."
     else:
         return "Sorry, I didn't recognise that soothe command."
 
@@ -1776,15 +2151,23 @@ class _AutoSootheWatcher:
     # YAMNet's fixed input window (0.975 s at 16 kHz).
     _WINDOW = 15600
 
-    def __init__(self, config: AppConfig, native_rate: int, frame_ms: int = 30) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        native_rate: int,
+        frame_ms: int = 30,
+        debug: bool = False,
+    ) -> None:
         self._config = config
         self._native = native_rate
+        self._debug = debug
         self._buf: deque = deque(maxlen=max(1, round(1000 / frame_ms)))  # ~1 s
         self._watcher: object | None = None
         self._building = False
         self._start: float | None = None
         self._last_check = 0.0
         self._last_state = -10.0
+        self._last_enabled: bool | None = None
         self._state: dict[str, object] = {"enabled": False, "preset": ""}
 
     def feed(self, frame: object, now: float) -> str | None:
@@ -1793,6 +2176,15 @@ class _AutoSootheWatcher:
         if now - self._last_state >= 2.0:
             self._state = read_state()
             self._last_state = now
+            enabled = bool(self._state.get("enabled"))
+            if self._debug and enabled != self._last_enabled:
+                preset = str(self._state.get("preset") or "")
+                print(
+                    f"  [debug] auto-soothe state: enabled={enabled} "
+                    f"preset={preset or '(none)'}",
+                    flush=True,
+                )
+            self._last_enabled = enabled
         if not self._state.get("enabled"):
             self._buf.clear()
             return None
@@ -1822,7 +2214,16 @@ class _AutoSootheWatcher:
             audio = np.concatenate(
                 [np.zeros(self._WINDOW - len(audio), dtype=np.float32), audio]
             )
-        if self._watcher.observe(now - (self._start or now), audio):  # type: ignore[attr-defined]
+        trigger = self._watcher.observe(now - (self._start or now), audio)  # type: ignore[attr-defined]
+        if self._debug:
+            score = float(getattr(self._watcher, "last_score", 0.0))
+            threshold = float(getattr(self._config.detection, "threshold", 0.0))
+            print(
+                f"  [debug] YAMNet cry score={score:.3f} "
+                f"threshold={threshold:.3f} trigger={trigger}",
+                flush=True,
+            )
+        if trigger:
             return self._preset_to_play()
         return None
 
@@ -1867,6 +2268,8 @@ class _AutoSootheWatcher:
         if self._building:
             return
         self._building = True
+        if self._debug:
+            print("  [debug] YAMNet cry watcher loading...", flush=True)
         threading.Thread(target=self._do_build, daemon=True).start()
 
     def _do_build(self) -> None:
@@ -1874,8 +2277,11 @@ class _AutoSootheWatcher:
             watcher = self._build()
             self._start = time.monotonic()
             self._watcher = watcher
-        except Exception:
-            pass
+            if self._debug:
+                print("  [debug] YAMNet cry watcher ready", flush=True)
+        except Exception as exc:
+            if self._debug:
+                print(f"  [debug] YAMNet cry watcher failed: {exc}", flush=True)
         finally:
             self._building = False
 

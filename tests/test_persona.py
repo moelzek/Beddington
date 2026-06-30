@@ -188,3 +188,18 @@ def test_soothe_confirmation_restyled(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock(monkeypatch, "Marmalade at the ready! Playing white noise for you now.")
     out = paddingtonise("Playing white noise.", _cfg())
     assert "white noise" in out.lower()
+
+
+def test_soothe_confirmation_rejects_made_up_story(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plain = "Playing piano."
+    _mock(
+        monkeypatch,
+        (
+            "I'm so glad to be talking to you through the monitor. Fact: I've just "
+            "been playing my favourite tune on the piano at home."
+        ),
+    )
+
+    assert paddingtonise(plain, _cfg()) == plain

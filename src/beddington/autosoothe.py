@@ -63,10 +63,12 @@ class CryWatcher:
         self._tracker = tracker
         self._cooldown = cooldown_seconds
         self._last_trigger: float | None = None
+        self.last_score = 0.0
 
     def observe(self, offset_seconds: float, samples: object) -> bool:
         """Feed ~1s of 16 kHz audio. Returns True when a soothe should start."""
         score = self._detector.score(samples)  # type: ignore[attr-defined]
+        self.last_score = float(score)
         if not self._tracker.observe(offset_seconds, score).notify:  # type: ignore[attr-defined]
             return False
         if (

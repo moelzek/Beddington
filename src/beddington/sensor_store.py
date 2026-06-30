@@ -31,6 +31,10 @@ def _numeric(value: object) -> float | None:
     return None
 
 
+def _normalise_context(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
 class SensorStore:
     """SQLite-backed rolling history of sensor readings."""
 
@@ -49,8 +53,10 @@ class SensorStore:
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_key_ts ON readings(key, ts)")
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS soothe_outcomes"
-            " (ts REAL NOT NULL, sound_name TEXT NOT NULL, success INTEGER NOT NULL)"
+            " (ts REAL NOT NULL, sound_name TEXT NOT NULL, success INTEGER NOT NULL,"
+            " context TEXT NOT NULL DEFAULT '')"
         )
+        self._ensure_soothe_outcome_context()
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_soothe_outcomes_ts ON soothe_outcomes(ts)"
         )
@@ -62,6 +68,17 @@ class SensorStore:
             "CREATE INDEX IF NOT EXISTS idx_cry_episodes_ts ON cry_episodes(started_ts)"
         )
         self._conn.commit()
+
+    def _ensure_soothe_outcome_context(self) -> None:
+        columns = {
+            str(row[1])
+            for row in self._conn.execute("PRAGMA table_info(soothe_outcomes)")
+        }
+        if "context" not in columns:
+            self._conn.execute(
+                "ALTER TABLE soothe_outcomes "
+                "ADD COLUMN context TEXT NOT NULL DEFAULT ''"
+            )
 
     def append(
         self,
@@ -118,11 +135,23 @@ class SensorStore:
             self._conn.commit()
             return cursor.rowcount
 
-    def append_soothe_outcome(self, timestamp: float, sound_name: str, success: bool) -> None:
+    def append_soothe_outcome(
+        self,
+        timestamp: float,
+        sound_name: str,
+        success: bool,
+        context: str = "",
+    ) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO soothe_outcomes VALUES (?, ?, ?)",
-                (float(timestamp), str(sound_name), 1 if success else 0),
+                "INSERT INTO soothe_outcomes (ts, sound_name, success, context) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    float(timestamp),
+                    str(sound_name),
+                    1 if success else 0,
+                    _normalise_context(context),
+                ),
             )
             self._conn.commit()
 
@@ -131,6 +160,23 @@ class SensorStore:
             cursor = self._conn.execute(
                 "SELECT ts, sound_name, success FROM soothe_outcomes WHERE ts>=? ORDER BY ts",
                 (float(since_ts),),
+            )
+            return [
+                (float(ts), str(sound_name), bool(success))
+                for ts, sound_name, success in cursor.fetchall()
+            ]
+
+    def outcomes_since_context(
+        self,
+        since_ts: float,
+        context: str,
+    ) -> list[tuple[float, str, bool]]:
+        key = _normalise_context(context)
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT ts, sound_name, success FROM soothe_outcomes "
+                "WHERE ts>=? AND context=? ORDER BY ts",
+                (float(since_ts), key),
             )
             return [
                 (float(ts), str(sound_name), bool(success))

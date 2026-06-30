@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import socket
+import subprocess
 import threading
 import time
 import urllib.error
@@ -182,6 +185,7 @@ class _FakeFrameSource:
 class _FakeSoothe:
     def __init__(self) -> None:
         self._playing: str | None = None
+        self._context = ""
 
     def presets(self) -> list[dict[str, str]]:
         return [
@@ -215,13 +219,18 @@ class _FakeSoothe:
     def playing(self) -> str | None:
         return self._playing
 
-    def play(self, name: str) -> dict[str, object]:
+    def context(self) -> str:
+        return self._context
+
+    def play(self, name: str, context: str = "") -> dict[str, object]:
         self._playing = name
-        return {"ok": True, "playing": name}
+        self._context = context
+        return {"ok": True, "playing": name, "context": context}
 
     def stop(self) -> dict[str, object]:
         self._playing = None
-        return {"ok": True, "playing": None}
+        self._context = ""
+        return {"ok": True, "playing": None, "context": ""}
 
 
 def _free_port() -> int:
@@ -296,8 +305,10 @@ def test_serve_live_view_serves_readings_when_provider_given() -> None:
         assert json.loads(body)["temperature"] == "21°C · comfortable"
 
         # the viewer page now references the readings endpoint (dashboard mode)
-        page = urllib.request.urlopen(f"{base}/?token={token}", timeout=2).read()
+        response = urllib.request.urlopen(f"{base}/?token={token}", timeout=2)
+        page = response.read()
         assert b"readings.json" in page
+        assert response.headers["Cache-Control"] == "no-store"
     finally:
         source.close()
 
@@ -345,10 +356,45 @@ def test_build_viewer_html_has_soothe_tab() -> None:
     )
     assert "Soothe" in html
     assert "soothePost" in html
+    assert "soothe-status" in html
+    assert "setSootheStatus" in html
+    assert "addCurrentSootheControl" in html
+    assert "Cry trigger sound" in html
     assert "addPresetGroups" in html
+    assert "card.onclick" in html
     assert "Sounds" in html
     assert "Music" in html
     assert "/soothe?token=t" in html
+
+
+def test_build_viewer_html_keeps_soothe_without_history() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        soothe_path="/soothe?token=t",
+    )
+
+    assert "Soothe" in html
+    assert "soothe-status" in html
+    assert "async function load(){if(!HISTORY)" in html
+    assert "/soothe?token=t" in html
+
+
+def test_dashboard_script_is_valid_javascript(tmp_path) -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        digest_path="/digest.json?token=t",
+        soothe_path="/soothe?token=t",
+    )
+    match = re.search(r"<script>(.*)</script>", html, re.S)
+    assert match is not None
+    script = tmp_path / "dashboard.js"
+    script.write_text(match.group(1), encoding="utf-8")
+    if shutil.which("node") is None:
+        return
+
+    subprocess.run(["node", "--check", str(script)], check=True)
 
 
 def test_serve_live_view_soothe_play_and_stop() -> None:
@@ -380,12 +426,16 @@ def test_serve_live_view_soothe_play_and_stop() -> None:
         play = urllib.request.Request(
             f"{base}/soothe?token={token}&action=play&preset=white_noise", method="POST"
         )
-        assert json.loads(urllib.request.urlopen(play, timeout=2).read())["playing"] == "white_noise"
+        played = json.loads(urllib.request.urlopen(play, timeout=2).read())
+        assert played["playing"] == "white_noise"
+        assert played["autosoothe"] == {"enabled": False, "preset": ""}
 
         stop = urllib.request.Request(
             f"{base}/soothe?token={token}&action=stop", method="POST"
         )
-        assert json.loads(urllib.request.urlopen(stop, timeout=2).read())["playing"] is None
+        stopped = json.loads(urllib.request.urlopen(stop, timeout=2).read())
+        assert stopped["playing"] is None
+        assert stopped["autosoothe"] == {"enabled": False, "preset": ""}
     finally:
         source.close()
 

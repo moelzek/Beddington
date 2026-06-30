@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -56,8 +59,9 @@ class DryRunSoothePlayer:
 
 
 class SubprocessSoothePlayer:
-    def __init__(self) -> None:
+    def __init__(self, pid_file: Path | None = None) -> None:
         self._processes: list[subprocess.Popen[bytes]] = []
+        self._pid_file = pid_file or _default_soothe_pid_file()
 
     def play(self, step: SootheStepConfig) -> dict[str, Any]:
         self.stop_all()
@@ -82,8 +86,10 @@ class SubprocessSoothePlayer:
             command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         self._processes.append(process)
+        self._write_pid_file()
         return {
             "played": True,
             "player": _player_name(command),
@@ -94,19 +100,23 @@ class SubprocessSoothePlayer:
 
     def stop_all(self) -> None:
         alive = [process for process in self._processes if process.poll() is None]
+        alive_pids = {process.pid for process in alive}
+        for remembered in _read_soothe_pid_file(self._pid_file):
+            if remembered.pid in alive_pids:
+                continue
+            if _pid_still_matches_sound(remembered.pid, remembered.sound_path):
+                _signal_pid_group(remembered.pid, signal.SIGTERM)
         for process in alive:
-            try:
-                process.terminate()
-            except ProcessLookupError:
-                pass
+            _signal_process(process, signal.SIGTERM)
         for process in alive:
             try:
                 process.wait(timeout=1.0)
             except subprocess.TimeoutExpired:
-                process.kill()
+                _signal_process(process, signal.SIGKILL)
         self._processes = [
             process for process in self._processes if process.poll() is None
         ]
+        self._write_pid_file()
 
     def pause_for_listen(self) -> dict[str, Any]:
         self.stop_all()
@@ -115,6 +125,146 @@ class SubprocessSoothePlayer:
     def resume(self, step: SootheStepConfig) -> dict[str, Any]:
         playback = self.play(step)
         return {"resumed": bool(playback.get("played")), "playback": playback}
+
+    def _write_pid_file(self) -> None:
+        alive = [process for process in self._processes if process.poll() is None]
+        _write_soothe_pid_file(
+            self._pid_file,
+            (
+                _RememberedProcess(
+                    pid=process.pid,
+                    sound_path=_sound_path_from_command(
+                        getattr(process, "args", getattr(process, "command", ()))
+                    ),
+                )
+                for process in alive
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class _RememberedProcess:
+    pid: int
+    sound_path: str
+
+
+def _default_soothe_pid_file() -> Path:
+    configured = os.getenv("BEDDINGTON_SOOTHE_PID_FILE")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".config" / "beddington" / "soothe-player.json"
+
+
+def _read_soothe_pid_file(path: Path) -> tuple[_RememberedProcess, ...]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return ()
+
+    if isinstance(raw, dict):
+        entries = raw.get("processes", ())
+    else:
+        entries = raw
+    if not isinstance(entries, list):
+        return ()
+
+    remembered: list[_RememberedProcess] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        pid = entry.get("pid")
+        sound_path = entry.get("sound_path")
+        if isinstance(pid, int) and pid > 0 and isinstance(sound_path, str):
+            remembered.append(_RememberedProcess(pid=pid, sound_path=sound_path))
+    return tuple(remembered)
+
+
+def _write_soothe_pid_file(
+    path: Path,
+    processes: Iterable[_RememberedProcess],
+) -> None:
+    entries = [
+        {"pid": process.pid, "sound_path": process.sound_path}
+        for process in processes
+        if process.pid > 0
+    ]
+    if not entries:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        return
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"version": 1, "processes": entries}),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _sound_path_from_command(command: object) -> str:
+    if not isinstance(command, (list, tuple)):
+        return ""
+    for argument in reversed(command):
+        if isinstance(argument, str) and ("/" in argument or "\\" in argument):
+            return argument
+    return ""
+
+
+def _pid_still_matches_sound(pid: int, sound_path: str) -> bool:
+    if not sound_path or pid == os.getpid():
+        return False
+    command = _process_command(pid)
+    if command is None:
+        return False
+    return sound_path in command
+
+
+def _process_command(pid: int) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=0.5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    command = completed.stdout.strip()
+    return command or None
+
+
+def _signal_process(process: subprocess.Popen[bytes], sig: signal.Signals) -> None:
+    if _signal_pid_group(process.pid, sig):
+        return
+    try:
+        if sig == signal.SIGKILL:
+            process.kill()
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        pass
+
+
+def _signal_pid_group(pid: int, sig: signal.Signals) -> bool:
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        os.killpg(os.getpgid(pid), sig)
+        return True
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    try:
+        os.kill(pid, sig)
+        return True
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
 
 
 class SootheController:
@@ -661,13 +811,40 @@ def _playback_command(path: Path, play_seconds: float) -> list[str] | None:
 
 
 def _single_playback_commands(path: Path) -> tuple[list[str], ...]:
-    commands = (
-        ["afplay", str(path)],
-        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
-    )
+    volume = _playback_volume()
+    commands = (["afplay", str(path)],)
     if path.suffix.lower() == ".mp3":
-        return (*commands, ["mpg123", "-q", str(path)])
-    return (*commands, ["paplay", str(path)], ["aplay", str(path)])
+        return (
+            *commands,
+            ["pw-play", "--volume", volume, str(path)],
+            ["mpg123", "-q", str(path)],
+            [
+                "ffplay",
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "quiet",
+                "-volume",
+                str(round(float(volume) * 100)),
+                str(path),
+            ],
+        )
+    return (
+        *commands,
+        ["pw-play", "--volume", volume, str(path)],
+        ["paplay", str(path)],
+        ["aplay", str(path)],
+    )
+
+
+def _playback_volume() -> str:
+    raw = os.getenv("BEDDINGTON_SOOTHE_VOLUME", "0.45")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.45
+    value = min(1.0, max(0.0, value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
 def _player_name(command: list[str]) -> str:
