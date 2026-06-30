@@ -383,6 +383,43 @@ def test_speak_passes_speaker_only_for_multispeaker_voice(
     assert "--speaker" not in commands[0]
 
 
+def test_speak_translates_piper_speed_to_length_scale(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    piper = tmp_path / "piper"
+    model = tmp_path / "voice.onnx"
+    piper.write_text("", encoding="utf-8")
+    model.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/bin/{command}" if command == "aplay" else None
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        commands.append(command)
+        if command[0] == str(piper):
+            Path(command[command.index("--output_file") + 1]).write_bytes(b"RIFF")
+        return object()
+
+    monkeypatch.setattr("beddington.narrator.shutil.which", fake_which)
+    monkeypatch.setattr("beddington.narrator.subprocess.run", fake_run)
+
+    speak(
+        "hello",
+        NarratorConfig(
+            voice_enabled=True,
+            piper_binary=str(piper),
+            piper_model=str(model),
+            piper_speed=0.85,
+        ),
+    )
+
+    assert "--length_scale" in commands[0]
+    scale = float(commands[0][commands[0].index("--length_scale") + 1])
+    assert scale == pytest.approx(1 / 0.85)
+
+
 def test_speak_degrades_when_binary_absent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

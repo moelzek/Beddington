@@ -85,6 +85,7 @@ voice_engine = "piper"
 piper_binary = "~/piper/piper"
 piper_model = "~/piper-voices/en_GB-vctk-medium.onnx"
 piper_speaker = "259"
+piper_speed = 0.85
 persona_enabled = true
 persona_temperature = 0.5
 persona_num_predict = 64
@@ -141,6 +142,7 @@ gpio_pin = 4
     assert config.narrator.voice_enabled is True
     assert config.narrator.voice_engine == "piper"
     assert config.narrator.piper_speaker == "259"
+    assert config.narrator.piper_speed == 0.85
     assert config.narrator.persona_enabled is True
     assert config.narrator.persona_temperature == 0.5
     assert config.narrator.persona_num_predict == 64
@@ -323,6 +325,14 @@ def test_narrator_backend_must_be_ollama(tmp_path: Path) -> None:
     path.write_text("[narrator]\nbackend = \"cloud\"\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="narrator.backend"):
+        load_config(path)
+
+
+def test_narrator_piper_speed_must_be_positive(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[narrator]\npiper_speed = 0\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="narrator.piper_speed"):
         load_config(path)
 
 

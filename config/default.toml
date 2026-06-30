@@ -231,9 +231,11 @@ temperature = 0.3
 voice_enabled = false
 voice_engine = "piper"
 piper_binary = "~/piper/piper"
-piper_model = "~/piper-voices/en_GB-jenny_dioco-medium.onnx"
+piper_model = "~/piper-voices/en_GB-vctk-medium.onnx"
 # Multi-speaker voices (e.g. en_GB-vctk) pick a speaker by id; empty = default.
-# piper_speaker = ""
+piper_speaker = "19"
+# 1.0 is normal speed. 0.85 makes the spoken assistant a little slower.
+piper_speed = 0.85
 # Beddington persona: a local LLM re-voices each (benign) answer in character (a
 # gentle bear in the spirit of Paddington), grounded + validated so it can never
 # change a fact (see persona.py). Vitals are never restyled. Falls back to the

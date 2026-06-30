@@ -50,6 +50,8 @@ class NarratorConfig:
     # Multi-speaker voices (e.g. en_GB-vctk) select a speaker by id; empty = the
     # voice's single/default speaker (no --speaker arg passed to Piper).
     piper_speaker: str = ""
+    # User-facing speech speed: 1.0 is normal, 0.85 is a little slower.
+    piper_speed: float = 1.0
     # Beddington persona: a local LLM re-voices each (benign) deterministic answer
     # in character, grounded + validated so it can never change a fact (see
     # persona.py). Reuses model/host above. Fails closed to the plain answer.
@@ -407,6 +409,7 @@ def _load_narrator(
         piper_binary=str(raw_narrator.get("piper_binary", default.piper_binary)),
         piper_model=str(raw_narrator.get("piper_model", default.piper_model)),
         piper_speaker=str(raw_narrator.get("piper_speaker", default.piper_speaker)),
+        piper_speed=float(raw_narrator.get("piper_speed", default.piper_speed)),
         persona_enabled=bool(
             raw_narrator.get("persona_enabled", default.persona_enabled)
         ),
@@ -601,6 +604,8 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("narrator.piper_binary must not be empty")
     if not narrator.piper_model.strip():
         raise ValueError("narrator.piper_model must not be empty")
+    if narrator.piper_speed <= 0:
+        raise ValueError("narrator.piper_speed must be positive")
     sensors = config.sensors
     if sensors.sample_interval_seconds <= 0:
         raise ValueError("sensors.sample_interval_seconds must be positive")

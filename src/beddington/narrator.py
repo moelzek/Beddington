@@ -359,6 +359,8 @@ def _synthesise_piper(
         # Multi-speaker voices (e.g. en_GB-vctk) need an explicit speaker id;
         # single-speaker voices take no --speaker and use their default.
         command += ["--speaker", speaker]
+    if config.piper_speed != 1.0:
+        command += ["--length_scale", f"{1 / config.piper_speed:.6g}"]
     try:
         subprocess.run(
             command,
