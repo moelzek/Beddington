@@ -503,10 +503,36 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("that didn't work for feeding") == {
         "action": "feedback", "success": False, "context": "feeding"
     }
-    # not soothe commands
+    # "different / change" a sound -> next (was silently unrecognised before)
+    assert match_soothe_command("play a different track") == {"action": "next"}
+    assert match_soothe_command("play different track") == {"action": "next"}
+    assert match_soothe_command("change the music") == {"action": "next"}
+    assert match_soothe_command("skip this track") == {"action": "next"}
+    assert match_soothe_command("play a different song") == {"action": "next"}
+    # a playback noun makes "stop the track" register as a stop
+    assert match_soothe_command("stop the track") == {"action": "stop"}
+    # not soothe commands — "different / change / another" with NO playback noun
     assert match_soothe_command("what is the temperature") is None
     assert match_soothe_command("is anyone there") is None
     assert match_soothe_command("what's his heart rate") is None
+    assert match_soothe_command("tell me something else") is None
+    assert match_soothe_command("change the subject") is None
+
+
+def test_looks_like_soothe_control() -> None:
+    from beddington.assistant import looks_like_soothe_control
+
+    # clear playback-control attempts (noun + control verb)
+    assert looks_like_soothe_control("play a different track")
+    assert looks_like_soothe_control("stop the music")
+    assert looks_like_soothe_control("change the song")
+    assert looks_like_soothe_control("turn off the noise")
+    # plain questions / unrelated speech must NOT look like control,
+    # so a track ducked for a question still resumes afterwards
+    assert not looks_like_soothe_control("what is the temperature")
+    assert not looks_like_soothe_control("is anyone there")
+    assert not looks_like_soothe_control("change the subject")
+    assert not looks_like_soothe_control("play with the baby")
 
 
 def test_match_soothe_command_vc2_play_names_and_controls() -> None:

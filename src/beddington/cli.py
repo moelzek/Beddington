@@ -24,6 +24,7 @@ from .assistant import (
     answer_question,
     is_history_question,
     is_night_question,
+    looks_like_soothe_control,
     match_soothe_command,
 )
 from .child_profile import CHILD_NAME
@@ -827,6 +828,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     speech_run = 0
     silence_run = 0
     ducked_soothe: dict[str, str] | None = None
+    self_audio_floor = 0.0
+    soothe_playing = False
+    last_soothe_poll = 0.0
     pending_wake_until = 0.0
     pending_wake_soothe: dict[str, str] | None = None
     deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
@@ -889,8 +893,18 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     )
                     if args.debug and pending_wake_soothe is not None:
                         print(f"  [debug] wake follow-up timed out; resumed soothe: {resumed}")
+                    if pending_wake_soothe is not None:
+                        soothe_playing = True
                     pending_wake_until = 0.0
                     pending_wake_soothe = None
+                # Reconcile whether a sound is playing (covers dashboard-started
+                # music too). Cheap localhost poll, low cadence; keep last value
+                # on failure.
+                if now - last_soothe_poll >= 2.0:
+                    polled = _dashboard_soothe_playing(port=dashboard_port)
+                    if polled is not None:
+                        soothe_playing = polled
+                    last_soothe_poll = now
                 pre_roll.append(frame)
                 auto_preset = auto_watcher.feed(frame, now)
                 if auto_preset:
@@ -898,6 +912,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         {"action": "play", "preset": auto_preset},
                         port=dashboard_port,
                     )
+                    soothe_playing = True
                     print(f"  [auto-soothe] sustained crying -> {auto_result}")
                 rms = float(np.sqrt(np.mean(frame**2)))
                 if adapt and not in_utterance and rms < threshold:
@@ -905,14 +920,26 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
                     threshold = max(0.024, min(0.055, round(noise_floor * 2.0, 4)))
-                is_speech = rms > threshold
+                # Lift the bar above our own soothe sound so the music we're
+                # playing doesn't read as someone talking (see _speech_bar).
+                self_audio_floor = _update_self_audio_floor(
+                    self_audio_floor,
+                    rms,
+                    soothe_playing=soothe_playing,
+                    in_utterance=in_utterance,
+                )
+                speech_bar = _speech_bar(
+                    threshold, self_audio_floor, soothe_playing=soothe_playing
+                )
+                is_speech = rms > speech_bar
                 if args.debug:
                     frames_seen += 1
                     max_rms = max(max_rms, rms)
                     if time.monotonic() - last_beat >= 5.0:
                         print(
                             f"  [debug] frames={frames_seen} max_rms={max_rms:.4f} "
-                            f"(speech threshold {threshold:.4f})"
+                            f"(bar {speech_bar:.4f}, self-audio {self_audio_floor:.4f}, "
+                            f"soothe={'on' if soothe_playing else 'off'})"
                         )
                         frames_seen = 0
                         max_rms = 0.0
@@ -922,6 +949,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         speech_run += 1
                         if speech_run >= start_speech_frames:
                             ducked_soothe = _duck_dashboard_soothe(port=dashboard_port)
+                            soothe_playing = False
                             if args.debug and ducked_soothe is not None:
                                 print(
                                     "  [debug] paused soothe for voice: "
@@ -982,6 +1010,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             resume_soothe,
                             port=dashboard_port,
                         )
+                        if resume_soothe is not None:
+                            soothe_playing = True
                         if args.debug and resume_soothe is not None:
                             print(f"  [debug] resumed soothe: {resumed}")
                         continue  # no wake word — ignore silently
@@ -1015,6 +1045,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             port=dashboard_port,
                             config=config,
                         )
+                        _action = str(soothe_cmd.get("action") or "")
+                        if _action in {"play", "play_best", "next"}:
+                            soothe_playing = True
+                        elif _action == "stop":
+                            soothe_playing = False
                     elif is_history_question(question):
                         answer = answer_history_question(question, night_store) or (
                             "I don't have enough history yet to answer that."
@@ -1044,12 +1079,29 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         # never transcribes its own voice as a new command.
                         drain_captured_frames()
                     if not _soothe_command_replaces_playback(soothe_cmd):
-                        resumed = _resume_dashboard_soothe(
-                            resume_after_answer,
-                            port=dashboard_port,
-                        )
-                        if args.debug and resume_after_answer is not None:
-                            print(f"  [debug] resumed soothe: {resumed}")
+                        # If the user clearly tried to control playback but we
+                        # couldn't parse it into a command, leave the sound
+                        # stopped — resuming would bring back the very track
+                        # they were trying to stop or change.
+                        if (
+                            soothe_cmd is None
+                            and resume_after_answer is not None
+                            and looks_like_soothe_control(question)
+                        ):
+                            if args.debug:
+                                print(
+                                    "  [debug] unrecognised soothe-control; "
+                                    "leaving sound stopped"
+                                )
+                        else:
+                            resumed = _resume_dashboard_soothe(
+                                resume_after_answer,
+                                port=dashboard_port,
+                            )
+                            if resume_after_answer is not None:
+                                soothe_playing = True
+                            if args.debug and resume_after_answer is not None:
+                                print(f"  [debug] resumed soothe: {resumed}")
     except KeyboardInterrupt:
         print("Stopped.")
     return 0
@@ -1794,6 +1846,69 @@ def _resume_dashboard_soothe(
         return _live_view_json("/soothe", token, port, params, method="POST")
     except Exception:
         return {"ok": False, "reason": "request_failed"}
+
+
+# --- Self-audio-aware speech gate ------------------------------------------
+# When Beddington plays a soothe sound, that sound leaks back into its own mic
+# and, to a plain energy detector, looks exactly like a person talking. These
+# helpers let the speech bar rise ABOVE the leaked music so (a) the music alone
+# never trips a false wake, and (b) only a clearer/closer voice opens a command
+# — at which point the loop ducks the music and captures the rest cleanly.
+# NOTE: this does not defeat true masking (music louder than the voice at the
+# mic is an SNR/hardware limit); it stops the music from fighting the gate.
+_SELF_AUDIO_MARGIN = 1.6  # a voice must clear the leaked music by this factor
+_SELF_AUDIO_RISE = 0.15  # how fast the floor tracks up toward the music level
+_SELF_AUDIO_DECAY = 0.85  # how fast it falls once the music stops / we listen
+
+
+def _update_self_audio_floor(
+    prev: float,
+    rms: float,
+    *,
+    soothe_playing: bool,
+    in_utterance: bool,
+) -> float:
+    """Track the mic energy contributed by our own soothe sound.
+
+    Rises toward the current mic level while a sound is playing and we are not
+    mid-utterance; decays once the sound stops or while we are capturing speech
+    (the music is ducked then, so the floor should fall).
+    """
+    if soothe_playing and not in_utterance:
+        return (1.0 - _SELF_AUDIO_RISE) * prev + _SELF_AUDIO_RISE * max(0.0, rms)
+    return prev * _SELF_AUDIO_DECAY
+
+
+def _speech_bar(
+    base_threshold: float,
+    self_audio_floor: float,
+    *,
+    soothe_playing: bool,
+) -> float:
+    """The effective 'is this speech?' bar for the current frame.
+
+    With no sound playing this is just the room-noise threshold. While a sound
+    plays, the bar is lifted above the leaked-music floor so the music alone
+    never registers as speech.
+    """
+    if not soothe_playing:
+        return base_threshold
+    return max(base_threshold, round(self_audio_floor * _SELF_AUDIO_MARGIN, 4))
+
+
+def _dashboard_soothe_playing(port: int = 8088) -> bool | None:
+    """Best-effort: is a soothe sound currently playing (dashboard or auto)?
+
+    Returns None on any failure so the caller keeps its last known value.
+    """
+    token = _read_live_view_token()
+    if token is None:
+        return None
+    try:
+        state = _live_view_json("/soothe.json", token, port)
+    except Exception:
+        return None
+    return bool(state.get("playing"))
 
 
 def _soothe_command_replaces_playback(cmd: Mapping[str, object] | None) -> bool:

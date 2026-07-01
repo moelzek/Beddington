@@ -542,6 +542,17 @@ _SOOTHE_AUTOSOOTHE_OFF = (
     "auto soothe off",
 )
 _SOOTHE_NEXT_WORDS = ("next", "switch", "try another")
+# "play a different track", "change the music", "skip this one" — a request for
+# a *different* sound. Gated on soothe context (a playback noun) at the call
+# site so "change the subject" or "another question" never trips it.
+_SOOTHE_DIFFERENT_WORDS = (
+    "different",
+    "another",
+    "something else",
+    "anything else",
+    "change",
+    "skip",
+)
 _SOOTHE_VOLUME_UP = ("louder",)
 _SOOTHE_VOLUME_DOWN = ("quieter",)
 _SOOTHE_CONTEXTS: dict[str, tuple[str, ...]] = {
@@ -665,12 +676,15 @@ def match_soothe_command(
     if soothe_context is not None and broad is not None:
         return {"action": "play_best", "context": soothe_context, **broad}
     context = preset is not None or _mentions(
-        q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying", "cry"
+        q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying",
+        "cry", "track", "song", "tune", "playlist"
     )
     if q == "stop":
         return {"action": "stop"}
     if _mentions(q, *_SOOTHE_STOP_WORDS) and context:
         return {"action": "stop"}
+    if _mentions(q, *_SOOTHE_DIFFERENT_WORDS) and context:
+        return {"action": "next"}
     if _mentions(q, *_SOOTHE_NEXT_WORDS):
         return {"action": "next"}
     if _mentions(q, *_SOOTHE_VOLUME_UP):
@@ -696,6 +710,33 @@ def match_soothe_command(
                 command["context"] = soothe_context
             return command
     return None
+
+
+_SOOTHE_CONTROL_NOUNS = (
+    "music", "sound", "noise", "track", "song", "tune", "soothe", "lullaby",
+    "playlist", "melody",
+)
+
+
+def looks_like_soothe_control(question: str) -> bool:
+    """True when the user clearly tried to control playback, even if
+    ``match_soothe_command`` could not resolve it to a concrete command.
+
+    Used by the voice loop to decide *not* to resume a ducked track after an
+    unrecognised control attempt — so "play a different <garbled>" leaves the
+    sound stopped instead of bringing the same track back. Deliberately narrow:
+    it needs both a playback noun and a control verb, so a plain sensor question
+    ("what is the temperature") while music plays still resumes the track.
+    """
+    q = normalize_transcript(question)
+    if not _mentions(q, *_SOOTHE_CONTROL_NOUNS):
+        return False
+    return (
+        _mentions(q, *_SOOTHE_STOP_WORDS)
+        or _mentions(q, *_SOOTHE_PLAY_WORDS)
+        or _mentions(q, *_SOOTHE_NEXT_WORDS)
+        or _mentions(q, *_SOOTHE_DIFFERENT_WORDS)
+    )
 
 
 def _answer_intent_result(intent: str, snapshot: dict[str, object]) -> _AnswerResult:

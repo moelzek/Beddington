@@ -1037,3 +1037,37 @@ def test_camera_change_writes_derived_report(tmp_path, capsys, monkeypatch) -> N
     assert report["source"] == "rpicam-still-pair"
     assert report["raw_frames_retained"] is False
     assert report["before"]["path"] == "deleted temporary before frame"
+
+
+def test_speech_bar_ignores_own_soothe_but_hears_louder_voice() -> None:
+    """Part 3: while Beddington plays a sound, the leaked music must not read
+    as speech, but a clearer/louder voice over it still opens an utterance."""
+    from beddington.cli import _speech_bar, _update_self_audio_floor
+
+    base = 0.024  # quiet-room threshold
+    music_level = 0.09  # our own soothe leaking into the mic
+
+    # With nothing playing, the bar is just the room threshold.
+    assert _speech_bar(base, 0.0, soothe_playing=False) == base
+
+    # Let the self-audio floor track up to the music over a second of frames.
+    floor = 0.0
+    for _ in range(40):
+        floor = _update_self_audio_floor(
+            floor, music_level, soothe_playing=True, in_utterance=False
+        )
+    bar = _speech_bar(base, floor, soothe_playing=True)
+
+    # The music alone stays *below* the bar (no false wake) ...
+    assert music_level < bar
+    # ... but a distinctly louder voice over the music clears it.
+    assert music_level * 2.0 > bar
+
+    # Once the sound stops (or we start capturing), the floor decays back down
+    # so the bar returns toward the room threshold.
+    for _ in range(40):
+        floor = _update_self_audio_floor(
+            floor, music_level, soothe_playing=False, in_utterance=False
+        )
+    assert _speech_bar(base, floor, soothe_playing=True) < bar
+    assert _speech_bar(base, floor, soothe_playing=False) == base
