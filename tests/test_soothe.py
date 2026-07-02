@@ -53,6 +53,30 @@ class StubbornProcess(FakeProcess):
         raise subprocess.TimeoutExpired(self.command, timeout)
 
 
+class ReapTrackingProcess(FakeProcess):
+    """SIGTERM ignored; the first wait() times out (forcing SIGKILL); after kill
+    it can be reaped. Records every wait() call so we can assert the post-kill
+    reap actually happens (BUG K11/zombie prevention)."""
+
+    def __init__(self, command: list[str], **kwargs: object) -> None:
+        super().__init__(command, **kwargs)
+        self.wait_calls = 0
+
+    def terminate(self) -> None:
+        # SIGTERM does not stop this stubborn child.
+        self.terminated = True
+
+    def poll(self) -> int | None:
+        # Stays "not yet reaped" (defunct) until wait() is called after kill.
+        return 0 if self.killed else None
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_calls += 1
+        if not self.killed:
+            raise subprocess.TimeoutExpired(self.command, timeout)
+        return 0
+
+
 class FakeControllerPlayer:
     def __init__(self) -> None:
         self.played_steps: list[SootheStepConfig] = []
@@ -82,6 +106,18 @@ class FailingSwitchPlayer(FakeControllerPlayer):
         if step.name == "waves":
             return {"played": False, "reason": "backend_failed"}
         return {"played": True, "play_seconds": step.play_seconds}
+
+
+class FailingPlayer(FakeControllerPlayer):
+    """Every play() silently fails, mimicking a missing file / no backend."""
+
+    def play(self, step: SootheStepConfig) -> dict[str, object]:
+        self.played_steps.append(step)
+        return {
+            "played": False,
+            "reason": "sound_path_not_found",
+            "sound_path": "/missing/sound.wav",
+        }
 
 
 def test_soothe_settle_waits_for_min_play_seconds() -> None:
@@ -411,6 +447,104 @@ def test_quiet_check_resolution_waits_for_min_play_seconds() -> None:
     }
 
 
+def test_failed_playback_flags_unavailable_and_notifies_promptly() -> None:
+    # BUG K4: a soothe step whose playback silently fails must NOT be treated as
+    # a successful soothe. We should emit soothe_unavailable and notify a human
+    # immediately instead of waiting out the full notify window.
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FailingPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=0.0,
+            steps=(
+                SootheStepConfig(
+                    name="white noise",
+                    wait_seconds=1800.0,
+                    play_seconds=1800.0,
+                ),
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    result = controller.observe(0.0, 0.9, (), escalation_due=True)
+
+    kinds = [event.kind for event in result.events]
+    assert kinds == ["soothe_attempted", "soothe_unavailable"]
+    unavailable = result.events[1]
+    assert unavailable.details["reason"] == "sound_path_not_found"
+    assert unavailable.details["playback"] == {
+        "played": False,
+        "reason": "sound_path_not_found",
+        "sound_path": "/missing/sound.wav",
+    }
+    # The caretaker is alerted now rather than after wait_seconds (1800s).
+    assert result.notify is True
+
+
+def test_renewed_cry_during_pending_quiet_does_not_stop_soothe() -> None:
+    # BUG K3: while a quiet resolution is pending (waiting out min_play_seconds),
+    # a renewed cry must cancel the quiet confirmation — the controller must NOT
+    # stop_all while the infant is actively crying.
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=60.0,
+            steps=(
+                SootheStepConfig(
+                    name="white noise",
+                    wait_seconds=600.0,
+                    play_seconds=600.0,
+                ),
+            ),
+            quiet_check=QuietCheckConfig(
+                enabled=True,
+                check_interval_seconds=10.0,
+                listen_seconds=5.0,
+                required_checks=1,
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    # Quiet check starts at 10s, finishes at 15s -> required_checks met, but the
+    # minimum play window (60s) has not elapsed, so a quiet resolution pends.
+    controller.observe(10.0, 0.1, (), escalation_due=False)
+    pending = controller.observe(15.0, 0.1, (), escalation_due=False)
+    # Baby cries again while the quiet resolution is pending.
+    cry_started = Event(
+        kind="cry_started",
+        occurred_at=started + timedelta(seconds=30.0),
+        offset_seconds=30.0,
+        score=0.9,
+    )
+    renewed = controller.observe(30.0, 0.9, (cry_started,), escalation_due=False)
+    # Reaching the minimum-play deadline must NOT confirm quiet while crying.
+    at_deadline = controller.observe(60.0, 0.9, (), escalation_due=False)
+
+    assert [event.kind for event in pending.events] == ["soothe_quiet_check"]
+    # The renewed cry drops the pending quiet resolution (no confirmation).
+    assert renewed.events == ()
+    # At the deadline the controller does NOT confirm quiet; a fresh quiet check
+    # must pass again instead, so soothing keeps playing.
+    assert not any(
+        event.kind == "soothe_quiet_confirmed"
+        for event in (*renewed.events, *at_deadline.events)
+    )
+    # Soothing was never stopped to "confirm quiet" while crying.
+    assert player.stop_calls == 0
+    # Controller is still actively soothing (not reset).
+    assert controller._active is True
+
+
 def test_playback_command_loops_selected_supported_backend(
     monkeypatch,
     tmp_path: Path,
@@ -709,6 +843,45 @@ def test_subprocess_soothe_player_kills_stubborn_process(
 
     assert processes[0].terminated is True
     assert processes[0].killed is True
+
+
+def test_subprocess_soothe_player_reaps_killed_process(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    # BUG K8: after SIGKILL, the child must be wait()'d so it does not linger as
+    # a defunct/zombie across cry cycles, and it must be dropped from the tracked
+    # list once reaped.
+    sound = tmp_path / "white-noise.wav"
+    sound.write_bytes(b"RIFF")
+    processes: list[ReapTrackingProcess] = []
+
+    monkeypatch.setattr(
+        soothe.shutil,
+        "which",
+        lambda command: f"/usr/bin/{command}" if command == "aplay" else None,
+    )
+
+    def fake_popen(command: list[str], **kwargs: object) -> ReapTrackingProcess:
+        process = ReapTrackingProcess(command, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(soothe.subprocess, "Popen", fake_popen)
+    pid_file = tmp_path / "soothe-player.json"
+    player = SubprocessSoothePlayer(pid_file=pid_file)
+    player.play(SootheStepConfig(name="white noise", sound_path=sound))
+
+    player.stop_all()
+
+    process = processes[0]
+    assert process.terminated is True
+    assert process.killed is True
+    # A reap wait() must follow the kill: first wait timed out, second reaped.
+    assert process.wait_calls >= 2
+    # Reaped process is no longer tracked and leaves no lingering pid file.
+    assert player._processes == []
+    assert not pid_file.exists()
 
 
 def test_subprocess_soothe_player_loop_stops_child_process(

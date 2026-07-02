@@ -12,6 +12,7 @@ import urllib.request
 
 from beddington.liveview import (
     FrameBroker,
+    _ModeBroker,
     build_viewer_html,
     history_series,
     is_authorised,
@@ -185,6 +186,58 @@ def test_frame_broker_timeout_returns_no_frame() -> None:
 
     assert seq == 0
     assert frame is None
+
+
+def test_mode_broker_switch_returns_new_broker_frame_promptly() -> None:
+    # K5: day runs fast (high seq) and night runs slow (low seq). After a
+    # day->night switch a viewer must NOT block until the night broker's seq
+    # climbs past the stale day seq — it should get night's current frame at once.
+    day = FrameBroker()
+    night = FrameBroker()
+    mode = {"value": "day"}
+    broker = _ModeBroker({"day": day, "night": night}, lambda: mode["value"])
+
+    # Day has streamed a lot (seq high); night has only a couple of frames.
+    for _ in range(900):
+        day.publish(JPEG_A)
+    night.publish(JPEG_B)
+    night.publish(JPEG_B)  # night seq == 2, far below day seq == 900
+
+    cursor = broker.new_cursor()
+    # Viewer reads day and reaches its high seq.
+    seq, frame = broker.wait_for_frame(0, timeout=1.0, cursor=cursor)
+    assert frame == JPEG_A
+    day_seq = seq
+    assert day_seq == 900
+
+    # Switch to night. With the stale cross-broker seq (900) this would block
+    # for minutes; the fix must return night's current frame immediately.
+    mode["value"] = "night"
+    seq, frame = broker.wait_for_frame(day_seq, timeout=0.2, cursor=cursor)
+    assert frame == JPEG_B  # got the new broker's frame, not None/timeout
+    assert seq == 2  # night's own seq, not the stale day seq
+
+    # Subsequent reads follow night normally (block until a newer night frame).
+    seq2, frame2 = broker.wait_for_frame(seq, timeout=0.05, cursor=cursor)
+    assert frame2 is None  # no new night frame yet -> normal timeout
+    assert seq2 == 2
+    night.publish(JPEG_B)
+    seq3, frame3 = broker.wait_for_frame(seq2, timeout=1.0, cursor=cursor)
+    assert frame3 == JPEG_B and seq3 == 3
+
+
+def test_mode_broker_single_mode_behaves_like_frame_broker() -> None:
+    # No switch: _ModeBroker must behave exactly like the underlying broker.
+    only = FrameBroker()
+    broker = _ModeBroker({"day": only}, lambda: "day")
+    cursor = broker.new_cursor()
+
+    only.publish(JPEG_A)
+    seq, frame = broker.wait_for_frame(0, timeout=1.0, cursor=cursor)
+    assert frame == JPEG_A and seq == 1
+
+    seq2, frame2 = broker.wait_for_frame(seq, timeout=0.02, cursor=cursor)
+    assert frame2 is None and seq2 == 1  # nothing new -> timeout, seq unchanged
 
 
 class _FakeFrameSource:

@@ -12,6 +12,7 @@ import pytest
 from beddington.config import (
     AppConfig,
     DetectionConfig,
+    LlmConfig,
     NotificationConfig,
     QuietCheckConfig,
     SensorsConfig,
@@ -20,6 +21,8 @@ from beddington.config import (
     SoundsConfig,
     load_config,
 )
+from beddington import pipeline as pipeline_module
+from beddington.llm import _extract_content
 from beddington.models import AudioWindow
 from beddington.pipeline import run_pipeline
 
@@ -524,3 +527,72 @@ def test_pipeline_records_non_cry_sounds(tmp_path: Path) -> None:
     assert sounds
     # Crying is excluded (it has its own detector); cooing is the recorded sound.
     assert all(event.details["sound"] == "cooing" for event in sounds)
+
+
+def test_pipeline_writes_outputs_when_polish_digest_raises(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # K6: an LLM polish failure must fail OPEN — the night's deterministic
+    # digest and event log are written, and no exception escapes run_pipeline.
+    scores = [0.1, 0.8, 0.9, 0.7, 0.1, 0.1]
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        notifications=NotificationConfig(desktop=False),
+        llm=LlmConfig(
+            enabled=True,
+            base_url="http://localhost:1/v1",
+            model="test-model",
+            api_key="test-key",
+        ),
+    )
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("LLM polish request failed: simulated network error")
+
+    monkeypatch.setattr(pipeline_module, "polish_digest", boom)
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=FakeNotifier(),
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+    )
+
+    # Outputs still written despite the polish failure.
+    assert result.paths.events_json.exists()
+    assert result.paths.readable_log.exists()
+    assert result.paths.digest.exists()
+    # The deterministic digest is preserved (unpolished).
+    assert "1 sustained crying episode" in result.digest
+    assert result.paths.digest.read_text().strip() == result.digest.strip()
+
+
+def test_extract_content_returns_message_text() -> None:
+    result = {"choices": [{"message": {"content": "  polished summary  "}}]}
+    assert _extract_content(result) == "polished summary"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {},  # no "choices"
+        {"choices": []},  # empty choices -> IndexError
+        {"choices": [{}]},  # no "message"
+        {"choices": [{"message": {}}]},  # no "content"
+        {"choices": "not-a-list"},  # wrong type -> TypeError
+        {"choices": [{"message": {"content": None}}]},  # null content
+        "not-a-dict",  # wrong top-level type
+    ],
+)
+def test_extract_content_raises_cleanly_on_malformed_response(bad: object) -> None:
+    # K6: a malformed/edge response raises a clean RuntimeError (not a raw
+    # KeyError/IndexError/TypeError) so the pipeline try/except catches it.
+    with pytest.raises(RuntimeError):
+        _extract_content(bad)

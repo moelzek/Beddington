@@ -17,6 +17,7 @@ from beddington.cli import (
     _format_sensor_line,
     _is_degenerate,
     _maybe_play_wake_chime,
+    _recover_from_utterance_error,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
     _resume_dashboard_soothe,
@@ -417,6 +418,57 @@ def test_duck_and_resume_dashboard_soothe(monkeypatch: pytest.MonkeyPatch) -> No
         ("/soothe", {"action": "stop"}, "POST"),
         ("/soothe", {"action": "play", "preset": "piano", "context": "sleep"}, "POST"),
     ]
+
+
+def test_recover_from_utterance_error_resumes_ducked_soothe() -> None:
+    # K7: a single bad utterance must be isolated. The recovery helper logs the
+    # failure and resumes any soothe that was ducked for the utterance so a
+    # mid-utterance crash never leaves the sound paused.
+    resumes: list[tuple[dict[str, str], int]] = []
+
+    def fake_resume(ducked, port: int = 8088):
+        resumes.append((dict(ducked), port))
+        return {"ok": True, "playing": ducked.get("preset")}
+
+    resumed = _recover_from_utterance_error(
+        RuntimeError("whisper decode failed"),
+        {"preset": "piano", "context": "sleep"},
+        port=8088,
+        resume=fake_resume,
+    )
+
+    assert resumed is True  # -> caller sets soothe_playing = True
+    assert resumes == [({"preset": "piano", "context": "sleep"}, 8088)]
+
+
+def test_recover_from_utterance_error_no_soothe_when_nothing_ducked() -> None:
+    calls: list[object] = []
+
+    def fake_resume(ducked, port: int = 8088):
+        calls.append(ducked)
+        return {"ok": True}
+
+    resumed = _recover_from_utterance_error(
+        ValueError("marginal audio"),
+        None,
+        resume=fake_resume,
+    )
+
+    assert resumed is False  # nothing to resume -> soothe_playing stays False
+    assert calls == []  # resume never called
+
+
+def test_recover_from_utterance_error_does_not_reraise() -> None:
+    # The whole point is isolation: it must swallow the utterance error and
+    # never propagate (that would kill listen-assistant).
+    try:
+        _recover_from_utterance_error(
+            RuntimeError("boom"),
+            None,
+            resume=lambda *a, **k: {"ok": True},
+        )
+    except Exception as exc:  # pragma: no cover - would be a regression
+        raise AssertionError(f"recovery must not re-raise, got {exc!r}") from exc
 
 
 def test_soothe_via_dashboard_next_uses_best_preset_excluding_current(

@@ -971,141 +971,163 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 else:
                     silence_run += 1
                 if silence_run >= end_silence_frames or len(buffer) >= max_frames:
-                    audio = np.concatenate(buffer)
-                    in_utterance = False
-                    speech_run = 0
-                    silence_run = 0
-                    buffer = []
-                    resume_soothe = ducked_soothe
-                    ducked_soothe = None
-                    if native_rate != target_rate:
-                        count = int(len(audio) * target_rate / native_rate)
-                        audio = np.interp(
-                            np.linspace(0, len(audio), count, endpoint=False),
-                            np.arange(len(audio)),
-                            audio,
-                        ).astype(np.float32)
-                    text = _transcribe(model, audio)
-                    question = extract_wake_question(text, wake_words)
-                    resume_after_answer = resume_soothe
-                    now = time.monotonic()
-                    from_pending_wake = False
-                    if (
-                        question is None
-                        and pending_wake_until
-                        and now < pending_wake_until
-                    ):
-                        pending_text = normalize_transcript(text)
-                        if pending_text:
-                            question = pending_text
-                            from_pending_wake = True
-                            resume_after_answer = resume_after_answer or pending_wake_soothe
-                            pending_wake_until = 0.0
-                            pending_wake_soothe = None
-                            if args.debug:
-                                print(
-                                    "  [debug] using wake follow-up as question: "
-                                    f"{question!r}"
-                                )
-                    if args.debug:
-                        print(f'  [debug] transcript="{text}" -> question={question!r}')
-                    if question is None:
-                        resumed = _resume_dashboard_soothe(
-                            resume_soothe,
-                            port=dashboard_port,
-                        )
-                        if resume_soothe is not None:
-                            soothe_playing = True
-                        if args.debug and resume_soothe is not None:
-                            print(f"  [debug] resumed soothe: {resumed}")
-                        continue  # no wake word — ignore silently
-                    chime = _maybe_play_wake_chime(
-                        question,
-                        config,
-                        already_acknowledged=from_pending_wake,
-                    )
-                    if args.debug:
-                        print(f"  [debug] chime: {chime}")
-                    drain_captured_frames()
-                    if question == "":
-                        pending_wake_until = time.monotonic() + 6.0
-                        pending_wake_soothe = resume_after_answer or pending_wake_soothe
-                        if args.debug:
-                            print("  [debug] wake heard; waiting for follow-up")
-                        continue
-                    llm_config = _assistant_llm_translator_config(config)
-                    soothe_cmd = match_soothe_command(question, soothe_presets)
-                    if soothe_cmd is None:
-                        llama_soothe_cmd = translate_soothe_command(
-                            question,
-                            llm_config,
-                            soothe_presets,
-                        )
-                        if llama_soothe_cmd is not None:
-                            soothe_cmd = llama_soothe_cmd
-                    if soothe_cmd is not None:
-                        answer = _soothe_via_dashboard(
-                            soothe_cmd,
-                            port=dashboard_port,
-                            config=config,
-                        )
-                        _action = str(soothe_cmd.get("action") or "")
-                        if _action in {"play", "play_best", "next"}:
-                            soothe_playing = True
-                        elif _action == "stop":
-                            soothe_playing = False
-                    elif is_history_question(question):
-                        answer = answer_history_question(question, night_store) or (
-                            "I don't have enough history yet to answer that."
-                        )
-                    elif is_night_question(question) and night_store is not None:
-                        digest = _summarise_store_night(night_store, 12 * 3600)
-                        answer = digest.replace("• ", "").replace("\n", " ")
-                    else:
-                        snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
-                        answer = answer_question(
-                            question,
-                            snapshot,
-                            llm_config,
-                            memory=conversation_memory,
-                        )
-                    # Re-voice grounded sensor/action answers as Beddington.
-                    # Medically-sensitive vitals are spoken verbatim, and model-led
-                    # conversational replies still pass through the same speech path.
-                    if soothe_cmd is None:
-                        answer = paddingtonise(answer, speak_config)
-                    print(f'  heard: "{question}"  ->  {answer}')
-                    if not args.no_speak:
-                        spoken = speak(answer, speak_config)
-                        if args.debug:
-                            print(f"  [debug] speak: {spoken}")
-                        # Drop frames captured while we were speaking, so Beddington
-                        # never transcribes its own voice as a new command.
-                        drain_captured_frames()
-                    if not _soothe_command_replaces_playback(soothe_cmd):
-                        # If the user clearly tried to control playback but we
-                        # couldn't parse it into a command, leave the sound
-                        # stopped — resuming would bring back the very track
-                        # they were trying to stop or change.
+                    pending_resume = ducked_soothe
+                    try:
+                        audio = np.concatenate(buffer)
+                        in_utterance = False
+                        speech_run = 0
+                        silence_run = 0
+                        buffer = []
+                        resume_soothe = ducked_soothe
+                        ducked_soothe = None
+                        if native_rate != target_rate:
+                            count = int(len(audio) * target_rate / native_rate)
+                            audio = np.interp(
+                                np.linspace(0, len(audio), count, endpoint=False),
+                                np.arange(len(audio)),
+                                audio,
+                            ).astype(np.float32)
+                        text = _transcribe(model, audio)
+                        question = extract_wake_question(text, wake_words)
+                        resume_after_answer = resume_soothe
+                        now = time.monotonic()
+                        from_pending_wake = False
                         if (
-                            soothe_cmd is None
-                            and resume_after_answer is not None
-                            and looks_like_soothe_control(question)
+                            question is None
+                            and pending_wake_until
+                            and now < pending_wake_until
                         ):
-                            if args.debug:
-                                print(
-                                    "  [debug] unrecognised soothe-control; "
-                                    "leaving sound stopped"
-                                )
-                        else:
+                            pending_text = normalize_transcript(text)
+                            if pending_text:
+                                question = pending_text
+                                from_pending_wake = True
+                                resume_after_answer = resume_after_answer or pending_wake_soothe
+                                pending_wake_until = 0.0
+                                pending_wake_soothe = None
+                                if args.debug:
+                                    print(
+                                        "  [debug] using wake follow-up as question: "
+                                        f"{question!r}"
+                                    )
+                        if args.debug:
+                            print(f'  [debug] transcript="{text}" -> question={question!r}')
+                        if question is None:
                             resumed = _resume_dashboard_soothe(
-                                resume_after_answer,
+                                resume_soothe,
                                 port=dashboard_port,
                             )
-                            if resume_after_answer is not None:
+                            if resume_soothe is not None:
                                 soothe_playing = True
-                            if args.debug and resume_after_answer is not None:
+                            if args.debug and resume_soothe is not None:
                                 print(f"  [debug] resumed soothe: {resumed}")
+                            continue  # no wake word — ignore silently
+                        chime = _maybe_play_wake_chime(
+                            question,
+                            config,
+                            already_acknowledged=from_pending_wake,
+                        )
+                        if args.debug:
+                            print(f"  [debug] chime: {chime}")
+                        drain_captured_frames()
+                        if question == "":
+                            pending_wake_until = time.monotonic() + 6.0
+                            pending_wake_soothe = resume_after_answer or pending_wake_soothe
+                            if args.debug:
+                                print("  [debug] wake heard; waiting for follow-up")
+                            continue
+                        llm_config = _assistant_llm_translator_config(config)
+                        soothe_cmd = match_soothe_command(question, soothe_presets)
+                        if soothe_cmd is None:
+                            llama_soothe_cmd = translate_soothe_command(
+                                question,
+                                llm_config,
+                                soothe_presets,
+                            )
+                            if llama_soothe_cmd is not None:
+                                soothe_cmd = llama_soothe_cmd
+                        if soothe_cmd is not None:
+                            answer = _soothe_via_dashboard(
+                                soothe_cmd,
+                                port=dashboard_port,
+                                config=config,
+                            )
+                            _action = str(soothe_cmd.get("action") or "")
+                            if _action in {"play", "play_best", "next"}:
+                                soothe_playing = True
+                            elif _action == "stop":
+                                soothe_playing = False
+                        elif is_history_question(question):
+                            answer = answer_history_question(question, night_store) or (
+                                "I don't have enough history yet to answer that."
+                            )
+                        elif is_night_question(question) and night_store is not None:
+                            digest = _summarise_store_night(night_store, 12 * 3600)
+                            answer = digest.replace("• ", "").replace("\n", " ")
+                        else:
+                            snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
+                            answer = answer_question(
+                                question,
+                                snapshot,
+                                llm_config,
+                                memory=conversation_memory,
+                            )
+                        # Re-voice grounded sensor/action answers as Beddington.
+                        # Medically-sensitive vitals are spoken verbatim, and model-led
+                        # conversational replies still pass through the same speech path.
+                        if soothe_cmd is None:
+                            answer = paddingtonise(answer, speak_config)
+                        print(f'  heard: "{question}"  ->  {answer}')
+                        if not args.no_speak:
+                            spoken = speak(answer, speak_config)
+                            if args.debug:
+                                print(f"  [debug] speak: {spoken}")
+                            # Drop frames captured while we were speaking, so Beddington
+                            # never transcribes its own voice as a new command.
+                            drain_captured_frames()
+                        if not _soothe_command_replaces_playback(soothe_cmd):
+                            # If the user clearly tried to control playback but we
+                            # couldn't parse it into a command, leave the sound
+                            # stopped — resuming would bring back the very track
+                            # they were trying to stop or change.
+                            if (
+                                soothe_cmd is None
+                                and resume_after_answer is not None
+                                and looks_like_soothe_control(question)
+                            ):
+                                if args.debug:
+                                    print(
+                                        "  [debug] unrecognised soothe-control; "
+                                        "leaving sound stopped"
+                                    )
+                            else:
+                                resumed = _resume_dashboard_soothe(
+                                    resume_after_answer,
+                                    port=dashboard_port,
+                                )
+                                if resume_after_answer is not None:
+                                    soothe_playing = True
+                                if args.debug and resume_after_answer is not None:
+                                    print(f"  [debug] resumed soothe: {resumed}")
+                    except Exception as exc:  # noqa: BLE001 - one bad utterance must not kill the loop
+                        # Isolate a single failed utterance (e.g. a marginal
+                        # Whisper decode, a numpy shape error, a transient answer
+                        # or speak failure): log it, resume any ducked soothe so we
+                        # don't leave the sound paused, reset the capture state, and
+                        # keep listening. KeyboardInterrupt is NOT caught here, so
+                        # the outer handler still stops the assistant cleanly.
+                        if _recover_from_utterance_error(
+                            exc,
+                            pending_resume,
+                            port=dashboard_port,
+                            debug=args.debug,
+                        ):
+                            soothe_playing = True
+                        in_utterance = False
+                        buffer = []
+                        speech_run = 0
+                        silence_run = 0
+                        ducked_soothe = None
+                        continue
     except KeyboardInterrupt:
         print("Stopped.")
     return 0
@@ -1846,6 +1868,37 @@ def _resume_dashboard_soothe(
         return _live_view_json("/soothe", token, port, params, method="POST")
     except Exception:
         return {"ok": False, "reason": "request_failed"}
+
+
+def _recover_from_utterance_error(
+    exc: BaseException,
+    ducked_soothe: Mapping[str, str] | None,
+    *,
+    port: int = 8088,
+    debug: bool = False,
+    resume: Callable[..., object] | None = None,
+) -> bool:
+    """Recover the voice loop after a single utterance failed to process.
+
+    One bad Whisper decode (or a transient transcribe/answer/speak error) must
+    not kill the whole assistant. This logs the failure and, crucially, resumes
+    any soothe that was ducked for the utterance so a mid-utterance crash never
+    leaves the sound paused. Returns the new ``soothe_playing`` value (True if a
+    ducked sound was resumed). The caller resets the per-utterance capture state
+    (in_utterance/buffer/speech_run/silence_run) after calling this.
+    """
+    resume_fn = resume or _resume_dashboard_soothe
+    print(f"  [assistant] skipped an utterance after an error: {exc}", flush=True)
+    if debug:
+        import traceback
+
+        traceback.print_exc()
+    if ducked_soothe is not None:
+        resumed = resume_fn(ducked_soothe, port=port)
+        if debug:
+            print(f"  [debug] resumed soothe after error: {resumed}", flush=True)
+        return True
+    return False
 
 
 # --- Self-audio-aware speech gate ------------------------------------------

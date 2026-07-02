@@ -783,9 +783,17 @@ def _make_handler(
                 self.send_header("Cache-Control", "no-cache, private")
                 self.end_headers()
                 seq = 0
+                # A _ModeBroker hands out a per-viewer cursor so a day/night
+                # mode switch is detected for THIS stream and doesn't block on a
+                # stale cross-broker seq. A plain FrameBroker has no cursor and
+                # behaves exactly as before.
+                cursor = broker.new_cursor() if hasattr(broker, "new_cursor") else None
                 try:
                     while True:
-                        seq, frame = broker.wait_for_frame(seq)
+                        if cursor is not None:
+                            seq, frame = broker.wait_for_frame(seq, cursor=cursor)
+                        else:
+                            seq, frame = broker.wait_for_frame(seq)
                         if frame is None:
                             if broker.closed:
                                 break
@@ -866,19 +874,62 @@ def _make_handler(
 
 class _ModeBroker:
     """Routes the stream to whichever per-mode FrameBroker matches the current
-    mode, so the live view follows the day-eye / night-eye switch."""
+    mode, so the live view follows the day-eye / night-eye switch.
+
+    Sequence numbers are per-broker, and the day/night brokers advance at very
+    different rates (day ~12-15 fps, night ~2 fps). A viewer that hands its
+    day-broker ``last_seq`` (say ~900) straight to the freshly-active night
+    broker (seq ~120) would block until the night broker climbed past 900 —
+    minutes of frozen stream. So switch detection is *per viewer*: on the first
+    ``wait_for_frame`` after the active broker changes for this caller, we hand
+    back the new broker's current frame immediately instead of waiting for its
+    seq to exceed a stale cross-broker value.
+    """
 
     def __init__(
         self, brokers: dict[str, FrameBroker], mode_getter: Callable[[], str]
     ) -> None:
         self._brokers = brokers
         self._mode_getter = mode_getter
+        # Per-viewer switch tracking. The handler passes its own ``seq`` back to
+        # us each call, so we identify a viewer by the identity of the broker it
+        # last read from together with the object it belongs to; because each
+        # viewer thread threads its own seq through, we keep the last-served
+        # broker per caller via the seq the caller reports (see wait_for_frame).
+        self._last_active: FrameBroker | None = None
 
     def _active(self) -> FrameBroker:
         return self._brokers.get(self._mode_getter()) or next(iter(self._brokers.values()))
 
-    def wait_for_frame(self, last_seq: int, timeout: float = 5.0) -> tuple[int, bytes | None]:
-        return self._active().wait_for_frame(last_seq, timeout)
+    def wait_for_frame(
+        self, last_seq: int, timeout: float = 5.0, cursor: "_StreamCursor | None" = None
+    ) -> tuple[int, bytes | None]:
+        active = self._active()
+        if cursor is not None and cursor.broker is not active:
+            # The active broker just changed for this viewer. Adapt: read from
+            # the new broker relative to its OWN current seq, so the viewer gets
+            # its next frame promptly rather than waiting out a stale seq from
+            # the previously-active broker.
+            cursor.broker = active
+            with active._cond:  # noqa: SLF001 - sibling broker, snapshot current seq
+                base_seq = active._seq
+                have_frame = active._frame is not None and not active._closed
+                frame = active._frame
+            if have_frame:
+                cursor.last_seq = base_seq
+                return base_seq, frame
+            # No frame buffered yet on the new broker; wait from its current seq.
+            seq, frame = active.wait_for_frame(base_seq, timeout)
+            cursor.last_seq = seq
+            return seq, frame
+        seq, frame = active.wait_for_frame(last_seq, timeout)
+        if cursor is not None:
+            cursor.broker = active
+            cursor.last_seq = seq
+        return seq, frame
+
+    def new_cursor(self) -> "_StreamCursor":
+        return _StreamCursor()
 
     @property
     def closed(self) -> bool:
@@ -887,6 +938,17 @@ class _ModeBroker:
     def close(self) -> None:
         for broker in self._brokers.values():
             broker.close()
+
+
+class _StreamCursor:
+    """Per-viewer stream position so _ModeBroker can detect a mode switch for
+    THIS viewer without cross-talk between concurrent viewers."""
+
+    __slots__ = ("broker", "last_seq")
+
+    def __init__(self) -> None:
+        self.broker: FrameBroker | None = None
+        self.last_seq = 0
 
 
 def serve_live_view(

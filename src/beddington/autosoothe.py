@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 
 DEFAULT_STATE_PATH = os.path.expanduser("~/.config/beddington/autosoothe.json")
 
@@ -43,10 +44,26 @@ def write_state(
     if directory:
         os.makedirs(directory, exist_ok=True)
     state = {"enabled": bool(enabled), "preset": str(preset or "")}
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(state, handle)
-    os.replace(tmp, path)
+    # Unique temp in the same directory so concurrent writers (dashboard +
+    # assistant) never clobber a shared ".tmp"; flush+fsync before the atomic
+    # replace so a power loss can't leave a zero-length/partial state behind.
+    fd, tmp = tempfile.mkstemp(
+        dir=directory or None,
+        prefix=".autosoothe-",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return state
 
 

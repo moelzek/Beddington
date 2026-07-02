@@ -113,6 +113,12 @@ class SubprocessSoothePlayer:
                 process.wait(timeout=1.0)
             except subprocess.TimeoutExpired:
                 _signal_process(process, signal.SIGKILL)
+                # A just-SIGKILLed child stays defunct until it is reaped; wait
+                # for it so it does not linger as a zombie across cry cycles.
+                try:
+                    process.wait(timeout=1.0)
+                except (subprocess.TimeoutExpired, ChildProcessError, Exception):
+                    pass
         self._processes = [
             process for process in self._processes if process.poll() is None
         ]
@@ -378,6 +384,7 @@ class SootheController:
             self._current_preset_key = self._preset_key_for_step(self._step_index)
             self._current_sound_started_offset = offset_seconds
             playback = self.player.play(step)
+            played = bool(playback.get("played"))
             events.append(
                 Event(
                     kind="soothe_attempted",
@@ -394,6 +401,31 @@ class SootheController:
                     },
                 )
             )
+            if not played:
+                # Playback silently failed (missing file / no supported player):
+                # do NOT wait out the notify window — flag it and alert a human
+                # promptly so soothing is not falsely assumed to be happening.
+                events.append(
+                    Event(
+                        kind="soothe_unavailable",
+                        occurred_at=self._at(offset_seconds),
+                        offset_seconds=offset_seconds,
+                        score=score,
+                        details={
+                            "step": self._step_index + 1,
+                            "name": step.name,
+                            "reason": playback.get("reason", "playback_failed"),
+                            "sound_path": (
+                                str(step.sound_path) if step.sound_path else ""
+                            ),
+                            "playback": playback,
+                        },
+                    )
+                )
+                self._step_index += 1
+                self._next_step_offset = None
+                self._notify_due_offset = offset_seconds
+                break
             self._step_index += 1
             due_offset = offset_seconds + configured_step.wait_seconds
             if self._step_index < len(self.config.steps):
@@ -616,6 +648,10 @@ class SootheController:
             self._quiet_checks_passed += 1
         else:
             self._quiet_checks_passed = 0
+        # Keep self._crying in sync with what the listen window measured so the
+        # pending-quiet release guard can tell a genuinely-quiet infant apart
+        # from a renewed cry (which re-sets self._crying via _track_cry_events).
+        self._crying = not quiet
 
         events: list[Event] = [
             Event(
@@ -695,6 +731,17 @@ class SootheController:
             return ()
         if pending.kind == "settled" and self._crying:
             self._pending_resolution = None
+            return ()
+        if pending.kind == "quiet" and self._crying:
+            # The infant started crying again while we waited out the minimum
+            # play window (a renewed cry set self._crying during the pending
+            # quiet resolution). Do NOT confirm quiet or stop soothing; drop the
+            # pending resolution and require a fresh quiet-check to pass again.
+            self._pending_resolution = None
+            self._quiet_checks_passed = 0
+            self._quiet_check_started_offset = None
+            self._quiet_check_failed = False
+            self._schedule_next_quiet_check(offset_seconds)
             return ()
 
         release_offset = pending.release_offset

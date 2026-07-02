@@ -197,16 +197,23 @@ def run_pipeline(
     digest = build_digest(report)
     llm_enabled = config.llm.enabled if use_llm is None else use_llm
     if llm_enabled:
-        digest = polish_digest(
-            digest,
-            report,
-            config.llm.__class__(
-                enabled=True,
-                base_url=config.llm.base_url,
-                model=config.llm.model,
-                api_key=config.llm.api_key,
-            ),
-        )
+        # Fail OPEN: an LLM polish failure (network error, missing config, or a
+        # malformed response) must never discard the night's already-built
+        # deterministic digest and event log. Keep the deterministic digest and
+        # write outputs regardless.
+        try:
+            digest = polish_digest(
+                digest,
+                report,
+                config.llm.__class__(
+                    enabled=True,
+                    base_url=config.llm.base_url,
+                    model=config.llm.model,
+                    api_key=config.llm.api_key,
+                ),
+            )
+        except Exception:  # noqa: BLE001 - keep the deterministic digest, always write
+            pass
     paths = write_outputs(output_dir, report, digest)
     return RunResult(report=report, digest=digest, paths=paths)
 

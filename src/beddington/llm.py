@@ -62,4 +62,21 @@ def polish_digest(summary: str, report: NightReport, config: LlmConfig) -> str:
             result = json.load(response)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"LLM polish request failed: {exc}") from exc
-    return str(result["choices"][0]["message"]["content"]).strip()
+    return _extract_content(result)
+
+
+def _extract_content(result: object) -> str:
+    """Pull the assistant text out of a chat-completions response.
+
+    Guards the ``["choices"][0]["message"]["content"]`` access so a malformed
+    or edge-case response raises a clean RuntimeError (which the pipeline's
+    fail-open try/except then catches) instead of a raw KeyError/IndexError.
+    """
+    try:
+        choices = result["choices"]  # type: ignore[index]
+        content = choices[0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"LLM polish returned a malformed response: {result!r}") from exc
+    if content is None:
+        raise RuntimeError(f"LLM polish returned no content: {result!r}")
+    return str(content).strip()
