@@ -525,3 +525,43 @@ def test_serve_live_view_serves_history_json() -> None:
         assert json.loads(body)["room_temperature_c"]["points"] == [[1.0, 21.0]]
     finally:
         source.close()
+
+
+def test_alert_state_raise_snapshot_and_clear() -> None:
+    from beddington.liveview import _AlertState
+
+    a = _AlertState()
+    assert a.snapshot()["active"] is False
+    first = a.raise_alert("Cry detected", "score 0.90", 0.9)
+    assert first["ok"] is True and first["seq"] == 1
+    snap = a.snapshot()
+    assert snap["active"] is True
+    assert snap["title"] == "Cry detected" and snap["seq"] == 1
+    assert a.raise_alert("Cry detected", "again")["seq"] == 2  # seq increments
+    a.clear()
+    assert a.snapshot()["active"] is False
+
+
+def test_alert_state_expires_after_ttl(monkeypatch) -> None:
+    import beddington.liveview as lv
+
+    clock = {"t": 100.0}
+    monkeypatch.setattr(lv.time, "monotonic", lambda: clock["t"])
+    a = lv._AlertState(ttl_seconds=30.0)
+    a.raise_alert("Cry detected", "x")
+    assert a.snapshot()["active"] is True
+    clock["t"] = 100.0 + 31.0  # past the TTL — self-heals even without a clear
+    assert a.snapshot()["active"] is False
+
+
+def test_dashboard_wires_alert_banner_and_poll_path() -> None:
+    from beddington.liveview import build_viewer_html
+
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        "Cot cam",
+        readings_path="/readings.json?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+    assert "/alerts.json?token=t" in html  # dashboard polls it
+    assert "alertbanner" in html  # the banner element exists

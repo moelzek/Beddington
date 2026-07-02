@@ -40,6 +40,12 @@ class CryEventTracker:
         self._below_start = None
         self._peak_score = max(self._peak_score, score)
         if self._active_start is not None:
+            # Already in a sustained cry. Keep re-alerting on the cooldown so a
+            # long, continuous cry doesn't yield a single missable ping. No new
+            # cry_started event — one episode stays one episode in the log.
+            if self._notification_due(offset):
+                self._last_notification_offset = offset
+                return TrackerResult(notify=True)
             return TrackerResult()
 
         if self._candidate_start is None:

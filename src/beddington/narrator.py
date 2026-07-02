@@ -65,6 +65,9 @@ def narrate(report: NightReport, config: NarratorConfig, digest_fallback: str) -
         "model": config.model,
         "prompt": build_narration_prompt(report),
         "stream": False,
+        # Unload after the once-a-night narration so the model doesn't hold RAM
+        # 24/7 on the 4GB Pi.
+        "keep_alive": 0,
         "options": {
             "num_predict": config.num_predict,
             "temperature": config.temperature,

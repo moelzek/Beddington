@@ -48,5 +48,43 @@ class LocalNotifier:
         return False
 
 
+@dataclass
+class LiveViewNotifier:
+    """Posts a cry alert to the on-device live-view server so its dashboard can
+    surface it (banner + alarm + browser notification) to a phone on the LAN.
+
+    Stays on the device/LAN — nothing leaves the network. Best-effort: any
+    failure (server down, no token) returns ``{"lan": False}`` rather than
+    raising, so a missed alert never crashes the monitoring loop.
+    """
+
+    port: int = 8088
+    token: str = ""
+    host: str = "127.0.0.1"
+
+    def notify(self, title: str, message: str) -> dict[str, bool]:
+        if not self.token:
+            return {"lan": False}
+        import urllib.parse
+        import urllib.request
+
+        params = urllib.parse.urlencode(
+            {"token": self.token, "title": title, "message": message}
+        )
+        url = f"http://{self.host}:{self.port}/alert?{params}"
+        request = urllib.request.Request(
+            url,
+            data=b"",
+            headers={"User-Agent": "beddington/0.1"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=3.0) as response:
+                response.read()
+        except Exception:
+            return {"lan": False}
+        return {"lan": True}
+
+
 def _escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')

@@ -32,8 +32,7 @@ def build_digest(report: NightReport) -> str:
         f"Together they lasted about {_format_duration(total)}; "
         f"the longest lasted {_format_duration(longest)}. "
         f"{soothe_sentence}"
-        f"Beddington sent {notification_count} {notification_word}. "
-        "This is an event summary, not a medical or safety assessment."
+        f"Beddington sent {notification_count} {notification_word}."
     )
 
 

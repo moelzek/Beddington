@@ -251,6 +251,9 @@ def _ask_ollama_with_options(
         "model": str(getattr(config, "model")),
         "prompt": prompt,
         "stream": False,
+        # Unload between the rare voice-intent calls so the model doesn't hold
+        # RAM 24/7 on the 4GB Pi.
+        "keep_alive": 0,
         "options": {
             "num_predict": num_predict,
             "temperature": temperature,

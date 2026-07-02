@@ -82,8 +82,9 @@ def test_summarise_night_makes_no_safety_claim() -> None:
     )
     words = set(re.findall(r"[a-z]+", text.lower()))
     assert words.isdisjoint(_BANNED)
-    # vitals are labelled bench-only
-    assert "not a medical reading" in text.lower()
+    # vitals line is present as rough bench readings, with no medical disclaimer
+    assert "rough bench readings" in text.lower()
+    assert "not a medical reading" not in text.lower()
     assert "safe song" not in text.lower()
 
 

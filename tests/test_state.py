@@ -57,3 +57,14 @@ def test_notification_cooldown_suppresses_second_episode() -> None:
         notifications += int(tracker.observe(offset, score).notify)
 
     assert notifications == 1
+
+
+def test_long_continuous_cry_re_alerts_on_cooldown() -> None:
+    # A baby crying non-stop must not yield a single missable ping: once the
+    # cooldown elapses, the tracker re-notifies — but it stays ONE episode.
+    tracker = _tracker(sustained_seconds=1.0, notification_cooldown_seconds=1.0)
+    results = [tracker.observe(offset / 2, 0.9) for offset in range(0, 10)]  # 0..4.5s
+    events = [event for result in results for event in result.events]
+
+    assert [event.kind for event in events] == ["cry_started"]  # one episode
+    assert sum(result.notify for result in results) >= 2  # re-alerted on cooldown

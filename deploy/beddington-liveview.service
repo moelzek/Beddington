@@ -37,7 +37,7 @@ Environment=SDL_AUDIODRIVER=pulse
 # which left rpicam zombied and the air sensor unread until a manual restart.
 # Wait for the subsystems to settle first.
 ExecStartPre=/bin/sleep 25
-ExecStart=/home/lab/Beddington/.venv/bin/python -m beddington --config /home/lab/Beddington/config/demo.toml live-view --port 8088 --width 640 --height 480 --fps 12 --night-camera-num 1 --rotate 90
+ExecStart=/home/lab/Beddington/.venv/bin/python -m beddington --config /home/lab/Beddington/config/pi-product.toml live-view --port 8088 --width 640 --height 480 --fps 12 --night-camera-num 1 --rotate 90
 StandardOutput=append:/home/lab/liveview.log
 StandardError=append:/home/lab/liveview.log
 Restart=on-failure

@@ -198,7 +198,7 @@ def summarise_night(
     if _values(series, "radar_respiratory_rate") or _values(series, "radar_heart_rate_bpm"):
         lines.append(
             "• The radar logged some breathing and heart-rate estimates when "
-            "someone was close and still — rough bench readings, not a medical reading."
+            "someone was close and still — rough bench readings."
         )
 
     return "\n".join(lines)

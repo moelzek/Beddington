@@ -204,6 +204,9 @@ def _call_ollama(plain: str, config: NarratorConfig) -> str | None:
         "model": config.model,
         "prompt": _SYSTEM_PROMPT + "\n\nFact: " + plain + "\nYou say:",
         "stream": False,
+        # Unload the model between the rare persona calls so it doesn't squat on
+        # RAM 24/7 on the 4GB Pi (keeps the box out of swap).
+        "keep_alive": 0,
         "options": {
             "num_predict": config.persona_num_predict,
             "temperature": config.persona_temperature,

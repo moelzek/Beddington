@@ -1071,3 +1071,26 @@ def test_speech_bar_ignores_own_soothe_but_hears_louder_voice() -> None:
         )
     assert _speech_bar(base, floor, soothe_playing=True) < bar
     assert _speech_bar(base, floor, soothe_playing=False) == base
+
+
+def test_auto_soothe_watcher_alerts_even_when_disabled() -> None:
+    # Detection/alerting must run regardless of the auto-soothe toggle: with the
+    # toggle OFF the watcher still fires on_cry (the parent alert) but plays no
+    # soothe sound; with it ON it also returns a preset to play.
+    from types import SimpleNamespace
+
+    fired: list[float] = []
+    watcher = _AutoSootheWatcher(
+        _auto_soothe_config(False, 2), 16_000, frame_ms=1000,
+        on_cry=lambda score: fired.append(score),
+    )
+    watcher._state = {"enabled": False, "preset": "rain"}
+    watcher._last_state = 10.0
+    watcher._watcher = SimpleNamespace(
+        observe=lambda _elapsed, _audio: True, last_score=0.87
+    )
+
+    preset = watcher.feed(np.zeros(15_600, dtype=np.float32), 10.0)
+
+    assert preset is None  # toggle off -> no auto-play
+    assert fired == [0.87]  # but it DID alert the parent

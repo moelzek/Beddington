@@ -27,7 +27,6 @@ from .assistant import (
     looks_like_soothe_control,
     match_soothe_command,
 )
-from .child_profile import CHILD_NAME
 from .intent import translate_soothe_command
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
@@ -37,11 +36,10 @@ from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
 from .narrator import narrate, speak
-from .notifications import LocalNotifier
+from .notifications import LiveViewNotifier, LocalNotifier
 from .persona import paddingtonise
 from .pipeline import run_pipeline
 from .radar_vitals import (
-    RADAR_VITALS_DISCLAIMER,
     format_radar_reading,
     summarise_radar_vitals,
     summarise_radar_vitals_from_events,
@@ -626,15 +624,6 @@ def _format_sensor_line(reading: dict[str, object]) -> str:
     if scene is not None:
         parts.append(f"scene: {scene}")
     line = " | ".join(parts) if parts else "no readings yet"
-    # Keep the non-medical label on any line that shows a breathing/heart value,
-    # so a single line read out of context can never look like a vital sign
-    # (mirrors radar_vitals.format_radar_reading).
-    has_vital = any(
-        isinstance(reading.get(key), (int, float)) and not isinstance(reading.get(key), bool)
-        for key in ("radar_respiratory_rate", "radar_heart_rate_bpm")
-    )
-    if has_vital:
-        line += "  [raw bench data, not a medical or safety reading]"
     return line
 
 
@@ -798,7 +787,22 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     speak_config = replace(config.narrator, voice_enabled=True)
     wake_words = tuple(args.wake_word) if args.wake_word else WAKE_WORDS
     dashboard_port = int(getattr(args, "dashboard_port", 8088))
-    auto_watcher = _AutoSootheWatcher(config, native_rate, frame_ms, debug=args.debug)
+    # Alert the parent over the LAN (via the live-view dashboard) on any
+    # sustained cry — this is what makes the always-on assistant a real monitor.
+    _alert_notifier = LiveViewNotifier(
+        port=dashboard_port, token=(_read_live_view_token() or "")
+    )
+
+    def _fire_cry_alert(score: float) -> None:
+        result = _alert_notifier.notify(
+            "Cry detected", f"Sustained crying (cry score {score:.2f})"
+        )
+        if args.debug:
+            print(f"  [debug] cry alert -> {result}", flush=True)
+
+    auto_watcher = _AutoSootheWatcher(
+        config, native_rate, frame_ms, debug=args.debug, on_cry=_fire_cry_alert
+    )
     soothe_presets = _build_soothe_presets(config)
     conversation_memory = ConversationMemory()
     # Warm the persona model so the first real reply isn't cold-start slow. Off the
@@ -1219,9 +1223,8 @@ def _radar_vitals_command(args: argparse.Namespace, config: AppConfig) -> int:
         config.sensors.radar.password,
         include_vitals=True,
     )
-    print(f"Radar bench readout from {host} ({RADAR_VITALS_DISCLAIMER}).")
+    print(f"Radar bench readout from {host}.")
     print("Presence, brightness, distance, breathing and heart are raw radar data.")
-    print(f"None of this is a medical or safety signal or a claim about {CHILD_NAME}.")
     reader.read()  # start the background connection
 
     samples: list[dict[str, object]] = []
@@ -1242,15 +1245,12 @@ def _radar_vitals_command(args: argparse.Namespace, config: AppConfig) -> int:
         if args.speak:
             speak(summary, replace(config.narrator, enabled=True, voice_enabled=True))
     else:
-        print(
-            "No breathing or heart-rate samples were captured "
-            f"({RADAR_VITALS_DISCLAIMER})."
-        )
+        print("No breathing or heart-rate samples were captured.")
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
             json.dumps(
-                {"disclaimer": RADAR_VITALS_DISCLAIMER, "samples": samples},
+                {"samples": samples},
                 indent=2,
             ),
             encoding="utf-8",
@@ -2321,10 +2321,14 @@ class _AutoSootheWatcher:
         native_rate: int,
         frame_ms: int = 30,
         debug: bool = False,
+        on_cry: Callable[[float], None] | None = None,
     ) -> None:
         self._config = config
         self._native = native_rate
         self._debug = debug
+        # Fired on every sustained-cry trigger (cooldown-gated), regardless of
+        # the auto-soothe toggle — this is what actually alerts the parent.
+        self._on_cry = on_cry
         self._buf: deque = deque(maxlen=max(1, round(1000 / frame_ms)))  # ~1 s
         self._watcher: object | None = None
         self._building = False
@@ -2352,9 +2356,9 @@ class _AutoSootheWatcher:
                     flush=True,
                 )
             self._last_enabled = enabled
-        if not self._state.get("enabled"):
-            self._buf.clear()
-            return None
+        # Detection runs ALWAYS — a monitor must detect a cry to alert on it. The
+        # enabled toggle only decides whether we ALSO auto-play a soothe sound.
+        # (Phase 2 moves YAMNet to the idle Hailo HAT to take this off the CPU.)
         self._buf.append(frame)
         if now - self._last_check < 1.0 or len(self._buf) < self._buf.maxlen:
             return None
@@ -2391,7 +2395,15 @@ class _AutoSootheWatcher:
                 flush=True,
             )
         if trigger:
-            return self._preset_to_play()
+            # Always alert (regardless of the soothe toggle).
+            if self._on_cry is not None:
+                try:
+                    self._on_cry(float(getattr(self._watcher, "last_score", 0.0)))
+                except Exception:
+                    pass
+            # Auto-play a soothe sound only when the toggle is on.
+            if self._state.get("enabled"):
+                return self._preset_to_play()
         return None
 
     def _preset_to_play(self) -> str | None:

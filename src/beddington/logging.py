@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import NightReport
-from .radar_vitals import RADAR_VITALS_DISCLAIMER
-from .sensors import RADAR_HEART_RATE_KEY, RADAR_RESPIRATORY_KEY
 
 
 @dataclass(frozen=True)
@@ -24,27 +22,12 @@ def write_outputs(output_dir: Path, report: NightReport, digest: str) -> OutputP
         digest=output_dir / "morning-digest.txt",
     )
     payload = report.to_dict()
-    if _contains_radar_vitals(report):
-        # Any persisted radar vital values are labelled at the top of the file so
-        # a downstream reader cannot mistake them for a medical/clinical signal.
-        payload = {"radar_vitals_disclaimer": RADAR_VITALS_DISCLAIMER, **payload}
     paths.events_json.write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )
     paths.readable_log.write_text(_readable_log(report), encoding="utf-8")
     paths.digest.write_text(digest.strip() + "\n", encoding="utf-8")
     return paths
-
-
-def _contains_radar_vitals(report: NightReport) -> bool:
-    return any(
-        event.kind == "environment_sample"
-        and (
-            RADAR_RESPIRATORY_KEY in event.details
-            or RADAR_HEART_RATE_KEY in event.details
-        )
-        for event in report.events
-    )
 
 
 def _readable_log(report: NightReport) -> str:

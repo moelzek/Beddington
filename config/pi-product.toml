@@ -204,7 +204,10 @@ enabled = true
 # Morning recap narrated by the local llama3.2:1b.
 enabled = true
 backend = "ollama"
-model = "llama3.2:3b"
+# 1b (not 3b): on a 4GB Pi the 3b model (~2GB resident) pushes the box into
+# swap and is the model setup_models.sh actually pulls. grounding.py forbids the
+# LLM from adding any fact, so 1b wording is plenty.
+model = "llama3.2:1b"
 host = "http://127.0.0.1:11434"
 num_predict = 140
 temperature = 0.3

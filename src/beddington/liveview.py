@@ -84,6 +84,62 @@ def is_authorised(provided: str, expected: str) -> bool:
     return hmac.compare_digest(provided, expected)
 
 
+_ALERT_TTL_SECONDS = 45.0
+
+
+class _AlertState:
+    """Thread-safe holder for the single active LAN alert.
+
+    The always-on assistant POSTs ``/alert`` when it detects sustained crying;
+    the dashboard polls ``/alerts.json`` and, when ``active`` and ``seq`` has
+    changed, raises the banner, beeps and fires a browser notification. An alert
+    is only ``active`` while it is fresh (raised within the TTL), so a missed
+    ``clear`` still self-heals when the crying stops posting.
+    """
+
+    def __init__(self, ttl_seconds: float = _ALERT_TTL_SECONDS) -> None:
+        self._ttl = ttl_seconds
+        self._lock = threading.Lock()
+        self._seq = 0
+        self._title = ""
+        self._message = ""
+        self._score = 0.0
+        self._raised_at: float | None = None
+
+    def raise_alert(
+        self, title: str, message: str, score: float = 0.0
+    ) -> dict[str, object]:
+        with self._lock:
+            self._seq += 1
+            self._title = str(title)
+            self._message = str(message)
+            self._score = float(score)
+            self._raised_at = time.monotonic()
+            return {"ok": True, "seq": self._seq}
+
+    def clear(self) -> dict[str, object]:
+        with self._lock:
+            self._raised_at = None
+            return {"ok": True}
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            if self._raised_at is None:
+                age: float | None = None
+                active = False
+            else:
+                age = time.monotonic() - self._raised_at
+                active = age <= self._ttl
+            return {
+                "active": active,
+                "title": self._title,
+                "message": self._message,
+                "score": self._score,
+                "seq": self._seq,
+                "age_seconds": age,
+            }
+
+
 # The sensors shown as dashboard tabs/graphs. ``scale`` converts the stored value
 # for display (gas ohms -> kilo-ohms); ``bool`` marks on/off readings (0/1 graph).
 DASHBOARD_SENSORS: tuple[dict[str, object], ...] = (
@@ -187,7 +243,11 @@ border-radius:8px;padding:12px;font-size:15px}
 .smeta{color:#aab;font-size:12px;line-height:1.45}
 .smeta b{color:#dde}
 .note{color:#777;padding:12px 14px;font-size:12px}
+#alertbanner{display:none;position:sticky;top:0;left:0;right:0;z-index:20;
+width:100%;background:#c0182b;color:#fff;font-weight:700;font-size:15px;
+padding:12px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
 </style></head><body>
+<div id="alertbanner"></div>
 <div id="tabs"></div>
 <div id="cam" class="panel active">
   <img src="__STREAM__" alt="Live camera view">
@@ -197,7 +257,7 @@ border-radius:8px;padding:12px;font-size:15px}
 <div id="charts"></div>
 <div class="note">LAN only · no recording · no audio</div>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
 let active="cam",HIST={};
 const tabs=document.getElementById("tabs"),charts=document.getElementById("charts");
 function tab(id,label){const b=document.createElement("button");b.textContent=label;
@@ -355,6 +415,35 @@ function applyRot(){var ci=document.querySelector("#cam img");if(ci)ci.className
 function cycleRot(){curRot=(curRot+90)%360;try{localStorage.setItem("beddingtonRotate",curRot);}catch(e){}
 applyRot();var rb=document.getElementById("rotbtn");if(rb)rb.textContent="⟳ "+curRot+"°";}
 applyRot();
+// --- LAN cry-alert: poll /alerts.json, show banner, beep + notify on new alert ---
+let ALERTCTX=null,ALERTGESTURE=false,LASTALERTSEQ=-1;
+function alertUnlock(){if(ALERTGESTURE)return;ALERTGESTURE=true;
+try{if("Notification" in window && Notification.permission==="default")
+Notification.requestPermission();}catch(e){}
+try{const AC=window.AudioContext||window.webkitAudioContext;
+if(AC){if(!ALERTCTX)ALERTCTX=new AC();if(ALERTCTX.resume)ALERTCTX.resume();}}catch(e){}}
+function alertBeep(){try{const AC=window.AudioContext||window.webkitAudioContext;
+if(!AC)return;if(!ALERTCTX)ALERTCTX=new AC();if(ALERTCTX.resume)ALERTCTX.resume();
+const ctx=ALERTCTX,t0=ctx.currentTime;
+for(let i=0;i<4;i++){const o=ctx.createOscillator(),g=ctx.createGain();
+o.type="square";o.frequency.value=i%2?880:1320;const s=t0+i*0.28;
+g.gain.setValueAtTime(0.0001,s);g.gain.exponentialRampToValueAtTime(0.6,s+0.02);
+g.gain.exponentialRampToValueAtTime(0.0001,s+0.22);
+o.connect(g);g.connect(ctx.destination);o.start(s);o.stop(s+0.24);}}catch(e){}}
+function alertNotify(title,message){try{if(!("Notification" in window))return;
+if(Notification.permission==="granted")new Notification(title,{body:message});}catch(e){}}
+function showAlert(d){const b=document.getElementById("alertbanner");if(!b)return;
+b.textContent="🔔 "+(d.title||"Alert")+" — "+(d.message||"");b.style.display="block";}
+function hideAlert(){const b=document.getElementById("alertbanner");if(b)b.style.display="none";}
+async function pollAlerts(){if(!ALERTS)return;
+try{const r=await fetch(ALERTS,{cache:"no-store"});if(!r.ok)return;const d=await r.json();
+if(d && d.active){showAlert(d);
+if(typeof d.seq==="number" && d.seq!==LASTALERTSEQ){LASTALERTSEQ=d.seq;
+alertBeep();alertNotify(d.title||"Alert",d.message||"");}}
+else{hideAlert();}}catch(e){}}
+document.addEventListener("click",alertUnlock,{once:false});
+document.addEventListener("touchstart",alertUnlock,{once:false});
+if(ALERTS){pollAlerts();setInterval(pollAlerts,2500);}
 show("cam");poll();load();setInterval(load,5000);
 </script></body></html>"""
 
@@ -383,6 +472,7 @@ def _dashboard_page(
     sensors: tuple[dict[str, object], ...],
     title: str,
     rotate: int = 0,
+    alerts_path: str = "",
 ) -> str:
     spec = json.dumps(
         [
@@ -402,6 +492,7 @@ def _dashboard_page(
         .replace("__HISTORY__", _js_string_content(history_path))
         .replace("__DIGEST__", _js_string_content(digest_path))
         .replace("__SOOTHE__", _js_string_content(soothe_path))
+        .replace("__ALERTS__", _js_string_content(alerts_path))
         .replace("__ROTATE__", str(int(rotate)))
         .replace("__SENSORS__", spec)
     )
@@ -416,6 +507,7 @@ def build_viewer_html(
     soothe_path: str | None = None,
     sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
     rotate: int = 0,
+    alerts_path: str | None = None,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
@@ -425,7 +517,7 @@ def build_viewer_html(
     ``readings_path`` it renders the simple bottom-overlay. With neither it is
     video only.
     """
-    if history_path or digest_path or soothe_path:
+    if history_path or digest_path or soothe_path or alerts_path:
         return _dashboard_page(
             stream_path,
             readings_path or "",
@@ -435,6 +527,7 @@ def build_viewer_html(
             sensors,
             title,
             rotate,
+            alerts_path or "",
         )
     overlay = ""
     script = ""
@@ -606,6 +699,7 @@ def _make_handler(
     soothe: object | None = None,
     mode_setter: Callable[[str | None], str] | None = None,
     rotate: int = 0,
+    alert_state: _AlertState | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
@@ -636,6 +730,9 @@ def _make_handler(
                     f"/digest.json?token={token}" if digest_provider else None
                 )
                 soothe_path = f"/soothe?token={token}" if soothe is not None else None
+                alerts_path = (
+                    f"/alerts.json?token={token}" if alert_state is not None else None
+                )
                 body = build_viewer_html(
                     f"/stream.mjpg?token={token}",
                     title,
@@ -644,6 +741,7 @@ def _make_handler(
                     digest_path=digest_path,
                     soothe_path=soothe_path,
                     rotate=rotate,
+                    alerts_path=alerts_path,
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -672,6 +770,10 @@ def _make_handler(
                     else {"presets": [], "playing": None}
                 )
                 self._send_json(payload)
+            elif path == "/alerts.json":
+                self._send_json(
+                    alert_state.snapshot() if alert_state is not None else {"active": False}
+                )
             elif path == "/stream.mjpg":
                 self.send_response(200)
                 self.send_header(
@@ -737,6 +839,22 @@ def _make_handler(
                 state = dict(soothe.set_autosoothe(enabled, preset))
                 state["presets"] = soothe.presets()
                 self._send_json(state)
+            elif path == "/alert" and alert_state is not None:
+                query = parse_qs(urlparse(self.path).query)
+                if (query.get("action") or [""])[0] == "clear":
+                    self._send_json(alert_state.clear())
+                    return
+                try:
+                    score = float((query.get("score") or ["0"])[0])
+                except ValueError:
+                    score = 0.0
+                self._send_json(
+                    alert_state.raise_alert(
+                        (query.get("title") or ["Cry detected"])[0],
+                        (query.get("message") or [""])[0],
+                        score,
+                    )
+                )
             else:
                 self.send_error(404)
 
@@ -821,7 +939,7 @@ def serve_live_view(
 
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider,
-        soothe, mode_setter, rotate,
+        soothe, mode_setter, rotate, alert_state=_AlertState(),
     )
     httpd = ThreadingHTTPServer((host, port), handler)
     try:

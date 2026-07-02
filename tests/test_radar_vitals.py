@@ -8,7 +8,6 @@ from pathlib import Path
 from beddington.logging import write_outputs
 from beddington.models import Event, NightReport
 from beddington.radar_vitals import (
-    RADAR_VITALS_DISCLAIMER,
     format_radar_reading,
     summarise_radar_vitals,
     summarise_radar_vitals_from_events,
@@ -51,14 +50,11 @@ def test_summarise_labels_and_reports_vitals() -> None:
     out = summarise_radar_vitals(samples)
 
     assert out is not None
-    # Always carries the non-medical disclaimer.
-    assert RADAR_VITALS_DISCLAIMER in out
     assert "breathing rate averaged 17 per minute" in out
     assert "heart rate averaged 95 beats per minute" in out
     assert "range 16 to 18" in out
     assert "range 90 to 100" in out
-    # Never paired with reassurance about the baby. Tokenise into whole words so
-    # the disclaimer's legitimate "safety" is not mistaken for a "safe" claim.
+    # Never paired with reassurance about the baby. Tokenise into whole words.
     words = set(re.findall(r"[a-z]+", out.lower()))
     for word in ("safe", "fine", "healthy", "asleep", "normal", "ok", "wellbeing"):
         assert word not in words
@@ -77,28 +73,33 @@ def test_format_reading_labels_fields() -> None:
     assert "92 bpm" in line
 
 
-def test_format_reading_marks_vital_lines() -> None:
+def test_format_reading_shows_vital_without_disclaimer() -> None:
     with_vital = format_radar_reading(
         {"person_present": True, "radar_heart_rate_bpm": 92.0}
     )
-    assert "raw bench data" in with_vital
-    without_vital = format_radar_reading(
-        {"person_present": True, "room_illuminance_lx": 80.0}
-    )
-    assert "bench data" not in without_vital
+    # The vital reading itself is present, with no medical/bench-data disclaimer.
+    assert "92 bpm" in with_vital
+    assert "not a medical" not in with_vital.lower()
+    assert "bench data" not in with_vital.lower()
 
 
 def test_format_reading_handles_empty() -> None:
     assert format_radar_reading({}) == "no radar data yet"
 
 
-def test_events_json_labels_radar_vitals(tmp_path: Path) -> None:
+def test_events_json_captures_vitals_without_disclaimer(tmp_path: Path) -> None:
     report = _report_with({"radar_heart_rate_bpm": 90.0, "radar_respiratory_rate": 16.0})
 
     paths = write_outputs(tmp_path / "out", report, "digest text")
     data = json.loads(paths.events_json.read_text(encoding="utf-8"))
 
-    assert data["radar_vitals_disclaimer"] == RADAR_VITALS_DISCLAIMER
+    # No medical disclaimer key, but the captured vitals are still persisted.
+    assert "radar_vitals_disclaimer" not in data
+    sample = next(
+        event for event in data["events"] if event["kind"] == "environment_sample"
+    )
+    assert sample["details"]["radar_heart_rate_bpm"] == 90.0
+    assert sample["details"]["radar_respiratory_rate"] == 16.0
 
 
 def test_events_json_has_no_disclaimer_without_vitals(tmp_path: Path) -> None:
