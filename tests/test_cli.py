@@ -1146,3 +1146,19 @@ def test_auto_soothe_watcher_alerts_even_when_disabled() -> None:
 
     assert preset is None  # toggle off -> no auto-play
     assert fired == [0.87]  # but it DID alert the parent
+
+
+def test_recover_from_utterance_error_reports_not_playing_when_resume_fails() -> None:
+    # Codex #6: if the resume POST fails, the helper must report playing=False so
+    # the loop does not raise the self-audio speech bar while the sound is in
+    # fact still paused.
+    def failing_resume(ducked, port: int = 8088):
+        return {"ok": False, "reason": "request_failed"}
+
+    playing = _recover_from_utterance_error(
+        RuntimeError("boom"),
+        {"preset": "piano", "context": "sleep"},
+        port=8088,
+        resume=failing_resume,
+    )
+    assert playing is False

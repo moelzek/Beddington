@@ -117,7 +117,7 @@ class SubprocessSoothePlayer:
                 # for it so it does not linger as a zombie across cry cycles.
                 try:
                     process.wait(timeout=1.0)
-                except (subprocess.TimeoutExpired, ChildProcessError, Exception):
+                except (subprocess.TimeoutExpired, ChildProcessError, OSError):
                     pass
         self._processes = [
             process for process in self._processes if process.poll() is None
@@ -732,11 +732,13 @@ class SootheController:
         if pending.kind == "settled" and self._crying:
             self._pending_resolution = None
             return ()
-        if pending.kind == "quiet" and self._crying:
-            # The infant started crying again while we waited out the minimum
-            # play window (a renewed cry set self._crying during the pending
-            # quiet resolution). Do NOT confirm quiet or stop soothing; drop the
-            # pending resolution and require a fresh quiet-check to pass again.
+        if pending.kind == "quiet" and (self._crying or score >= self.quiet_threshold):
+            # The infant is crying again while we waited out the minimum play
+            # window — either a sustained cry re-set self._crying, OR the current
+            # window is already loud (score >= quiet_threshold) even before it
+            # counts as a sustained cry_started. Do NOT confirm quiet or stop
+            # soothing; drop the pending resolution and require a fresh
+            # quiet-check to pass again.
             self._pending_resolution = None
             self._quiet_checks_passed = 0
             self._quiet_check_started_offset = None

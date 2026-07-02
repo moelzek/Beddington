@@ -48,7 +48,9 @@ def write_state(
     # assistant) never clobber a shared ".tmp"; flush+fsync before the atomic
     # replace so a power loss can't leave a zero-length/partial state behind.
     fd, tmp = tempfile.mkstemp(
-        dir=directory or None,
+        # Same directory as the target (".", not the system temp) so os.replace
+        # stays atomic on one filesystem even when path has no dir component.
+        dir=directory or ".",
         prefix=".autosoothe-",
         suffix=".tmp",
     )

@@ -973,3 +973,35 @@ def _wait_for_pid_exit(pid: int) -> None:
             return
         time.sleep(0.05)
     raise AssertionError(f"process {pid} was still running")
+
+
+def test_loud_score_during_pending_quiet_does_not_stop_soothe() -> None:
+    # Codex #3: the guard must also catch a renewed cry that is loud NOW
+    # (score >= quiet_threshold) but has not yet emitted a sustained cry_started
+    # event (so self._crying is still False). The old guard keyed only on
+    # self._crying and would confirm quiet + stop_all at the deadline.
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=60.0,
+            steps=(SootheStepConfig(name="white noise", wait_seconds=600.0, play_seconds=600.0),),
+            quiet_check=QuietCheckConfig(
+                enabled=True, check_interval_seconds=10.0, listen_seconds=5.0, required_checks=1
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    controller.observe(10.0, 0.1, (), escalation_due=False)
+    controller.observe(15.0, 0.1, (), escalation_due=False)  # quiet resolution pends
+    # At the min-play deadline: loud score, but NO cry_started event (not yet
+    # sustained), so self._crying is False.
+    at_deadline = controller.observe(60.0, 0.9, (), escalation_due=False)
+
+    kinds = [e.kind for e in at_deadline.events]
+    assert "soothe_quiet_confirmed" not in kinds  # must NOT declare settled
+    assert player.stop_calls == 0  # and must NOT stop the sound

@@ -1897,6 +1897,11 @@ def _recover_from_utterance_error(
         resumed = resume_fn(ducked_soothe, port=port)
         if debug:
             print(f"  [debug] resumed soothe after error: {resumed}", flush=True)
+        # Only report playing=True if the resume actually succeeded — otherwise
+        # the loop would raise the self-audio speech bar while the sound is in
+        # fact still paused.
+        if isinstance(resumed, Mapping):
+            return resumed.get("ok") is not False and bool(resumed.get("playing"))
         return True
     return False
 
