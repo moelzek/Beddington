@@ -12,6 +12,7 @@ from beddington.cli import (
     _AutoSootheWatcher,
     _DashboardSoothe,
     _SensorSampler,
+    _build_alarm_detector,
     _build_soothe_presets,
     _duck_dashboard_soothe,
     _format_sensor_line,
@@ -338,6 +339,54 @@ def test_sensor_sampler_stop_closes_store() -> None:
     sampler.stop()
 
     assert store.closed is True
+
+
+def test_sensor_sampler_reads_without_rewarming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Bug F: the continuous sampler must NOT re-warm the sensors every tick
+    # (a ~2.25s blocking read) — it must call _read_sensor_snapshot with
+    # warm_seconds=0.0 so the cadence matches the configured interval.
+    captured: list[float] = []
+    sampler = _SensorSampler([object()], 3.0)
+
+    def spy(readers, warm_seconds: float = 2.0):
+        captured.append(warm_seconds)
+        # Stop after the first read so _run does exactly one tick (no real sleep).
+        sampler._stop.set()
+        return {"room_temperature_c": 20.0}
+
+    monkeypatch.setattr("beddington.cli._read_sensor_snapshot", spy)
+
+    sampler._run()
+
+    assert captured == [0.0]
+
+
+def test_build_alarm_detector_exits_cleanly_on_missing_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Bug E: a missing/corrupt YAMNet model must fail with a clear, actionable
+    # SystemExit at the alarm-path construction site — never a raw traceback and
+    # never a silently-detection-disabled monitor.
+    def boom(_model_path=None):
+        raise RuntimeError(
+            "YAMNet model checksum mismatch for /x. Delete the file and retry."
+        )
+
+    monkeypatch.setattr("beddington.detector.ensure_model", boom)
+
+    with pytest.raises(SystemExit) as excinfo:
+        _build_alarm_detector(None)
+
+    message = str(excinfo.value)
+    assert "model missing or corrupt" in message.lower()
+    # Points at the command that actually fetches the YAMNet model (not the
+    # Ollama-only setup_models.sh).
+    assert "download-model" in message
+    assert "setup_models.sh" not in message
+    # It must be a clean SystemExit, not the raw RuntimeError.
+    assert not isinstance(excinfo.value, RuntimeError)
 
 
 def test_voice_stop_command_stops_dashboard_soothe_player(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -114,7 +116,7 @@ def run_pipeline(
         ) and window.offset_seconds + 1e-9 >= next_sensor_sample_offset
         occurred_at = started_at + timedelta(seconds=window.offset_seconds)
         if is_sample and sensor_readers:
-            readings = _read_sensor_sample(sensor_readers)
+            readings, sensor_faults = _read_sensor_sample(sensor_readers)
             if readings:
                 events.append(
                     Event(
@@ -122,6 +124,18 @@ def run_pipeline(
                         occurred_at=occurred_at,
                         offset_seconds=window.offset_seconds,
                         details=readings,
+                    )
+                )
+            # A raised reader is a real fault (dead BME688, radar/PIR dropped off) —
+            # surface it as a distinct event so "sensor down" is never mistaken for
+            # a calm nursery. An empty {} reading (not a raise) is NOT a fault.
+            if sensor_faults:
+                events.append(
+                    Event(
+                        kind="sensor_unavailable",
+                        occurred_at=occurred_at,
+                        offset_seconds=window.offset_seconds,
+                        details={"failures": sensor_faults},
                     )
                 )
             if focus is not None and (
@@ -233,13 +247,74 @@ def _classify_window_sound(
 
 def _read_sensor_sample(
     sensor_readers: Sequence[SensorReader],
-) -> dict[str, object]:
+) -> tuple[dict[str, object], list[dict[str, str]]]:
+    """Read every sensor once.
+
+    Returns ``(readings, faults)``. A reader that *raises* is a genuine fault
+    (dead/misbehaving sensor) and is recorded in ``faults`` — it is NOT the same
+    as a reader that returns a legitimately empty ``{}`` (e.g. the gas-enabled
+    BME688 skipping a not-ready cycle), which is silently ignored. One bad
+    sensor never aborts the sweep: the loop keeps reading the others.
+    """
     readings: dict[str, object] = {}
+    faults: list[dict[str, str]] = []
     for reader in sensor_readers:
         try:
             data = reader.read()
-        except Exception:
-            data = {}
+        except Exception as exc:  # noqa: BLE001 - one bad sensor must not crash the loop
+            reader_name = type(reader).__name__
+            faults.append(
+                {"reader": reader_name, "error": f"{type(exc).__name__}: {exc}"}
+            )
+            _warn_sensor_unavailable(reader_name, exc)
+            continue
         if data:
             readings.update(data)
-    return readings
+        # Production readers degrade a dead device to {} instead of raising (so
+        # one glitch can't crash the loop); they flag a *persistent* hardware
+        # failure (missing library, device won't open) as a one-shot fault the
+        # first time it happens. Surface that so an unplugged sensor is not
+        # mistaken for a calm nursery.
+        reader_fault = _pop_reader_fault(reader)
+        if reader_fault is not None:
+            reader_name = type(reader).__name__
+            faults.append({"reader": reader_name, "error": reader_fault})
+            _warn_sensor_unavailable(reader_name, RuntimeError(reader_fault))
+    return readings, faults
+
+
+def _pop_reader_fault(reader: object) -> str | None:
+    """Return a reader's one-shot persistent-failure message, or None.
+
+    Readers that can't raise (they fall back to {}) expose ``pop_fault()`` which
+    returns the failure once and clears it, so a dead sensor surfaces exactly
+    once rather than every tick.
+    """
+    pop = getattr(reader, "pop_fault", None)
+    if pop is None:
+        return None
+    try:
+        fault = pop()
+    except Exception:  # noqa: BLE001 - fault reporting must never crash the loop
+        return None
+    return str(fault) if fault else None
+
+
+# Rate-limit the dead-sensor warning per reader so a persistently-dead sensor
+# logs once (and then hourly), instead of spamming the console every tick.
+_SENSOR_WARN_INTERVAL_SECONDS = 3600.0
+_last_sensor_warn: dict[str, float] = {}
+
+
+def _warn_sensor_unavailable(reader_name: str, exc: BaseException) -> None:
+    now = time.monotonic()
+    last = _last_sensor_warn.get(reader_name)
+    if last is not None and (now - last) < _SENSOR_WARN_INTERVAL_SECONDS:
+        return
+    _last_sensor_warn[reader_name] = now
+    logging.getLogger(__name__).warning(
+        "sensor %s read failed (%s: %s) — treating as unavailable, not calm",
+        reader_name,
+        type(exc).__name__,
+        exc,
+    )

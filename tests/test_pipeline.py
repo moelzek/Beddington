@@ -529,6 +529,90 @@ def test_pipeline_records_non_cry_sounds(tmp_path: Path) -> None:
     assert all(event.details["sound"] == "cooing" for event in sounds)
 
 
+class _RaisingReader:
+    """A dead sensor: read() raises every time (a genuine fault)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def read(self) -> dict[str, object]:
+        self.calls += 1
+        raise OSError("BME688 I2C bus error")
+
+
+class _GoodReader:
+    """A healthy sensor that keeps returning readings."""
+
+    def read(self) -> dict[str, object]:
+        return {"room_temperature_c": 20.5}
+
+
+class _EmptyReader:
+    """A reader that legitimately returns {} (not a fault) — e.g. the gas-enabled
+    BME688 skipping a not-ready cycle."""
+
+    def read(self) -> dict[str, object]:
+        return {}
+
+
+def test_pipeline_surfaces_dead_sensor_without_crashing(tmp_path: Path) -> None:
+    # Bug D: a reader that RAISES must produce a visible sensor_unavailable event
+    # (so "sensor down" is not mistaken for a calm nursery), while the loop keeps
+    # running and other sensors still record their readings.
+    scores = [0.1, 0.1, 0.1, 0.1]
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        sensors=SensorsConfig(sample_interval_seconds=0.5),
+    )
+    dead = _RaisingReader()
+    good = _GoodReader()
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=FakeNotifier(),
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 28, tzinfo=UTC),
+        sensor_readers=[dead, good, _EmptyReader()],
+    )
+
+    # The dead sensor was actually exercised, and the loop did not crash.
+    assert dead.calls > 0
+    unavailable = [
+        e for e in result.report.events if e.kind == "sensor_unavailable"
+    ]
+    assert unavailable, "a raised reader must surface a sensor_unavailable event"
+    failures = unavailable[0].details["failures"]
+    assert any(f["reader"] == "_RaisingReader" for f in failures)
+    assert any("BME688 I2C bus error" in f["error"] for f in failures)
+
+    # The healthy sensor still recorded, and an empty {} reading is NOT flagged.
+    env = [e for e in result.report.events if e.kind == "environment_sample"]
+    assert env and any(
+        e.details.get("room_temperature_c") == 20.5 for e in env
+    )
+    assert not any(
+        "_EmptyReader" in f["reader"]
+        for e in unavailable
+        for f in e.details["failures"]
+    )
+
+
+def test_read_sensor_sample_distinguishes_raise_from_empty() -> None:
+    # A raised read is a fault; an empty {} read is not.
+    readings, faults = pipeline_module._read_sensor_sample(
+        [_GoodReader(), _RaisingReader(), _EmptyReader()]
+    )
+    assert readings == {"room_temperature_c": 20.5}
+    assert [f["reader"] for f in faults] == ["_RaisingReader"]
+
+
 def test_pipeline_writes_outputs_when_polish_digest_raises(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -596,3 +680,29 @@ def test_extract_content_raises_cleanly_on_malformed_response(bad: object) -> No
     # KeyError/IndexError/TypeError) so the pipeline try/except catches it.
     with pytest.raises(RuntimeError):
         _extract_content(bad)
+
+
+def test_read_sensor_sample_surfaces_one_shot_reader_fault() -> None:
+    # Codex #D: a production reader that degrades a DEAD device to {} (instead of
+    # raising) reports the persistent failure once via pop_fault(). The pipeline
+    # must surface that as a fault so an unplugged sensor isn't a silent "calm".
+    class _FaultingReader:
+        def __init__(self) -> None:
+            self._fault: str | None = "BME680 sensor not found on the I2C bus"
+
+        def read(self) -> dict[str, object]:
+            return {}  # never raises — just no data
+
+        def pop_fault(self) -> str | None:
+            fault, self._fault = self._fault, None
+            return fault
+
+    reader = _FaultingReader()
+    readings, faults = pipeline_module._read_sensor_sample([reader])
+    assert readings == {}
+    assert len(faults) == 1
+    assert "BME680" in faults[0]["error"]
+
+    # One-shot: a subsequent read no longer re-reports (no per-tick spam).
+    _readings2, faults2 = pipeline_module._read_sensor_sample([reader])
+    assert faults2 == []

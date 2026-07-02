@@ -380,7 +380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "night-digest":
         return _night_digest_command(args, config)
 
-    detector = YamNetTFLiteDetector(args.model)
+    detector = _build_alarm_detector(args.model)
     if args.soothe:
         config = replace(config, soothe=replace(config.soothe, enabled=True))
     notifier = LocalNotifier(desktop=config.notifications.desktop and not args.no_desktop)
@@ -672,6 +672,26 @@ def _sensors_live_command(args: argparse.Namespace, config: AppConfig) -> int:
     except KeyboardInterrupt:
         print("Stopped.")
     return 0
+
+
+def _build_alarm_detector(model_path: object = None) -> YamNetTFLiteDetector:
+    """Construct the cry-alarm detector for the listen/analyze/run_pipeline path.
+
+    A missing or SD-corrupted YAMNet model (or an offline Pi that cannot download
+    it) makes ``YamNetTFLiteDetector.__init__`` raise. The cry monitor is the core
+    safety feature, so we must NOT start it with detection disabled — instead fail
+    fast with a clear, actionable message rather than dumping a raw traceback.
+    """
+    try:
+        return YamNetTFLiteDetector(model_path)
+    except Exception as exc:  # noqa: BLE001 - turn any build failure into a clear exit
+        raise SystemExit(
+            "Cry-detection model missing or corrupt — the monitor cannot start "
+            f"without it ({type(exc).__name__}: {exc}). "
+            "Fix it by running `beddington download-model` while online (it "
+            "downloads and verifies the YAMNet model); if the cached model is "
+            "corrupt, delete it first so it re-downloads."
+        ) from exc
 
 
 def _read_sensor_snapshot(
@@ -1529,7 +1549,12 @@ class _SensorSampler:
 
         while not self._stop.is_set():
             try:
-                snapshot = _read_sensor_snapshot(self._readers)
+                # The continuous sampler already keeps sensor connections warm
+                # across ticks, so it must not re-warm (a 2s+ sleep) every tick —
+                # that would blow the configured cadence apart. warm_seconds=0.0
+                # keeps the multi-pass read (which still fills the BME688) but
+                # drops the per-tick warm-up sleep.
+                snapshot = _read_sensor_snapshot(self._readers, warm_seconds=0.0)
             except Exception:
                 snapshot = {}
             if snapshot:

@@ -127,13 +127,28 @@ class SensorStore:
         return out
 
     def prune(self, older_than_ts: float) -> int:
-        """Delete rows older than ``older_than_ts``. Returns rows removed."""
+        """Delete rows older than ``older_than_ts`` from ALL history tables
+        (readings, soothe_outcomes and cry_episodes) in one transaction, so the
+        on-device store stays small. Returns the total rows removed across the
+        three tables.
+
+        cry_episodes are keyed by ``started_ts`` (there is no ``ts`` column), so an
+        episode is only pruned once its start time is older than the boundary.
+        """
+        boundary = float(older_than_ts)
         with self._lock:
-            cursor = self._conn.execute(
-                "DELETE FROM readings WHERE ts < ?", (float(older_than_ts),)
-            )
+            removed = 0
+            removed += self._conn.execute(
+                "DELETE FROM readings WHERE ts < ?", (boundary,)
+            ).rowcount
+            removed += self._conn.execute(
+                "DELETE FROM soothe_outcomes WHERE ts < ?", (boundary,)
+            ).rowcount
+            removed += self._conn.execute(
+                "DELETE FROM cry_episodes WHERE started_ts < ?", (boundary,)
+            ).rowcount
             self._conn.commit()
-            return cursor.rowcount
+            return removed
 
     def append_soothe_outcome(
         self,

@@ -68,6 +68,37 @@ def test_store_prune_removes_old_rows(tmp_path: Path) -> None:
     store.close()
 
 
+def test_store_prune_covers_all_three_tables(tmp_path: Path) -> None:
+    # Bug C: soothe_outcomes and cry_episodes must be pruned too, or they grow
+    # forever and fill the Pi's SD card.
+    store = SensorStore(str(tmp_path / "s.db"))
+    # readings: one old, one new.
+    store.append(100.0, {"room_temperature_c": 20.0})
+    store.append(500.0, {"room_temperature_c": 21.0})
+    # soothe_outcomes: one old, one new.
+    store.append_soothe_outcome(100.0, "white-noise", True)
+    store.append_soothe_outcome(500.0, "white-noise", False)
+    # cry_episodes (keyed by started_ts): one old, one new.
+    store.append_cry_episode(100.0, ended_ts=150.0, duration_seconds=50.0)
+    store.append_cry_episode(500.0, ended_ts=560.0, duration_seconds=60.0)
+
+    removed = store.prune(300.0)
+    # One old row removed from each of the three tables.
+    assert removed == 3
+
+    # readings: only the new row survives.
+    assert store.series(0.0)["room_temperature_c"]["points"] == [[500.0, 21.0]]
+    # soothe_outcomes: only the new row survives.
+    assert store.outcomes_since(0.0) == [(500.0, "white-noise", False)]
+    # cry_episodes: only the new episode survives.
+    with sqlite3.connect(str(tmp_path / "s.db")) as conn:
+        started = [row[0] for row in conn.execute(
+            "SELECT started_ts FROM cry_episodes ORDER BY started_ts"
+        )]
+    assert started == [500.0]
+    store.close()
+
+
 def test_store_ignores_non_numeric_and_nan(tmp_path: Path) -> None:
     store = SensorStore(str(tmp_path / "s.db"))
     store.append(1.0, {"room_temperature_c": float("nan"), "room_humidity_pct": "n/a"})

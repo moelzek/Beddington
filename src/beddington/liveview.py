@@ -32,6 +32,26 @@ _SOI = b"\xff\xd8"  # JPEG start-of-image
 _EOI = b"\xff\xd9"  # JPEG end-of-image
 _BOUNDARY = b"frame"
 
+# Cap the in-progress JPEG frame buffer so a wedged/garbled camera (one SOI
+# then a long run with no EOI) can't grow ``buf`` without bound and OOM the Pi.
+_MAX_JPEG_BYTES = 8 * 1024 * 1024
+
+# Cap concurrent MJPEG stream viewers so slow/malicious readers can't exhaust
+# the ThreadingHTTPServer's threads/FDs and starve everyone else of live view.
+_MAX_STREAM_VIEWERS = 6
+_STREAM_VIEWERS = threading.Semaphore(_MAX_STREAM_VIEWERS)
+# Socket write timeout (seconds) for a stream connection, so a stalled write
+# raises instead of pinning a handler thread forever.
+_STREAM_WRITE_TIMEOUT = 20.0
+
+
+class _DaemonThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer whose per-connection threads are daemons, so a stuck
+    stream handler (e.g. a slow-loris viewer wedged in ``wfile.write``) can never
+    block interpreter shutdown or ``server_close``."""
+
+    daemon_threads = True
+
 
 def _html_attr(value: object) -> str:
     return html.escape(str(value), quote=True)
@@ -63,7 +83,25 @@ def iter_jpeg_frames(chunks: Iterable[bytes]) -> Iterator[bytes]:
                 # Incomplete frame — drop leading junk, wait for more bytes.
                 if start > 0:
                     del buf[:start]
+                    start = 0
+                # Guard against a wedged stream (SOI then endless non-EOI bytes):
+                # if the in-progress frame blows past the cap, this SOI is junk.
+                # Drop it (keep only the trailing byte, in case it's a split FF)
+                # and resync on the next SOI instead of buffering forever.
+                if len(buf) > _MAX_JPEG_BYTES:
+                    del buf[:-1]
                 break
+            if end + 2 - start > _MAX_JPEG_BYTES:
+                # We found an EOI, but the "frame" from this SOI to it is bigger
+                # than any real JPEG — so this SOI is junk we synced onto (with a
+                # valid frame buffered after it). Drop this SOI and resync on the
+                # next one instead of yielding one giant corrupt frame.
+                nxt = buf.find(_SOI, start + 2)
+                if nxt < 0:
+                    del buf[:-1]  # keep a trailing FF for a split marker
+                    break
+                del buf[:nxt]
+                continue
             yield bytes(buf[start : end + 2])
             del buf[: end + 2]
 
@@ -775,32 +813,54 @@ def _make_handler(
                     alert_state.snapshot() if alert_state is not None else {"active": False}
                 )
             elif path == "/stream.mjpg":
-                self.send_response(200)
-                self.send_header(
-                    "Content-Type",
-                    f"multipart/x-mixed-replace; boundary={_BOUNDARY.decode()}",
-                )
-                self.send_header("Cache-Control", "no-cache, private")
-                self.end_headers()
-                seq = 0
-                # A _ModeBroker hands out a per-viewer cursor so a day/night
-                # mode switch is detected for THIS stream and doesn't block on a
-                # stale cross-broker seq. A plain FrameBroker has no cursor and
-                # behaves exactly as before.
-                cursor = broker.new_cursor() if hasattr(broker, "new_cursor") else None
+                # Cap concurrent viewers: a full house of slow/malicious readers
+                # must not exhaust threads/FDs. Over the cap -> 503, don't open
+                # another unbounded stream. The slot is released in ``finally``.
+                if not _STREAM_VIEWERS.acquire(blocking=False):
+                    self.send_error(503, "Too many viewers")
+                    return
                 try:
-                    while True:
-                        if cursor is not None:
-                            seq, frame = broker.wait_for_frame(seq, cursor=cursor)
-                        else:
-                            seq, frame = broker.wait_for_frame(seq)
-                        if frame is None:
-                            if broker.closed:
-                                break
-                            continue
-                        self.wfile.write(multipart_frame(frame))
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
+                    # Give the connection a write timeout so a stalled/non-reading
+                    # client raises (OSError/TimeoutError) instead of pinning this
+                    # handler thread forever. Integration-only: exercised by real
+                    # sockets, not the unit fakes.
+                    try:
+                        self.connection.settimeout(_STREAM_WRITE_TIMEOUT)
+                    except OSError:
+                        pass
+                    self.send_response(200)
+                    self.send_header(
+                        "Content-Type",
+                        f"multipart/x-mixed-replace; boundary={_BOUNDARY.decode()}",
+                    )
+                    self.send_header("Cache-Control", "no-cache, private")
+                    self.end_headers()
+                    seq = 0
+                    # A _ModeBroker hands out a per-viewer cursor so a day/night
+                    # mode switch is detected for THIS stream and doesn't block on
+                    # a stale cross-broker seq. A plain FrameBroker has no cursor
+                    # and behaves exactly as before.
+                    cursor = (
+                        broker.new_cursor() if hasattr(broker, "new_cursor") else None
+                    )
+                    try:
+                        while True:
+                            if cursor is not None:
+                                seq, frame = broker.wait_for_frame(seq, cursor=cursor)
+                            else:
+                                seq, frame = broker.wait_for_frame(seq)
+                            if frame is None:
+                                if broker.closed:
+                                    break
+                                continue
+                            self.wfile.write(multipart_frame(frame))
+                    # Broaden beyond BrokenPipe/ConnectionReset: OSError also
+                    # covers TimeoutError (stalled write), ConnectionAbortedError
+                    # and EPIPE — drop the viewer cleanly on any of these.
+                    except OSError:
+                        pass
+                finally:
+                    _STREAM_VIEWERS.release()
             else:
                 self.send_error(404)
 
@@ -1003,7 +1063,7 @@ def serve_live_view(
         broker, token, title, readings_provider, history_provider, digest_provider,
         soothe, mode_setter, rotate, alert_state=_AlertState(),
     )
-    httpd = ThreadingHTTPServer((host, port), handler)
+    httpd = _DaemonThreadingHTTPServer((host, port), handler)
     try:
         httpd.serve_forever()
     finally:

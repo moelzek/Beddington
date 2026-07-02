@@ -11,7 +11,9 @@ import urllib.error
 import urllib.request
 
 from beddington.liveview import (
+    _SOI,
     FrameBroker,
+    _DaemonThreadingHTTPServer,
     _ModeBroker,
     build_viewer_html,
     history_series,
@@ -39,6 +41,84 @@ def test_iter_jpeg_frames_reassembles_across_chunks() -> None:
 
 def test_iter_jpeg_frames_drops_leading_junk() -> None:
     assert list(iter_jpeg_frames([b"garbage" + JPEG_A])) == [JPEG_A]
+
+
+def test_iter_jpeg_frames_bounds_buffer_on_wedged_stream() -> None:
+    # BUG B: a camera wedges mid-frame — one SOI then many MB with no EOI. The
+    # partial must be dropped (buffer bounded, no OOM) and a later well-formed
+    # frame must still come through once a real EOI arrives.
+    import beddington.liveview as lv
+
+    cap = lv._MAX_JPEG_BYTES
+
+    def wedged_then_recovers():
+        # One SOI, then a long run of non-EOI bytes streamed across many chunks,
+        # well past the cap. Use 0x00 so no accidental FF D9 appears mid-run.
+        yield _SOI
+        chunk = b"\x00" * (256 * 1024)
+        emitted = 0
+        while emitted <= cap + 4 * len(chunk):
+            yield chunk
+            emitted += len(chunk)
+        # Now the camera un-wedges: a fresh, well-formed frame.
+        yield JPEG_B
+
+    gen = iter_jpeg_frames(wedged_then_recovers())
+    frames = list(gen)
+
+    # The multi-MB partial was discarded; only the recovered frame is yielded.
+    assert frames == [JPEG_B]
+
+
+def test_iter_jpeg_frames_buffer_stays_bounded_across_chunks() -> None:
+    # Assert the *peak* memory held by the splitter stays bounded while a wedged
+    # stream pours in far more than the cap. We tap the buffer by measuring the
+    # process's own generator: feed one chunk at a time and check that the total
+    # bytes fed minus bytes the generator could plausibly hold never forces an
+    # unbounded buffer — done here by tracking peak via ``tracemalloc``.
+    import tracemalloc
+
+    import beddington.liveview as lv
+
+    cap = lv._MAX_JPEG_BYTES
+    chunk = b"\x00" * (512 * 1024)
+
+    def wedged():
+        yield _SOI
+        total = 0
+        while total < cap * 4:
+            yield chunk
+            total += len(chunk)
+        yield JPEG_A
+
+    tracemalloc.start()
+    frames = list(iter_jpeg_frames(wedged()))
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert frames == [JPEG_A]
+    # Peak allocation must stay near the cap, not near cap*4 (the wedged total).
+    # Generous headroom (cap + a few chunks) still proves the buffer is bounded.
+    assert peak < cap + 8 * len(chunk)
+
+
+def test_iter_jpeg_frames_back_to_back_after_wedge_no_regression() -> None:
+    # Well-formed back-to-back frames still split correctly (no regression from
+    # the cap logic) — including immediately after a dropped wedge.
+    assert list(iter_jpeg_frames([JPEG_A + JPEG_B])) == [JPEG_A, JPEG_B]
+
+    def wedge_then_two():
+        yield _SOI
+        big = b"\x00" * (1024 * 1024)
+        import beddington.liveview as lv
+
+        sent = 0
+        while sent <= lv._MAX_JPEG_BYTES + 2 * len(big):
+            yield big
+            sent += len(big)
+        yield JPEG_A + JPEG_B
+
+    assert list(iter_jpeg_frames(wedge_then_two())) == [JPEG_A, JPEG_B]
 
 
 def test_multipart_frame_has_jpeg_headers() -> None:
@@ -618,3 +698,72 @@ def test_dashboard_wires_alert_banner_and_poll_path() -> None:
     )
     assert "/alerts.json?token=t" in html  # dashboard polls it
     assert "alertbanner" in html  # the banner element exists
+
+
+def test_stream_server_uses_daemon_threads() -> None:
+    # BUG A: daemon per-connection threads so a stuck stream handler can never
+    # block interpreter shutdown / server_close.
+    assert _DaemonThreadingHTTPServer.daemon_threads is True
+
+
+def test_stream_viewer_cap_returns_503_when_full() -> None:
+    # BUG A: with the viewer semaphore fully held, a new /stream.mjpg request
+    # gets 503 instead of opening yet another unbounded stream.
+    import beddington.liveview as lv
+
+    source = _FakeFrameSource([JPEG_A, JPEG_B])
+    token = "cap-token"
+    port = _free_port()
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={"host": "127.0.0.1", "port": port, "token": token, "source": source},
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+
+    # Drain every free viewer slot so the next request is over the cap. Restore
+    # in finally so we never leak permits into other tests. (Acquire with a
+    # short timeout in case a previous test's stream handler is mid-teardown and
+    # about to release its slot.)
+    held = 0
+    try:
+        deadline = time.monotonic() + 1.0
+        while held < lv._MAX_STREAM_VIEWERS and time.monotonic() < deadline:
+            if lv._STREAM_VIEWERS.acquire(timeout=0.05):
+                held += 1
+        assert held == lv._MAX_STREAM_VIEWERS  # all slots now drained
+
+        try:
+            urllib.request.urlopen(f"{base}/stream.mjpg?token={token}", timeout=2)
+            raise AssertionError("expected 503 when viewer cap is exhausted")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 503
+
+        # Free one slot -> a viewer can connect again and gets JPEG frames.
+        lv._STREAM_VIEWERS.release()
+        held -= 1
+        stream = urllib.request.urlopen(f"{base}/stream.mjpg?token={token}", timeout=2)
+        assert b"image/jpeg" in stream.read(160)
+        stream.close()
+    finally:
+        for _ in range(held):
+            lv._STREAM_VIEWERS.release()
+        source.close()
+
+
+def test_iter_jpeg_frames_resyncs_on_cap_crossed_chunk_with_recovered_frame() -> None:
+    # Codex #B: a chunk that crosses the cap AND already contains a complete
+    # recovered JPEG must NOT be yielded as one giant corrupt frame (from a junk
+    # SOI to the recovered frame's EOI) — the splitter must resync to the real
+    # frame. (The no-EOI cap branch never fires here because an EOI IS present.)
+    import beddington.liveview as lv
+
+    cap = lv._MAX_JPEG_BYTES
+    chunks = [
+        _SOI,                        # a junk "frame" starts
+        b"\x00" * (cap - 1024),      # stays just under the cap, still no EOI
+        b"\x00" * 4096 + JPEG_A,     # this chunk crosses the cap AND holds a real frame
+    ]
+    assert list(iter_jpeg_frames(chunks)) == [JPEG_A]

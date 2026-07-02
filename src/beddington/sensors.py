@@ -28,6 +28,13 @@ class Bme680AirReader:
         self.include_gas = include_gas
         self._sensor: Any | None = None
         self._available = True
+        self._fault: str | None = None
+
+    def pop_fault(self) -> str | None:
+        """Return a one-shot persistent-failure message (missing lib / no
+        device), cleared after reading, so the pipeline surfaces it once."""
+        fault, self._fault = self._fault, None
+        return fault
 
     def read(self) -> dict[str, object]:
         if not self._available:
@@ -68,6 +75,7 @@ class Bme680AirReader:
             import bme680
         except Exception:
             self._available = False
+            self._fault = "BME680 library not installed"
             return None
 
         addresses = _candidate_i2c_addresses(
@@ -85,6 +93,7 @@ class Bme680AirReader:
             self._sensor = sensor
             return self._sensor
         self._available = False
+        self._fault = "BME680 sensor not found on the I2C bus"
         return None
 
 
@@ -93,6 +102,12 @@ class PirMotionReader:
     gpio_pin: int = 4
     timeout_seconds: float = 1.0
     _available: bool = True
+    _fault: str | None = None
+
+    def pop_fault(self) -> str | None:
+        """One-shot persistent-failure message (pinctrl missing), cleared."""
+        fault, self._fault = self._fault, None
+        return fault
 
     def read(self) -> dict[str, object]:
         if not self._available:
@@ -107,6 +122,7 @@ class PirMotionReader:
             )
         except FileNotFoundError:
             self._available = False
+            self._fault = "pinctrl not found — PIR unavailable"
             return {}
         except (OSError, subprocess.SubprocessError):
             return {}
@@ -161,6 +177,14 @@ class Mr60RadarReader:
         self._thread: threading.Thread | None = None
         self._started = False
         self._available = True
+        self._fault: str | None = None
+
+    def pop_fault(self) -> str | None:
+        """One-shot persistent-failure message (radar library missing), cleared.
+        Transient WiFi/connection drops self-heal via backoff and are NOT
+        faults."""
+        fault, self._fault = self._fault, None
+        return fault
 
     def read(self) -> dict[str, object]:
         if not self._available:
@@ -176,6 +200,7 @@ class Mr60RadarReader:
             import aioesphomeapi  # noqa: F401
         except Exception:
             self._available = False
+            self._fault = "radar library (aioesphomeapi) not installed"
             return
         self._thread = threading.Thread(
             target=self._run,
