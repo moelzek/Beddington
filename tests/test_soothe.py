@@ -343,6 +343,7 @@ def test_soothe_switch_failure_is_not_logged_as_switched() -> None:
 
     controller.observe(0.0, 0.9, (), escalation_due=True)
     failed = controller.observe(5.0, 0.9, (), escalation_due=False)
+    next_window = controller.observe(5.1, 0.9, (), escalation_due=False)
 
     assert [event.kind for event in failed.events] == ["soothe_switch_failed"]
     assert failed.events[0].details == {
@@ -350,6 +351,9 @@ def test_soothe_switch_failure_is_not_logged_as_switched() -> None:
         "to": "waves",
         "playback": {"played": False, "reason": "backend_failed"},
     }
+    assert next_window == soothe.SootheResult()
+    assert [step.name for step in player.played_steps] == ["rain", "waves", "rain"]
+    assert player.stop_calls == 1
 
 
 def test_soothe_does_not_switch_if_crying_stops_before_escalate() -> None:
@@ -816,6 +820,85 @@ def test_subprocess_soothe_player_stops_remembered_previous_instance(
     ]
 
 
+def test_subprocess_soothe_player_uses_role_isolated_pid_files(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sound = tmp_path / "rain.wav"
+    sound.write_bytes(b"RIFF")
+    override_file = tmp_path / "override.json"
+    monkeypatch.setenv("BEDDINGTON_SOOTHE_PID_FILE", str(override_file))
+    assert soothe._default_soothe_pid_file("pipeline") == override_file
+    monkeypatch.delenv("BEDDINGTON_SOOTHE_PID_FILE", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    dashboard_file = soothe._default_soothe_pid_file("dashboard")
+    pipeline_file = soothe._default_soothe_pid_file("pipeline")
+    dashboard_file.parent.mkdir(parents=True)
+    dashboard_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "processes": [{"pid": 54321, "sound_path": str(sound)}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    stopped: list[tuple[int, object]] = []
+
+    monkeypatch.setattr(
+        soothe,
+        "_pid_still_matches_sound",
+        lambda pid, sound_path: pid == 54321 and sound_path == str(sound),
+    )
+    monkeypatch.setattr(
+        soothe,
+        "_signal_pid_group",
+        lambda pid, sig: stopped.append((pid, sig)) or True,
+    )
+
+    dashboard_player = SubprocessSoothePlayer()
+    pipeline_player = soothe.build_soothe_player(
+        SootheConfig(enabled=True, player="auto")
+    )
+
+    assert isinstance(pipeline_player, SubprocessSoothePlayer)
+    assert dashboard_player._pid_file == dashboard_file
+    assert pipeline_player._pid_file == pipeline_file
+    assert dashboard_file != pipeline_file
+
+    pipeline_player.stop_all()
+
+    assert stopped == []
+    assert dashboard_file.exists()
+
+    SubprocessSoothePlayer(role="dashboard").stop_all()
+
+    assert stopped == [(54321, soothe.signal.SIGTERM)]
+
+
+def test_soothe_pid_file_write_is_atomic_for_concurrent_reader(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "soothe-player.json"
+    old = soothe._RememberedProcess(pid=111, sound_path="/old.wav")
+    new = soothe._RememberedProcess(pid=222, sound_path="/new.wav")
+    soothe._write_soothe_pid_file(path, (old,))
+    observed_during_replace: list[tuple[soothe._RememberedProcess, ...]] = []
+    real_replace = soothe.os.replace
+
+    def observing_replace(src: object, dst: object) -> None:
+        observed_during_replace.append(soothe._read_soothe_pid_file(path))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(soothe.os, "replace", observing_replace)
+
+    soothe._write_soothe_pid_file(path, (new,))
+
+    assert observed_during_replace == [(old,)]
+    assert soothe._read_soothe_pid_file(path) == (new,)
+
+
 def test_subprocess_soothe_player_kills_stubborn_process(
     monkeypatch,
     tmp_path: Path,
@@ -1005,3 +1088,114 @@ def test_loud_score_during_pending_quiet_does_not_stop_soothe() -> None:
     kinds = [e.kind for e in at_deadline.events]
     assert "soothe_quiet_confirmed" not in kinds  # must NOT declare settled
     assert player.stop_calls == 0  # and must NOT stop the sound
+
+
+def test_soothe_switch_failure_backs_off_when_escalate_after_seconds_zero() -> None:
+    # A failed preset switch must not kill the restored sound and re-fire
+    # soothe_switch_failed on every window when escalate_after_seconds=0.0
+    # (a valid config). It should back off for a minimum interval.
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FailingSwitchPlayer()
+    presets = {
+        "rain": SootheStepConfig(name="rain", wait_seconds=600.0, play_seconds=600.0),
+        "waves": SootheStepConfig(name="waves", wait_seconds=600.0, play_seconds=600.0),
+    }
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            preset="rain",
+            min_play_seconds=0.0,
+            escalate_after_seconds=0.0,
+            presets=presets,
+            steps=(presets["rain"],),
+            learn=SootheLearnConfig(enabled=True, min_samples=1),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+        soothe_outcomes=((1.0, "waves", True),),
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)  # attempt rain, activate
+    first_fail = controller.observe(0.1, 0.9, (), escalation_due=False)  # switch due -> fails
+    backed_off = controller.observe(0.2, 0.9, (), escalation_due=False)  # within backoff
+    retry = controller.observe(5.2, 0.9, (), escalation_due=False)  # backoff elapsed
+
+    assert [e.kind for e in first_fail.events] == ["soothe_switch_failed"]
+    assert backed_off == soothe.SootheResult()  # did NOT re-stop / re-fire every window
+    assert [e.kind for e in retry.events] == ["soothe_switch_failed"]
+
+
+class _FirstPlaysThenFailsPlayer(FakeControllerPlayer):
+    """First play() succeeds; every later play() fails — models a backend that
+    dies after the initial sound, so both a switch and its restore fail."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._calls = 0
+
+    def play(self, step: SootheStepConfig) -> dict[str, object]:
+        self.played_steps.append(step)
+        self._calls += 1
+        if self._calls == 1:
+            return {"played": True, "play_seconds": step.play_seconds}
+        return {"played": False, "reason": "backend_failed"}
+
+
+def test_soothe_switch_failure_with_failed_restore_surfaces_unavailable() -> None:
+    # BLOCKING regression guard: if the switch to the next preset AND the restore
+    # of the previous one BOTH fail to play, the nursery is actually silent, so a
+    # soothe_unavailable fault must be emitted (not just soothe_switch_failed) so
+    # a human is alerted rather than the controller assuming audio is playing.
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = _FirstPlaysThenFailsPlayer()  # rain plays, then all plays fail
+    presets = {
+        "rain": SootheStepConfig(name="rain", wait_seconds=600.0, play_seconds=600.0),
+        "waves": SootheStepConfig(name="waves", wait_seconds=600.0, play_seconds=600.0),
+    }
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            preset="rain",
+            min_play_seconds=0.0,
+            escalate_after_seconds=5.0,
+            presets=presets,
+            steps=(presets["rain"],),
+            learn=SootheLearnConfig(enabled=True, min_samples=1),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+        soothe_outcomes=((1.0, "waves", True),),
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)
+    failed = controller.observe(5.0, 0.9, (), escalation_due=False)
+
+    kinds = [e.kind for e in failed.events]
+    assert "soothe_switch_failed" in kinds
+    assert "soothe_unavailable" in kinds  # both plays failed -> alert a human
+
+
+def test_finish_while_still_crying_records_unresolved() -> None:
+    # Guard the other direction: a genuinely still-crying soothe at recording end
+    # (no positive pending resolution) must still be recorded as a failure.
+    started = datetime(2026, 6, 29, tzinfo=UTC)
+    player = FakeControllerPlayer()
+    controller = SootheController(
+        SootheConfig(
+            enabled=True,
+            min_play_seconds=600.0,
+            steps=(
+                SootheStepConfig(name="noise", wait_seconds=600.0, play_seconds=600.0),
+            ),
+        ),
+        started,
+        player,
+        quiet_threshold=0.4,
+    )
+
+    controller.observe(0.0, 0.9, (), escalation_due=True)  # active, still crying
+    finished = controller.finish(30.0, 0.9)  # still crying, no pending resolution
+    assert "soothe_unresolved" in [e.kind for e in finished.events]
+    assert "soothe_quiet_confirmed" not in [e.kind for e in finished.events]

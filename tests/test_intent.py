@@ -123,6 +123,31 @@ def test_translate_intent_uses_ollama_generate(monkeypatch: pytest.MonkeyPatch) 
     assert "is the air dry?" in payload["prompt"]
 
 
+def test_translate_intent_honours_tuning_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[tuple[object, float]] = []
+
+    def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        requests.append((request, timeout))
+        return FakeResponse({"response": "temperature"})
+
+    monkeypatch.setattr("beddington.intent.urllib.request.urlopen", fake_urlopen)
+
+    config = _cfg(
+        intent_num_predict=5,
+        intent_temperature=0.2,
+        intent_timeout=1.5,
+    )
+
+    assert translate_intent("is it warm?", config) == "temperature"
+
+    request, timeout = requests[0]
+    payload = json.loads(request.data.decode("utf-8"))
+    assert timeout == 1.5
+    assert payload["options"] == {"num_predict": 5, "temperature": 0.2}
+
+
 def test_lead_response_handles_non_sensor_conversation() -> None:
     def fake(prompt: str, config: object) -> str:
         del config

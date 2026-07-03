@@ -521,6 +521,13 @@ _SOOTHE_STOP_WORDS = (
     "no more",
     "shush",
 )
+_SOOTHE_OFF_TARGETS = (
+    # Explicit soothe/playback nouns only. Bare pronouns ("it"/"that") are
+    # deliberately excluded: "turn it off" could mean a lamp/heater, and
+    # wrongly stopping the baby's soothing sound is worse than not matching.
+    "music", "sound", "noise", "track", "song", "tune", "playlist", "melody",
+    "soothe", "lullaby",
+)
 _SOOTHE_PLAY_WORDS = (
     "play", "put on", "soothe", "comfort", "calm", "relax", "relaxing",
     "flame",  # common Whisper slip for "play" in "play music" on the Pi mic
@@ -573,6 +580,19 @@ _SOOTHE_FAILURE_FEEDBACK = (
     "that did not work", "that didn t work", "that didn't work", "did not help",
     "didn t help", "didn't help", "not that one", "that was not good",
 )
+
+
+def _natural_soothe_stop(q: str) -> bool:
+    for target in _SOOTHE_OFF_TARGETS:
+        if _mentions(
+            q,
+            f"turn {target} off",
+            f"turn the {target} off",
+            f"switch {target} off",
+            f"switch the {target} off",
+        ):
+            return True
+    return False
 
 
 def _soothe_context_from(q: str) -> str | None:
@@ -675,13 +695,14 @@ def match_soothe_command(
     broad = _broad_soothe_request(q)
     if soothe_context is not None and broad is not None:
         return {"action": "play_best", "context": soothe_context, **broad}
+    natural_stop = _natural_soothe_stop(q)
     context = preset is not None or _mentions(
         q, "soothe", "sound", "noise", "music", "playing", "it", "that", "crying",
         "cry", "track", "song", "tune", "playlist"
     )
     if q == "stop":
         return {"action": "stop"}
-    if _mentions(q, *_SOOTHE_STOP_WORDS) and context:
+    if natural_stop or (_mentions(q, *_SOOTHE_STOP_WORDS) and context):
         return {"action": "stop"}
     if _mentions(q, *_SOOTHE_DIFFERENT_WORDS) and context:
         return {"action": "next"}
@@ -729,6 +750,8 @@ def looks_like_soothe_control(question: str) -> bool:
     ("what is the temperature") while music plays still resumes the track.
     """
     q = normalize_transcript(question)
+    if _natural_soothe_stop(q):
+        return True
     if not _mentions(q, *_SOOTHE_CONTROL_NOUNS):
         return False
     return (
@@ -980,6 +1003,17 @@ def _deterministic_answer_result(
 
     if _mentions(q, "how far", "distance", "close"):
         return _answer_or_missing_intent("distance", snapshot)
+
+    if _mentions(
+        q,
+        "baby s room",
+        f"{CHILD_NAME.lower()} s room",
+        "baby room",
+        f"{CHILD_NAME.lower()} room",
+        "nursery",
+        "environment",
+    ):
+        return _answer_intent_result("overview", snapshot)
 
     # A wellbeing check about the baby (not the room) surfaces the labelled radar
     # vitals, checked after the specific room/presence/motion branches so "is the

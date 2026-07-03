@@ -60,9 +60,15 @@ def polish_digest(summary: str, report: NightReport, config: LlmConfig) -> str:
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             result = json.load(response)
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"LLM polish request failed: {exc}") from exc
-    return _extract_content(result)
+        return _extract_content(result)
+    except (
+        TimeoutError,
+        urllib.error.URLError,
+        json.JSONDecodeError,
+        RuntimeError,
+        ValueError,
+    ):
+        return summary
 
 
 def _extract_content(result: object) -> str:
@@ -79,4 +85,7 @@ def _extract_content(result: object) -> str:
         raise RuntimeError(f"LLM polish returned a malformed response: {result!r}") from exc
     if content is None:
         raise RuntimeError(f"LLM polish returned no content: {result!r}")
-    return str(content).strip()
+    text = str(content).strip()
+    if not text:
+        raise RuntimeError(f"LLM polish returned empty content: {result!r}")
+    return text

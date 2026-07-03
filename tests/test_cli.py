@@ -18,6 +18,7 @@ from beddington.cli import (
     _format_sensor_line,
     _is_degenerate,
     _maybe_play_wake_chime,
+    _clear_pending_wake_for_soothe_command,
     _recover_from_utterance_error,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
@@ -37,6 +38,7 @@ from beddington.config import (
 from beddington.logging import OutputPaths
 from beddington.models import Event, NightReport
 from beddington.sensor_store import SensorStore
+from beddington.soothe import SootheController
 from beddington.soothe_memory import best_preset
 from beddington.video import ImageInfo, VisualChangeReport
 
@@ -119,6 +121,70 @@ def test_record_run_soothe_outcomes_writes_failure(tmp_path: Path) -> None:
 
     store = SensorStore(str(db_path))
     assert store.outcomes_since(0.0) == [(resolved.timestamp(), "pink-noise", False)]
+    store.close()
+
+
+def test_finish_pending_settle_records_success_not_failure(tmp_path: Path) -> None:
+    class FakePlayer:
+        def __init__(self) -> None:
+            self.stop_calls = 0
+
+        def play(self, step: SootheStepConfig) -> dict[str, object]:
+            return {"played": True, "sound_path": str(step.sound_path or "")}
+
+        def pause_for_listen(self) -> dict[str, object]:
+            return {"paused": False}
+
+        def resume(self, step: SootheStepConfig) -> dict[str, object]:
+            return {"resumed": True}
+
+        def stop_all(self) -> None:
+            self.stop_calls += 1
+
+    started = datetime(2026, 6, 29, 21, 0, tzinfo=UTC)
+    player = FakePlayer()
+    controller = SootheController(
+        SootheConfig(
+            min_play_seconds=600.0,
+            hold_after_stop_seconds=600.0,
+            steps=(SootheStepConfig(name="rain", wait_seconds=30.0),),
+        ),
+        started,
+        player,
+        quiet_threshold=0.25,
+    )
+    attempted = controller.observe(0.0, 0.9, (), escalation_due=True)
+    settled = controller.observe(
+        10.0,
+        0.1,
+        (
+            Event(
+                kind="cry_ended",
+                occurred_at=started + timedelta(seconds=10),
+                offset_seconds=10.0,
+                score=0.1,
+                duration_seconds=10.0,
+            ),
+        ),
+        escalation_due=False,
+    )
+    finished = controller.finish(20.0, 0.1)
+    db_path = tmp_path / "s.db"
+
+    _record_run_soothe_outcomes(
+        attempted.events + settled.events + finished.events,
+        str(db_path),
+    )
+
+    store = SensorStore(str(db_path))
+    assert [event.kind for event in finished.events] == ["soothe_settled"]
+    assert finished.events[0].details["reason"] == (
+        "recording_ended_with_pending_resolution"
+    )
+    assert store.outcomes_since(0.0) == [
+        ((started + timedelta(seconds=20)).timestamp(), "rain", True)
+    ]
+    assert player.stop_calls == 1
     store.close()
 
 
@@ -426,6 +492,16 @@ def test_voice_stop_music_wake_phrase_is_fast_stop_command() -> None:
     assert question == "stop music"
     assert match_soothe_command(question) == {"action": "stop"}
     assert _soothe_command_replaces_playback({"action": "stop"})
+
+
+def test_wake_followup_stop_clears_pending_wake_resume() -> None:
+    pending = {"preset": "rain", "context": "sleep"}
+
+    assert _clear_pending_wake_for_soothe_command(
+        {"action": "stop"},
+        123.0,
+        pending,
+    ) == (0.0, None)
 
 
 def test_repeated_wake_word_transcript_is_degenerate() -> None:

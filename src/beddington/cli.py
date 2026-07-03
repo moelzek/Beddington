@@ -1066,6 +1066,13 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             if llama_soothe_cmd is not None:
                                 soothe_cmd = llama_soothe_cmd
                         if soothe_cmd is not None:
+                            pending_wake_until, pending_wake_soothe = (
+                                _clear_pending_wake_for_soothe_command(
+                                    soothe_cmd,
+                                    pending_wake_until,
+                                    pending_wake_soothe,
+                                )
+                            )
                             answer = _soothe_via_dashboard(
                                 soothe_cmd,
                                 port=dashboard_port,
@@ -1998,6 +2005,16 @@ def _soothe_command_replaces_playback(cmd: Mapping[str, object] | None) -> bool:
     if cmd is None:
         return False
     return str(cmd.get("action") or "") in {"play", "play_best", "next", "stop"}
+
+
+def _clear_pending_wake_for_soothe_command(
+    cmd: Mapping[str, object] | None,
+    pending_wake_until: float,
+    pending_wake_soothe: dict[str, str] | None,
+) -> tuple[float, dict[str, str] | None]:
+    if _soothe_command_replaces_playback(cmd):
+        return 0.0, None
+    return pending_wake_until, pending_wake_soothe
 
 
 def _soothe_spoken_name(preset: str) -> str:

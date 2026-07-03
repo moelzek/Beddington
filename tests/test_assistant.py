@@ -225,6 +225,19 @@ def test_answer_room_overview() -> None:
     assert "cot" not in answer
 
 
+def test_babys_room_routes_to_room_overview_not_vitals() -> None:
+    loaded = dict(SNAPSHOT)
+    loaded.update({"radar_respiratory_rate": 16.0, "radar_heart_rate_bpm": 90.0})
+
+    answer = answer_question("how is the baby's room?", loaded)
+
+    assert "Here's the room" in answer
+    assert "degrees" in answer
+    assert "percent" in answer
+    assert "90" not in answer
+    assert "16" not in answer
+
+
 import re
 
 # Words/phrases that would turn a labelled estimate into medical/safety
@@ -496,6 +509,11 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("stop the music") == {"action": "stop"}
     assert match_soothe_command("stop the noise") == {"action": "stop"}
     assert match_soothe_command("turn off the music") == {"action": "stop"}
+    assert match_soothe_command("turn the music off") == {"action": "stop"}
+    # Bare pronouns must NOT match — "turn it off" could mean a lamp/heater,
+    # and wrongly stopping the baby's soothing sound is worse than not matching.
+    assert match_soothe_command("turn it off") is None
+    assert match_soothe_command("turn that off") is None
     assert match_soothe_command("switch off the music") == {"action": "stop"}
     assert match_soothe_command("that worked") == {
         "action": "feedback", "success": True
@@ -517,6 +535,8 @@ def test_match_soothe_command() -> None:
     assert match_soothe_command("what's his heart rate") is None
     assert match_soothe_command("tell me something else") is None
     assert match_soothe_command("change the subject") is None
+    assert match_soothe_command("turn off the light") is None
+    assert match_soothe_command("turn the light off") is None
 
 
 def test_looks_like_soothe_control() -> None:
@@ -527,12 +547,17 @@ def test_looks_like_soothe_control() -> None:
     assert looks_like_soothe_control("stop the music")
     assert looks_like_soothe_control("change the song")
     assert looks_like_soothe_control("turn off the noise")
+    assert looks_like_soothe_control("turn the music off")
+    # bare-pronoun "turn it off" is intentionally NOT soothe control
+    assert not looks_like_soothe_control("turn it off")
     # plain questions / unrelated speech must NOT look like control,
     # so a track ducked for a question still resumes afterwards
     assert not looks_like_soothe_control("what is the temperature")
     assert not looks_like_soothe_control("is anyone there")
     assert not looks_like_soothe_control("change the subject")
     assert not looks_like_soothe_control("play with the baby")
+    assert not looks_like_soothe_control("turn off the light")
+    assert not looks_like_soothe_control("turn the light off")
 
 
 def test_match_soothe_command_vc2_play_names_and_controls() -> None:

@@ -59,11 +59,29 @@ class NarratorConfig:
     persona_temperature: float = 0.4
     persona_num_predict: int = 80
     persona_timeout: float = 8.0
+    intent_num_predict: int = 8
+    intent_temperature: float = 0.0
+    intent_timeout: float = 8.0
+    lead_num_predict: int = 70
+    lead_temperature: float = 0.4
+    lead_timeout: float = 8.0
+    soothe_intent_num_predict: int = 80
+    soothe_intent_temperature: float = 0.0
+    soothe_intent_timeout: float = 8.0
 
 
 @dataclass(frozen=True)
 class LlmTranslatorConfig:
     enabled: bool = False
+    intent_num_predict: int = 8
+    intent_temperature: float = 0.0
+    intent_timeout: float = 8.0
+    lead_num_predict: int = 70
+    lead_temperature: float = 0.4
+    lead_timeout: float = 8.0
+    soothe_intent_num_predict: int = 80
+    soothe_intent_temperature: float = 0.0
+    soothe_intent_timeout: float = 8.0
 
 
 @dataclass(frozen=True)
@@ -164,9 +182,17 @@ class AppConfig:
 
 def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
+    return _coerce_bool(value, default)
+
+
+def _coerce_bool(value: object, default: bool) -> bool:
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -203,6 +229,12 @@ def load_config(path: Path | None = None) -> AppConfig:
                 else config.soothe.steps
             )
         )
+        narrator_config = _load_narrator(narrator, config.narrator)
+        assistant_config = _load_assistant(assistant, config.assistant)
+        narrator_config = _apply_llm_translator_tuning(
+            narrator_config,
+            assistant_config.llm_translator,
+        )
         config = AppConfig(
             detection=DetectionConfig(
                 threshold=float(detection.get("threshold", config.detection.threshold)),
@@ -220,19 +252,22 @@ def load_config(path: Path | None = None) -> AppConfig:
                 ),
             ),
             notifications=NotificationConfig(
-                desktop=bool(notifications.get("desktop", config.notifications.desktop))
+                desktop=_coerce_bool(
+                    notifications.get("desktop"),
+                    config.notifications.desktop,
+                )
             ),
             llm=LlmConfig(
-                enabled=bool(llm.get("enabled", config.llm.enabled)),
+                enabled=_coerce_bool(llm.get("enabled"), config.llm.enabled),
                 base_url=str(llm.get("base_url", config.llm.base_url)),
                 model=str(llm.get("model", config.llm.model)),
             ),
-            narrator=_load_narrator(narrator, config.narrator),
-            assistant=_load_assistant(assistant, config.assistant),
+            narrator=narrator_config,
+            assistant=assistant_config,
             sensors=_load_sensors(sensors, config.sensors),
             sounds=_load_sounds(sounds, config.sounds),
             soothe=SootheConfig(
-                enabled=bool(soothe.get("enabled", config.soothe.enabled)),
+                enabled=_coerce_bool(soothe.get("enabled"), config.soothe.enabled),
                 player=str(soothe.get("player", config.soothe.player)),
                 preset=soothe_preset,
                 min_play_seconds=float(
@@ -354,7 +389,7 @@ def _load_quiet_check(
         else default.quiet_threshold
     )
     return QuietCheckConfig(
-        enabled=bool(raw_quiet_check.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_quiet_check.get("enabled"), default.enabled),
         check_interval_seconds=float(
             raw_quiet_check.get(
                 "check_interval_seconds",
@@ -368,11 +403,13 @@ def _load_quiet_check(
             raw_quiet_check.get("required_checks", default.required_checks)
         ),
         quiet_threshold=quiet_threshold,
-        pause_during_check=bool(
-            raw_quiet_check.get("pause_during_check", default.pause_during_check)
+        pause_during_check=_coerce_bool(
+            raw_quiet_check.get("pause_during_check"),
+            default.pause_during_check,
         ),
-        stop_on_notify=bool(
-            raw_quiet_check.get("stop_on_notify", default.stop_on_notify)
+        stop_on_notify=_coerce_bool(
+            raw_quiet_check.get("stop_on_notify"),
+            default.stop_on_notify,
         ),
     )
 
@@ -384,7 +421,7 @@ def _load_soothe_learn(
     if not isinstance(raw_learn, dict):
         return default
     return SootheLearnConfig(
-        enabled=bool(raw_learn.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_learn.get("enabled"), default.enabled),
         min_samples=int(raw_learn.get("min_samples", default.min_samples)),
     )
 
@@ -396,22 +433,24 @@ def _load_narrator(
     if not isinstance(raw_narrator, dict):
         return default
     return NarratorConfig(
-        enabled=bool(raw_narrator.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_narrator.get("enabled"), default.enabled),
         backend=str(raw_narrator.get("backend", default.backend)),
         model=str(raw_narrator.get("model", default.model)),
         host=str(raw_narrator.get("host", default.host)),
         num_predict=int(raw_narrator.get("num_predict", default.num_predict)),
         temperature=float(raw_narrator.get("temperature", default.temperature)),
-        voice_enabled=bool(
-            raw_narrator.get("voice_enabled", default.voice_enabled)
+        voice_enabled=_coerce_bool(
+            raw_narrator.get("voice_enabled"),
+            default.voice_enabled,
         ),
         voice_engine=str(raw_narrator.get("voice_engine", default.voice_engine)),
         piper_binary=str(raw_narrator.get("piper_binary", default.piper_binary)),
         piper_model=str(raw_narrator.get("piper_model", default.piper_model)),
         piper_speaker=str(raw_narrator.get("piper_speaker", default.piper_speaker)),
         piper_speed=float(raw_narrator.get("piper_speed", default.piper_speed)),
-        persona_enabled=bool(
-            raw_narrator.get("persona_enabled", default.persona_enabled)
+        persona_enabled=_coerce_bool(
+            raw_narrator.get("persona_enabled"),
+            default.persona_enabled,
         ),
         persona_temperature=float(
             raw_narrator.get("persona_temperature", default.persona_temperature)
@@ -432,8 +471,9 @@ def _load_assistant(
     if not isinstance(raw_assistant, dict):
         return default
     return AssistantConfig(
-        chime_enabled=bool(
-            raw_assistant.get("chime_enabled", default.chime_enabled)
+        chime_enabled=_coerce_bool(
+            raw_assistant.get("chime_enabled"),
+            default.chime_enabled,
         ),
         llm_translator=_load_llm_translator(
             raw_assistant.get("llm_translator", {}),
@@ -449,7 +489,59 @@ def _load_llm_translator(
     if not isinstance(raw_translator, dict):
         return default
     return LlmTranslatorConfig(
-        enabled=bool(raw_translator.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_translator.get("enabled"), default.enabled),
+        intent_num_predict=int(
+            raw_translator.get("intent_num_predict", default.intent_num_predict)
+        ),
+        intent_temperature=float(
+            raw_translator.get("intent_temperature", default.intent_temperature)
+        ),
+        intent_timeout=float(
+            raw_translator.get("intent_timeout", default.intent_timeout)
+        ),
+        lead_num_predict=int(
+            raw_translator.get("lead_num_predict", default.lead_num_predict)
+        ),
+        lead_temperature=float(
+            raw_translator.get("lead_temperature", default.lead_temperature)
+        ),
+        lead_timeout=float(raw_translator.get("lead_timeout", default.lead_timeout)),
+        soothe_intent_num_predict=int(
+            raw_translator.get(
+                "soothe_intent_num_predict",
+                default.soothe_intent_num_predict,
+            )
+        ),
+        soothe_intent_temperature=float(
+            raw_translator.get(
+                "soothe_intent_temperature",
+                default.soothe_intent_temperature,
+            )
+        ),
+        soothe_intent_timeout=float(
+            raw_translator.get(
+                "soothe_intent_timeout",
+                default.soothe_intent_timeout,
+            )
+        ),
+    )
+
+
+def _apply_llm_translator_tuning(
+    narrator: NarratorConfig,
+    translator: LlmTranslatorConfig,
+) -> NarratorConfig:
+    return replace(
+        narrator,
+        intent_num_predict=translator.intent_num_predict,
+        intent_temperature=translator.intent_temperature,
+        intent_timeout=translator.intent_timeout,
+        lead_num_predict=translator.lead_num_predict,
+        lead_temperature=translator.lead_temperature,
+        lead_timeout=translator.lead_timeout,
+        soothe_intent_num_predict=translator.soothe_intent_num_predict,
+        soothe_intent_temperature=translator.soothe_intent_temperature,
+        soothe_intent_timeout=translator.soothe_intent_timeout,
     )
 
 
@@ -460,7 +552,7 @@ def _load_sounds(
     if not isinstance(raw_sounds, dict):
         return default
     return SoundsConfig(
-        enabled=bool(raw_sounds.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_sounds.get("enabled"), default.enabled),
         threshold=float(raw_sounds.get("threshold", default.threshold)),
     )
 
@@ -494,9 +586,9 @@ def _load_air_sensor(
     if not isinstance(raw_air, dict):
         return default
     return AirSensorConfig(
-        enabled=bool(raw_air.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_air.get("enabled"), default.enabled),
         i2c_address=int(raw_air.get("i2c_address", default.i2c_address)),
-        gas=bool(raw_air.get("gas", default.gas)),
+        gas=_coerce_bool(raw_air.get("gas"), default.gas),
     )
 
 
@@ -507,7 +599,7 @@ def _load_motion_sensor(
     if not isinstance(raw_motion, dict):
         return default
     return MotionSensorConfig(
-        enabled=bool(raw_motion.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_motion.get("enabled"), default.enabled),
         gpio_pin=int(raw_motion.get("gpio_pin", default.gpio_pin)),
     )
 
@@ -519,17 +611,22 @@ def _load_radar_sensor(
     if not isinstance(raw_radar, dict):
         return default
     return RadarSensorConfig(
-        enabled=bool(raw_radar.get("enabled", default.enabled)),
+        enabled=_coerce_bool(raw_radar.get("enabled"), default.enabled),
         host=str(raw_radar.get("host", default.host)),
         port=int(raw_radar.get("port", default.port)),
         password=str(raw_radar.get("password", default.password)),
-        include_distance=bool(
-            raw_radar.get("include_distance", default.include_distance)
+        include_distance=_coerce_bool(
+            raw_radar.get("include_distance"),
+            default.include_distance,
         ),
-        include_target_count=bool(
-            raw_radar.get("include_target_count", default.include_target_count)
+        include_target_count=_coerce_bool(
+            raw_radar.get("include_target_count"),
+            default.include_target_count,
         ),
-        bench_vitals=bool(raw_radar.get("bench_vitals", default.bench_vitals)),
+        bench_vitals=_coerce_bool(
+            raw_radar.get("bench_vitals"),
+            default.bench_vitals,
+        ),
     )
 
 

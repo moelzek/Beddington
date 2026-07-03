@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from beddington.context import describe_presence_scene
+from beddington.grounding import has_unsupported_additions
 
 
 def test_scene_radar_present() -> None:
@@ -30,3 +31,21 @@ def test_scene_none_when_nothing_reported() -> None:
     assert describe_presence_scene(None, None) is None
     # Non-bool values are ignored, not misread.
     assert describe_presence_scene("yes", 1) is None
+
+
+def test_grounding_no_one_does_not_add_numeric_one() -> None:
+    assert not has_unsupported_additions(
+        "No one was detected in the room.",
+        "Nobody was detected in the room.",
+    )
+    assert not has_unsupported_additions(
+        "No-one was detected in the room.",
+        "Nobody was detected in the room.",
+    )
+
+
+def test_grounding_large_number_does_not_crash() -> None:
+    assert not has_unsupported_additions(
+        "123456789012345678901234567890",
+        "",
+    )

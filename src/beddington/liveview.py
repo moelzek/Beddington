@@ -43,6 +43,9 @@ _STREAM_VIEWERS = threading.Semaphore(_MAX_STREAM_VIEWERS)
 # Socket write timeout (seconds) for a stream connection, so a stalled write
 # raises instead of pinning a handler thread forever.
 _STREAM_WRITE_TIMEOUT = 20.0
+# Header read timeout (seconds) for newly accepted connections, so a client that
+# drips request bytes cannot pin a handler before authentication.
+_HEADER_READ_TIMEOUT = 5.0
 
 
 class _DaemonThreadingHTTPServer(ThreadingHTTPServer):
@@ -119,7 +122,10 @@ def is_authorised(provided: str, expected: str) -> bool:
     """Constant-time token check. An empty expected token never authorises."""
     if not expected:
         return False
-    return hmac.compare_digest(provided, expected)
+    try:
+        return hmac.compare_digest(provided, expected)
+    except TypeError:
+        return False
 
 
 _ALERT_TTL_SECONDS = 45.0
@@ -742,6 +748,13 @@ def _make_handler(
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
 
+        def setup(self) -> None:
+            super().setup()
+            try:
+                self.connection.settimeout(_HEADER_READ_TIMEOUT)
+            except OSError:
+                pass
+
         def _provided_token(self) -> str:
             query = parse_qs(urlparse(self.path).query)
             return (query.get("token") or [""])[0]
@@ -850,7 +863,13 @@ def _make_handler(
                             else:
                                 seq, frame = broker.wait_for_frame(seq)
                             if frame is None:
-                                if broker.closed:
+                                active_closed = (
+                                    broker.active_closed(cursor)
+                                    if cursor is not None
+                                    and hasattr(broker, "active_closed")
+                                    else broker.closed
+                                )
+                                if active_closed:
                                     break
                                 continue
                             self.wfile.write(multipart_frame(frame))
@@ -994,6 +1013,14 @@ class _ModeBroker:
     @property
     def closed(self) -> bool:
         return all(broker.closed for broker in self._brokers.values())
+
+    def active_closed(self, cursor: "_StreamCursor | None" = None) -> bool:
+        active = (
+            cursor.broker
+            if cursor is not None and cursor.broker is not None
+            else self._active()
+        )
+        return active.closed
 
     def close(self) -> None:
         for broker in self._brokers.values():

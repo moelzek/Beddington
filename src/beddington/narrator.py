@@ -26,6 +26,9 @@ _BANNED_NARRATION_WORDS = (
     "respiratory",
     "pulse",
 )
+_TTS_TIMEOUT_SECONDS = 30.0
+_PLAYBACK_TIMEOUT_SECONDS = 60.0
+_FOCUSED_SOUND_RUN_GAP_SECONDS = 1.0
 
 
 def build_narration_prompt(report: NightReport) -> str:
@@ -166,6 +169,7 @@ def speak(text: str, config: NarratorConfig) -> dict[str, Any]:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=True,
+                timeout=_PLAYBACK_TIMEOUT_SECONDS,
             )
         except (OSError, subprocess.SubprocessError):
             return {"spoken": False, "reason": "player_failed"}
@@ -219,12 +223,32 @@ def _outcome_fact(events: tuple[Event, ...], notification_count: int) -> str:
 
 def _sound_facts(events: tuple[Event, ...]) -> list[str]:
     counts: dict[str, int] = {}
+    last_sound: str | None = None
+    last_offset: float | None = None
+    last_focused = False
     for event in events:
         if event.kind != "sound_observed":
             continue
         sound = event.details.get("sound")
         if isinstance(sound, str):
-            counts[sound] = counts.get(sound, 0) + 1
+            focused = event.details.get("focused") is True
+            gap = (
+                event.offset_seconds - last_offset
+                if last_offset is not None
+                else None
+            )
+            same_focused_run = (
+                focused
+                and last_focused
+                and last_sound == sound
+                and gap is not None
+                and 0 <= gap <= _FOCUSED_SOUND_RUN_GAP_SECONDS
+            )
+            if not same_focused_run:
+                counts[sound] = counts.get(sound, 0) + 1
+            last_sound = sound
+            last_offset = event.offset_seconds
+            last_focused = focused
     if not counts:
         return []
     parts = [
@@ -371,6 +395,7 @@ def _synthesise_piper(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
+            timeout=_TTS_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
         return {"created": False, "reason": "tts_failed"}
@@ -390,6 +415,7 @@ def _synthesise_espeak(text: str, wav_path: Path) -> dict[str, Any]:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
+            timeout=_TTS_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
         return {"created": False, "reason": "tts_failed"}
