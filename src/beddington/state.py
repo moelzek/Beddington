@@ -36,6 +36,9 @@ class CryEventTracker:
         self._reset()
         return (event,)
 
+    def mark_notified(self, offset_seconds: float) -> None:
+        self._last_notification_offset = offset_seconds
+
     def _observe_above(self, offset: float, score: float) -> TrackerResult:
         self._below_start = None
         self._peak_score = max(self._peak_score, score)
@@ -44,7 +47,6 @@ class CryEventTracker:
             # long, continuous cry doesn't yield a single missable ping. No new
             # cry_started event — one episode stays one episode in the log.
             if self._notification_due(offset):
-                self._last_notification_offset = offset
                 return TrackerResult(notify=True)
             return TrackerResult()
 
@@ -63,8 +65,6 @@ class CryEventTracker:
             details={"label": "Baby cry, infant cry"},
         )
         notify = self._notification_due(offset)
-        if notify:
-            self._last_notification_offset = offset
         return TrackerResult((event,), notify)
 
     def _observe_below(self, offset: float) -> TrackerResult:

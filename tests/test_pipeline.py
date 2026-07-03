@@ -272,6 +272,63 @@ def test_selected_soothe_preset_suppresses_notification_when_crying_settles(
     }
 
 
+def test_soothe_suppressed_pulse_does_not_start_tracker_cooldown(
+    tmp_path: Path,
+) -> None:
+    scores = [
+        0.8,
+        0.9,  # first sustained cry starts soothe, but no notification yet
+        0.1,
+        0.1,  # first cry settles before soothe's wait expires
+        0.8,
+        0.9,  # second sustained cry is inside the nominal cooldown window
+        0.9,
+        0.9,
+        0.9,  # second cry persists long enough to notify
+        0.9,
+        0.9,  # genuine send must start cooldown and prevent immediate repeats
+    ]
+    notifier = FakeNotifier()
+    soothe_player = FakeSoothePlayer()
+    config = AppConfig(
+        detection=DetectionConfig(
+            threshold=0.4,
+            sustained_seconds=1.0,
+            release_seconds=0.5,
+            notification_cooldown_seconds=30.0,
+        ),
+        notifications=NotificationConfig(desktop=False),
+        soothe=SootheConfig(
+            enabled=True,
+            player="none",
+            min_play_seconds=0.0,
+            hold_after_stop_seconds=0.0,
+            steps=(SootheStepConfig(name="white noise", wait_seconds=1.0),),
+        ),
+    )
+
+    result = run_pipeline(
+        source=FakeSource(scores),
+        detector=FakeDetector(scores),
+        notifier=notifier,
+        config=config,
+        output_dir=tmp_path,
+        started_at=datetime(2026, 6, 18, tzinfo=UTC),
+        soothe_player=soothe_player,
+    )
+
+    kinds = [event.kind for event in result.report.events]
+    notifications = [
+        event for event in result.report.events if event.kind == "notification_sent"
+    ]
+
+    assert kinds.count("soothe_attempted") == 2
+    assert "soothe_settled" in kinds
+    assert notifier.calls == 1
+    assert len(notifications) == 1
+    assert notifications[0].offset_seconds > 2.0
+
+
 def test_pi_product_soothe_plays_continuously_and_tracks_crying(
     tmp_path: Path,
 ) -> None:

@@ -28,13 +28,18 @@ def test_short_blip_does_not_become_an_event() -> None:
 
 def test_sustained_cry_starts_notifies_once_and_ends() -> None:
     tracker = _tracker()
-    results = [
-        tracker.observe(0.0, 0.8),
-        tracker.observe(0.4875, 0.9),
-        tracker.observe(0.975, 0.7),
-        tracker.observe(1.4625, 0.1),
-        tracker.observe(1.95, 0.1),
-    ]
+    results = []
+    for offset, score in [
+        (0.0, 0.8),
+        (0.4875, 0.9),
+        (0.975, 0.7),
+        (1.4625, 0.1),
+        (1.95, 0.1),
+    ]:
+        result = tracker.observe(offset, score)
+        if result.notify:
+            tracker.mark_notified(offset)
+        results.append(result)
     events = [event for result in results for event in result.events]
 
     assert [event.kind for event in events] == ["cry_started", "cry_ended"]
@@ -54,7 +59,10 @@ def test_notification_cooldown_suppresses_second_episode() -> None:
         (2.0, 0.9),
         (2.4875, 0.9),
     ]:
-        notifications += int(tracker.observe(offset, score).notify)
+        result = tracker.observe(offset, score)
+        if result.notify:
+            tracker.mark_notified(offset)
+            notifications += 1
 
     assert notifications == 1
 
@@ -63,7 +71,12 @@ def test_long_continuous_cry_re_alerts_on_cooldown() -> None:
     # A baby crying non-stop must not yield a single missable ping: once the
     # cooldown elapses, the tracker re-notifies — but it stays ONE episode.
     tracker = _tracker(sustained_seconds=1.0, notification_cooldown_seconds=1.0)
-    results = [tracker.observe(offset / 2, 0.9) for offset in range(0, 10)]  # 0..4.5s
+    results = []
+    for offset in (offset / 2 for offset in range(0, 10)):  # 0..4.5s
+        result = tracker.observe(offset, 0.9)
+        if result.notify:
+            tracker.mark_notified(offset)
+        results.append(result)
     events = [event for result in results for event in result.events]
 
     assert [event.kind for event in events] == ["cry_started"]  # one episode

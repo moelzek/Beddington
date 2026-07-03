@@ -165,6 +165,8 @@ class Mr60RadarReader:
         include_distance: bool = True,
         include_target_count: bool = True,
         include_vitals: bool = False,
+        sample_cadence_seconds: float | None = None,
+        staleness_window_seconds: float | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -173,6 +175,12 @@ class Mr60RadarReader:
         self.include_target_count = include_target_count
         self.include_vitals = include_vitals
         self._latest: dict[str, object] = {}
+        self._latest_updated_at: float | None = None
+        self._staleness_window_seconds = _radar_staleness_window_seconds(
+            sample_cadence_seconds,
+            staleness_window_seconds,
+        )
+        self._now = time.monotonic
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._started = False
@@ -192,6 +200,12 @@ class Mr60RadarReader:
         if not self._started:
             self._start()
         with self._lock:
+            if (
+                self._latest_updated_at is None
+                or self._now() - self._latest_updated_at
+                > self._staleness_window_seconds
+            ):
+                return {}
             return dict(self._latest)
 
     def _start(self) -> None:
@@ -215,18 +229,27 @@ class Mr60RadarReader:
         # so the detection loop is never blocked or perturbed.
         backoff = 1.0
         while True:
+            connected = False
             try:
-                asyncio.run(self._stream())
+                connected = asyncio.run(self._stream())
             except Exception:
                 pass
+            if connected:
+                backoff = 1.0
             time.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
-    async def _stream(self) -> None:
+    async def _stream(self) -> bool:
         from aioesphomeapi import APIClient
 
         client = APIClient(self.host, self.port, self.password)
-        await client.connect(login=True)
+        disconnected = asyncio.Event()
+
+        async def on_disconnect(expected: bool) -> None:
+            del expected
+            disconnected.set()
+
+        await client.connect(on_stop=on_disconnect, login=True)
         entities, _ = await client.list_entities_services()
         routing: dict[Any, str] = {}
         for entity in entities:
@@ -247,17 +270,21 @@ class Mr60RadarReader:
             if field is None:
                 return
             value = _coerce_radar_value(field, getattr(state, "state", None))
-            with self._lock:
-                if value is None:
-                    # No valid reading (e.g. a vital with no lock reports NaN) —
-                    # drop any stale value rather than keep showing it.
-                    self._latest.pop(field, None)
-                else:
-                    self._latest[field] = value
+            self._update_latest(field, value)
 
         client.subscribe_states(on_state)
-        while True:
-            await asyncio.sleep(3600)
+        await disconnected.wait()
+        return True
+
+    def _update_latest(self, field: str, value: object | None) -> None:
+        with self._lock:
+            if value is None:
+                # No valid reading (e.g. a vital with no lock reports NaN) —
+                # drop any stale value rather than keep showing it.
+                self._latest.pop(field, None)
+            else:
+                self._latest[field] = value
+            self._latest_updated_at = self._now()
 
 
 def build_sensor_readers(sensors_config: SensorsConfig) -> list[SensorReader]:
@@ -277,9 +304,21 @@ def build_sensor_readers(sensors_config: SensorsConfig) -> list[SensorReader]:
                 sensors_config.radar.include_distance,
                 sensors_config.radar.include_target_count,
                 sensors_config.radar.bench_vitals,
+                sample_cadence_seconds=sensors_config.sample_interval_seconds,
             )
         )
     return readers
+
+
+def _radar_staleness_window_seconds(
+    sample_cadence_seconds: float | None,
+    override_seconds: float | None,
+) -> float:
+    if override_seconds is not None:
+        return max(0.0, float(override_seconds))
+    if sample_cadence_seconds is None:
+        return 30.0
+    return max(30.0, float(sample_cadence_seconds) * 3.0)
 
 
 def _radar_field_for_name(
