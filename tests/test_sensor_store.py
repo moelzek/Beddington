@@ -49,6 +49,17 @@ def test_store_series_downsamples_to_max_points(tmp_path: Path) -> None:
     store.close()
 
 
+def test_store_series_downsampling_keeps_latest_point(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    for index in range(11):
+        store.append(float(index), {"room_temperature_c": float(index)})
+
+    points = store.series(0.0, max_points=4)["room_temperature_c"]["points"]
+
+    assert points[-1] == [10.0, 10.0]
+    store.close()
+
+
 def test_store_persists_across_reopen(tmp_path: Path) -> None:
     db = str(tmp_path / "s.db")
     first = SensorStore(db)

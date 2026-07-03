@@ -6,6 +6,7 @@ import signal
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -59,9 +60,13 @@ class DryRunSoothePlayer:
 
 
 class SubprocessSoothePlayer:
-    def __init__(self, pid_file: Path | None = None) -> None:
+    def __init__(
+        self,
+        pid_file: Path | None = None,
+        role: str | None = "dashboard",
+    ) -> None:
         self._processes: list[subprocess.Popen[bytes]] = []
-        self._pid_file = pid_file or _default_soothe_pid_file()
+        self._pid_file = pid_file or _default_soothe_pid_file(role)
 
     def play(self, step: SootheStepConfig) -> dict[str, Any]:
         self.stop_all()
@@ -154,11 +159,21 @@ class _RememberedProcess:
     sound_path: str
 
 
-def _default_soothe_pid_file() -> Path:
+def _default_soothe_pid_file(role: str | None = "dashboard") -> Path:
     configured = os.getenv("BEDDINGTON_SOOTHE_PID_FILE")
     if configured:
         return Path(configured).expanduser()
-    return Path.home() / ".config" / "beddington" / "soothe-player.json"
+    suffix = _soothe_pid_file_role_suffix(role)
+    return Path.home() / ".config" / "beddington" / f"soothe-player-{suffix}.json"
+
+
+def _soothe_pid_file_role_suffix(role: str | None) -> str:
+    raw = role or "default"
+    safe = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "-"
+        for character in raw.lower()
+    ).strip("-_")
+    return safe or "default"
 
 
 def _read_soothe_pid_file(path: Path) -> tuple[_RememberedProcess, ...]:
@@ -205,10 +220,21 @@ def _write_soothe_pid_file(
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps({"version": 1, "processes": entries}),
-            encoding="utf-8",
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
         )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"version": 1, "processes": entries}))
+            os.replace(tmp_path, path)
+        finally:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
     except OSError:
         pass
 
@@ -273,6 +299,12 @@ def _signal_pid_group(pid: int, sig: signal.Signals) -> bool:
         return False
 
 
+# Minimum gap before re-attempting a preset switch that just failed to start.
+# Without this a config with escalate_after_seconds=0 would stop the current
+# sound and re-emit soothe_switch_failed on every window.
+_MIN_SWITCH_RETRY_SECONDS = 5.0
+
+
 class SootheController:
     def __init__(
         self,
@@ -303,6 +335,7 @@ class SootheController:
         self._crying = False
         self._current_cry_started_offset: float | None = None
         self._last_cry_ended_offset: float | None = None
+        self._switch_retry_after_offset: float | None = None
 
     def observe(
         self,
@@ -359,6 +392,24 @@ class SootheController:
             return result
         if not self._active:
             return result
+        pending = self._pending_resolution
+        if pending is not None:
+            if pending.kind == "settled":
+                event = self._settled_event(
+                    offset_seconds,
+                    score,
+                    pending.duration_seconds,
+                )
+            else:
+                event = self._quiet_confirmed_event(
+                    offset_seconds,
+                    score,
+                    pending.quiet_checks or self._quiet_checks_passed,
+                )
+            event.details["reason"] = "recording_ended_with_pending_resolution"
+            self._reset()
+            self.player.stop_all()
+            return SootheResult(result.events + (event,), notify=False)
         event = Event(
             kind="soothe_unresolved",
             occurred_at=self._at(offset_seconds),
@@ -512,6 +563,12 @@ class SootheController:
         ):
             return ()
 
+        if (
+            self._switch_retry_after_offset is not None
+            and offset_seconds < self._switch_retry_after_offset
+        ):
+            return ()
+
         crying_since = (
             self._current_cry_started_offset
             if self._current_cry_started_offset is not None
@@ -529,6 +586,7 @@ class SootheController:
             return ()
 
         previous_key = self._current_preset_key
+        previous_step = self._current_step
         step = _with_min_play_seconds(
             self.config.presets[next_key],
             self.config.min_play_seconds,
@@ -536,7 +594,19 @@ class SootheController:
         self.player.stop_all()
         playback = self.player.play(step)
         if not playback.get("played"):
-            return (
+            restore_playback: dict[str, object] = {}
+            restore_played = False
+            if previous_step is not None:
+                restore_playback = self.player.play(previous_step)
+                restore_played = bool(restore_playback.get("played"))
+                if restore_played:
+                    self._current_step = previous_step
+            self._current_preset_key = previous_key
+            self._current_sound_started_offset = offset_seconds
+            self._switch_retry_after_offset = offset_seconds + max(
+                self.config.escalate_after_seconds, _MIN_SWITCH_RETRY_SECONDS
+            )
+            events = [
                 Event(
                     kind="soothe_switch_failed",
                     occurred_at=self._at(offset_seconds),
@@ -547,11 +617,32 @@ class SootheController:
                         "to": next_key,
                         "playback": playback,
                     },
-                ),
-            )
+                )
+            ]
+            if previous_step is not None and not restore_played:
+                # Both the new preset AND the restore failed to play: the nursery
+                # is actually silent and no sound is running. Surface a fault so a
+                # human is alerted instead of assuming soothing continues.
+                events.append(
+                    Event(
+                        kind="soothe_unavailable",
+                        occurred_at=self._at(offset_seconds),
+                        offset_seconds=offset_seconds,
+                        score=score,
+                        details={
+                            "name": previous_key,
+                            "reason": restore_playback.get(
+                                "reason", "restore_failed"
+                            ),
+                            "playback": restore_playback,
+                        },
+                    )
+                )
+            return tuple(events)
         self._current_step = step
         self._current_preset_key = next_key
         self._current_sound_started_offset = offset_seconds
+        self._switch_retry_after_offset = None
         return (
             Event(
                 kind="soothe_switched",
@@ -821,6 +912,7 @@ class SootheController:
         self._crying = False
         self._current_cry_started_offset = None
         self._last_cry_ended_offset = None
+        self._switch_retry_after_offset = None
 
 
 @dataclass(frozen=True)
@@ -839,7 +931,7 @@ class _PendingResolution:
 
 def build_soothe_player(config: SootheConfig) -> SoothePlayer:
     if config.player == "auto":
-        return SubprocessSoothePlayer()
+        return SubprocessSoothePlayer(role="pipeline")
     return DryRunSoothePlayer()
 
 

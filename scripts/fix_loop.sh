@@ -6,12 +6,18 @@
 set -u
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-REPO="/Users/elzekmo/Code/Labie/.claude/worktrees/flamboyant-kilby-76d688"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO" || { echo "repo not found"; exit 1; }
 
 STATE_DIR="$REPO/.smartloop"; LOG_DIR="$STATE_DIR/logs"
 LEDGER="$STATE_DIR/fix-units.md"; SUMMARY="$STATE_DIR/FIX_SUMMARY.md"
 SPEC="plans/fixes-spec.md"
+if [ -n "$(git status --porcelain)" ]; then
+  echo "working tree is not clean before loop start; aborting"
+  git status --short
+  exit 1
+fi
 mkdir -p "$LOG_DIR"
 
 TEST_CMD="pytest -q"
@@ -37,6 +43,18 @@ ledger_mark() {
 }
 [ -f "$LEDGER" ] || { echo "# fix-loop ledger"; echo; } > "$LEDGER"
 run_tests() { eval "$TEST_CMD" > "$LOG_DIR/pytest.last" 2>&1; }
+unit_change_paths() {
+  { git diff --name-only; git ls-files --others --exclude-standard; } | grep -v '^\.smartloop/' || true
+}
+has_unit_changes() {
+  [ -n "$(unit_change_paths)" ]
+}
+stage_unit_changes() {
+  local path
+  unit_change_paths | while IFS= read -r path; do
+    [ -n "$path" ] && git add -- "$path" >> "$LOG_DIR/git.log" 2>&1
+  done
+}
 push_main() {
   if git push origin HEAD:main >> "$LOG_DIR/git.log" 2>&1; then return 0; fi
   log "push rejected — fetch+rebase+retry once"
@@ -68,11 +86,11 @@ for entry in "${UNITS[@]}"; do
       log "$UNIT tests RED (attempt $attempt)"
       extra=" Previous attempt left failing tests; fix them. pytest tail: $(tail -25 "$LOG_DIR/pytest.last" | tr '\n' ' ')"; continue
     fi
-    if [ -z "$(git status --porcelain)" ]; then
+    if ! has_unit_changes; then
       log "$UNIT green but NO changes (attempt $attempt)"
       extra=" The previous attempt changed no files. You MUST edit files to implement $UNIT."; continue
     fi
-    git add -A >> "$LOG_DIR/git.log" 2>&1
+    stage_unit_changes
     git commit -m "$MSG" -m "Built by gated codex fix-loop ($UNIT); bug found by a live Pi test." -m "Co-Authored-By: WOZCODE <contact@withwoz.com>" >> "$LOG_DIR/git.log" 2>&1
     if push_main; then ledger_mark "$UNIT" "x" "$MSG"; log "$UNIT DONE + pushed"; landed=1
     else ledger_mark "$UNIT" "!" "tests green, commit local, PUSH FAILED"; log "$UNIT push failed — stopping"; landed=2; fi

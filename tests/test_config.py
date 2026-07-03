@@ -207,6 +207,110 @@ def test_narrator_config_defaults_enabled() -> None:
     assert NarratorConfig().enabled is True
 
 
+def test_toml_boolean_strings_are_coerced(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[notifications]
+desktop = "false"
+
+[llm]
+enabled = "true"
+
+[narrator]
+enabled = "false"
+voice_enabled = "true"
+persona_enabled = "false"
+
+[assistant]
+chime_enabled = "false"
+
+[soothe]
+enabled = "false"
+
+[soothe.quiet_check]
+enabled = "true"
+pause_during_check = "false"
+stop_on_notify = "false"
+
+[soothe.learn]
+enabled = "true"
+
+[sounds]
+enabled = "true"
+
+[sensors.air]
+enabled = "true"
+gas = "true"
+
+[sensors.motion]
+enabled = "true"
+
+[sensors.radar]
+include_distance = "false"
+include_target_count = "false"
+bench_vitals = "true"
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.notifications.desktop is False
+    assert config.llm.enabled is True
+    assert config.narrator.enabled is False
+    assert config.narrator.voice_enabled is True
+    assert config.narrator.persona_enabled is False
+    assert config.assistant.chime_enabled is False
+    assert config.soothe.enabled is False
+    assert config.soothe.quiet_check.enabled is True
+    assert config.soothe.quiet_check.pause_during_check is False
+    assert config.soothe.quiet_check.stop_on_notify is False
+    assert config.soothe.learn.enabled is True
+    assert config.sounds.enabled is True
+    assert config.sensors.air.enabled is True
+    assert config.sensors.air.gas is True
+    assert config.sensors.motion.enabled is True
+    assert config.sensors.radar.include_distance is False
+    assert config.sensors.radar.include_target_count is False
+    assert config.sensors.radar.bench_vitals is True
+
+
+def test_llm_translator_tuning_keys_load(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[assistant.llm_translator]
+enabled = true
+intent_num_predict = 5
+intent_temperature = 0.1
+intent_timeout = 2.0
+lead_num_predict = 55
+lead_temperature = 0.25
+lead_timeout = 3.0
+soothe_intent_num_predict = 65
+soothe_intent_temperature = 0.05
+soothe_intent_timeout = 4.0
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+    translator = config.assistant.llm_translator
+
+    assert translator.intent_num_predict == 5
+    assert translator.intent_temperature == 0.1
+    assert translator.intent_timeout == 2.0
+    assert translator.lead_num_predict == 55
+    assert translator.lead_temperature == 0.25
+    assert translator.lead_timeout == 3.0
+    assert translator.soothe_intent_num_predict == 65
+    assert translator.soothe_intent_temperature == 0.05
+    assert translator.soothe_intent_timeout == 4.0
+    assert config.narrator.intent_num_predict == 5
+    assert config.narrator.soothe_intent_timeout == 4.0
+
+
 def test_invalid_threshold_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text("[detection]\nthreshold = 1.5\n", encoding="utf-8")

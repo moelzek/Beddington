@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Protocol
 
+DESKTOP_NOTIFY_TIMEOUT_SECONDS = 3.0
+
 
 class Notifier(Protocol):
     def notify(self, title: str, message: str) -> dict[str, bool]: ...
@@ -33,6 +35,7 @@ class LocalNotifier:
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    timeout=DESKTOP_NOTIFY_TIMEOUT_SECONDS,
                 )
                 return True
             if system == "Linux" and shutil.which("notify-send"):
@@ -41,9 +44,10 @@ class LocalNotifier:
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    timeout=DESKTOP_NOTIFY_TIMEOUT_SECONDS,
                 )
                 return True
-        except (OSError, subprocess.CalledProcessError):
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return False
         return False
 

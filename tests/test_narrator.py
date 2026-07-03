@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -311,6 +312,34 @@ def test_build_narration_prompt_summarises_other_sounds() -> None:
     assert "Other sounds heard: cooing 2 times, laughing 1 time." in prompt
 
 
+def test_build_narration_prompt_collapses_focused_sound_run() -> None:
+    started = datetime(2026, 6, 28, tzinfo=UTC)
+    events = tuple(
+        Event(
+            kind="sound_observed",
+            occurred_at=started + timedelta(seconds=offset),
+            offset_seconds=offset,
+            details={"sound": "cooing", "focused": True},
+        )
+        for offset in (2.0, 2.49, 2.98, 3.47)
+    )
+    report = NightReport(
+        started_at=started,
+        finished_at=started + timedelta(seconds=10),
+        source="x",
+        detector="x",
+        threshold=0.4,
+        sustained_seconds=1.0,
+        windows_processed=1,
+        peak_score=0.0,
+        events=events,
+    )
+
+    prompt = build_narration_prompt(report)
+
+    assert "Other sounds heard: cooing 1 time." in prompt
+
+
 def test_speak_uses_piper_and_supported_player(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -349,6 +378,46 @@ def test_speak_uses_piper_and_supported_player(
     assert result == {"spoken": True, "engine": "piper", "player": "aplay"}
     assert commands[0][0] == str(piper)
     assert commands[1][0] == "aplay"
+
+
+def test_speak_passes_timeouts_and_handles_hung_player(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    piper = tmp_path / "piper"
+    model = tmp_path / "voice.onnx"
+    piper.write_text("", encoding="utf-8")
+    model.write_text("", encoding="utf-8")
+    calls: list[tuple[list[str], float | None]] = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/bin/{command}" if command == "aplay" else None
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append((command, kwargs.get("timeout")))
+        if command[0] == str(piper):
+            output = Path(command[command.index("--output_file") + 1])
+            output.write_bytes(b"RIFF")
+            return object()
+        raise subprocess.TimeoutExpired(command, timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr("beddington.narrator.shutil.which", fake_which)
+    monkeypatch.setattr("beddington.narrator.subprocess.run", fake_run)
+
+    result = speak(
+        "Crying was detected once.",
+        NarratorConfig(
+            voice_enabled=True,
+            piper_binary=str(piper),
+            piper_model=str(model),
+        ),
+    )
+
+    assert result == {"spoken": False, "reason": "player_failed"}
+    assert calls[0][0][:4] == [str(piper), "--model", str(model), "--output_file"]
+    assert calls[0][1] == 30.0
+    assert calls[1][0][0] == "aplay"
+    assert calls[1][1] == 60.0
 
 
 def test_speak_passes_speaker_only_for_multispeaker_voice(

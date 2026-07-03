@@ -64,11 +64,37 @@ def _readable_log(report: NightReport) -> str:
             wait = float(event.details.get("wait_seconds", 0.0))
             play = float(event.details.get("play_seconds", wait))
             playback = event.details.get("playback", {})
-            played = "played" if playback.get("played") else "dry run"
+            if playback.get("played"):
+                played = "played"
+            elif playback.get("reason") == "dry_run":
+                played = "dry run"
+            else:
+                played = f"not played: {playback.get('reason', 'playback_failed')}"
             lines.append(
                 f"{at}  SOOTHE      {name} ({played}); "
                 f"play up to {play:.1f}s; wait {wait:.1f}s"
             )
+        elif event.kind == "soothe_unavailable":
+            name = event.details.get("name", "soothe preset")
+            reason = event.details.get("reason", "playback_failed")
+            lines.append(f"{at}  FAULT       soothe unavailable for {name}: {reason}")
+        elif event.kind == "soothe_switch_failed":
+            from_preset = event.details.get("from", "previous")
+            to_preset = event.details.get("to", "next")
+            playback = event.details.get("playback", {})
+            reason = playback.get("reason", "playback_failed")
+            lines.append(
+                f"{at}  FAULT       soothe switch failed "
+                f"{from_preset} -> {to_preset}: {reason}"
+            )
+        elif event.kind == "sensor_unavailable":
+            failures = event.details.get("failures", ())
+            for failure in failures:
+                reader = failure.get("reader", "sensor")
+                error = failure.get("error", "unavailable")
+                lines.append(f"{at}  FAULT       sensor unavailable {reader}: {error}")
+            if not failures:
+                lines.append(f"{at}  FAULT       sensor unavailable")
         elif event.kind == "soothe_settled":
             lines.append(f"{at}  SETTLED     crying ended before parent notification")
         elif event.kind == "soothe_switched":

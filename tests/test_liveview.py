@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 import shutil
@@ -12,9 +13,12 @@ import urllib.request
 
 from beddington.liveview import (
     _SOI,
+    _HEADER_READ_TIMEOUT,
     FrameBroker,
     _DaemonThreadingHTTPServer,
     _ModeBroker,
+    _STREAM_WRITE_TIMEOUT,
+    _make_handler,
     build_viewer_html,
     history_series,
     is_authorised,
@@ -387,6 +391,32 @@ class _FakeSoothe:
         return {"ok": True, "playing": None, "context": ""}
 
 
+class _FakeSocket:
+    def __init__(self, request: bytes | object) -> None:
+        self._request = request
+        self.output = io.BytesIO()
+        self.timeouts: list[float] = []
+
+    def makefile(self, mode: str, _buffering: int | None = None):
+        if "r" in mode:
+            return self._request
+        return self.output
+
+    def sendall(self, data: bytes) -> None:
+        self.output.write(data)
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeouts.append(timeout)
+
+
+class _TimeoutReader:
+    def readline(self, _limit: int = -1) -> bytes:
+        raise TimeoutError("timed out")
+
+    def close(self) -> None:
+        return
+
+
 def _free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -426,6 +456,50 @@ def test_serve_live_view_requires_token_and_streams() -> None:
         stream.close()
     finally:
         source.close()
+
+
+def test_handler_rejects_non_ascii_token_with_401() -> None:
+    handler = _make_handler(FrameBroker(), "secret-token", "Cot cam")
+    request = io.BytesIO(b"GET /?token=%C3%A9 HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    assert b" 401 " in sock.output.getvalue()
+
+
+def test_handler_bounds_partial_header_read_with_timeout() -> None:
+    handler = _make_handler(FrameBroker(), "secret-token", "Cot cam")
+    sock = _FakeSocket(_TimeoutReader())
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    assert sock.timeouts == [_HEADER_READ_TIMEOUT]
+
+
+def test_closed_active_mode_broker_stream_ends_without_spinning() -> None:
+    day = FrameBroker()
+    night = FrameBroker()
+    day.close()
+    night.publish(JPEG_B)
+    mode = {"value": "day"}
+    broker = _ModeBroker({"day": day, "night": night}, lambda: mode["value"])
+    handler = _make_handler(broker, "tk", "Cot cam")
+    request = io.BytesIO(b"GET /stream.mjpg?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+    finished = threading.Event()
+
+    def run_handler() -> None:
+        handler(sock, ("127.0.0.1", 12345), object())
+        finished.set()
+
+    thread = threading.Thread(target=run_handler, daemon=True)
+    thread.start()
+
+    assert finished.wait(0.5)
+    assert not thread.is_alive()
+    assert sock.timeouts == [_HEADER_READ_TIMEOUT, _STREAM_WRITE_TIMEOUT]
+    assert b"multipart/x-mixed-replace" in sock.output.getvalue()
 
 
 def test_serve_live_view_serves_readings_when_provider_given() -> None:

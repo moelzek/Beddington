@@ -172,6 +172,8 @@ def _number_values(text: str) -> Counter[str]:
     for index, word in enumerate(words):
         if word == "one" and index > 0 and words[index - 1] == "little":
             continue
+        if word == "one" and index > 0 and words[index - 1] == "no":
+            continue
         value = _NUMBER_WORDS.get(word)
         if value is not None:
             values[value] += 1
@@ -183,10 +185,13 @@ def _normalise_number(value: str) -> str | None:
         decimal = Decimal(value.lstrip("~"))
     except InvalidOperation:
         return None
-    normalised = decimal.normalize()
-    if normalised == normalised.to_integral():
-        return str(normalised.quantize(Decimal(1)))
-    return format(normalised, "f")
+    try:
+        normalised = decimal.normalize()
+        if normalised == normalised.to_integral():
+            return str(normalised.quantize(Decimal(1)))
+        return format(normalised, "f")
+    except InvalidOperation:
+        return None
 
 
 def _matched_categories(

@@ -116,7 +116,7 @@ class SensorStore:
                 rows = cursor.fetchall()
                 if max_points and len(rows) > max_points:
                     step = math.ceil(len(rows) / max_points)
-                    rows = rows[::step]
+                    rows = rows[-1::-step][::-1]
                 scale = float(spec.get("scale", 1))
                 out[key] = {
                     "label": spec["label"],
