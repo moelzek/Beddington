@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import builtins
 import json
 import struct
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,6 +20,7 @@ from beddington.cli import (
     _format_sensor_line,
     _is_degenerate,
     _maybe_play_wake_chime,
+    _notify_live_view_cry_alert,
     _recover_from_utterance_error,
     _record_run_soothe_outcomes,
     _record_soothe_outcomes,
@@ -318,12 +321,91 @@ class _FakeDashboardPlayer:
         self.stop_calls += 1
 
 
-def test_resolve_live_view_token_rejects_weak_explicit_token() -> None:
+def test_notify_live_view_cry_alert_refreshes_token_after_empty_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, str]] = []
+    notifier = SimpleNamespace(token="")
+
+    def fake_notify(title: str, message: str) -> dict[str, bool]:
+        calls.append((notifier.token, title, message))
+        return {"lan": bool(notifier.token)}
+
+    notifier.notify = fake_notify
+    monkeypatch.setattr(
+        "beddington.cli._read_live_view_token", lambda: "fresh-token_123"
+    )
+
+    result = _notify_live_view_cry_alert(notifier, 0.91)
+
+    assert result == {"lan": True}
+    assert calls == [
+        ("fresh-token_123", "Cry detected", "Sustained crying (cry score 0.91)")
+    ]
+
+
+def test_resolve_live_view_token_persists_explicit_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    token = _resolve_live_view_token("abc_DEF-12345")
+
+    token_path = tmp_path / ".config" / "beddington" / "liveview.token"
+    assert token == "abc_DEF-12345"
+    assert token_path.read_text(encoding="utf-8") == "abc_DEF-12345"
+    assert token_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_resolve_live_view_token_explicit_write_failure_does_not_raise(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_open = builtins.open
+
+    def fail_write(path, mode="r", *args, **kwargs):
+        if "w" in mode:
+            raise OSError("read-only config")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(builtins, "open", fail_write)
+    assert _resolve_live_view_token("abc_DEF-12345") == "abc_DEF-12345"
+
+
+def test_resolve_live_view_token_rejects_weak_explicit_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
     assert _resolve_live_view_token("abc_DEF-12345") == "abc_DEF-12345"
     with pytest.raises(SystemExit, match="12 URL-safe"):
         _resolve_live_view_token("x")
     with pytest.raises(SystemExit, match="12 URL-safe"):
         _resolve_live_view_token("not safe enough")
+
+
+def test_user_services_do_not_order_after_install_target() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    assistant = (
+        repo_root / "deploy" / "beddington-assistant.service"
+    ).read_text(encoding="utf-8")
+    liveview = (repo_root / "deploy" / "beddington-liveview.service").read_text(
+        encoding="utf-8"
+    )
+
+    assistant_after = [
+        line for line in assistant.splitlines() if line.startswith("After=")
+    ]
+    liveview_after = [line for line in liveview.splitlines() if line.startswith("After=")]
+
+    assert all("default.target" not in line for line in assistant_after)
+    assert all("default.target" not in line for line in liveview_after)
+    assert all("network-online.target" not in line for line in liveview_after)
+    assert "WantedBy=default.target" in assistant
+    assert "WantedBy=default.target" in liveview
 
 
 def test_sensor_sampler_stop_closes_store() -> None:

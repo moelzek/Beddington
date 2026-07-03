@@ -102,6 +102,7 @@ def run_pipeline(
                 "Beddington",
                 message + f"(model score {score:.2f}). Please check {CHILD_NAME}.",
             )
+            tracker.mark_notified(window.offset_seconds)
             events.append(
                 Event(
                     kind="notification_sent",
@@ -186,6 +187,7 @@ def run_pipeline(
                     f"(model score {peak_score:.2f}). Please check {CHILD_NAME}."
                 ),
             )
+            tracker.mark_notified(source.duration_seconds)
             events.append(
                 Event(
                     kind="notification_sent",

@@ -25,7 +25,6 @@
 
 [Unit]
 Description=Beddington live-view dashboard
-After=default.target network-online.target
 
 [Service]
 Type=simple

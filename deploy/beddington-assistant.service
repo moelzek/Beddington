@@ -18,7 +18,7 @@
 
 [Unit]
 Description=Beddington voice assistant
-After=default.target sound.target
+After=sound.target
 
 [Service]
 Type=simple

@@ -814,9 +814,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     )
 
     def _fire_cry_alert(score: float) -> None:
-        result = _alert_notifier.notify(
-            "Cry detected", f"Sustained crying (cry score {score:.2f})"
-        )
+        result = _notify_live_view_cry_alert(_alert_notifier, score)
         if args.debug:
             print(f"  [debug] cry alert -> {result}", flush=True)
 
@@ -1792,6 +1790,7 @@ def _resolve_live_view_token(explicit: str | None) -> str:
         token = explicit.strip()
         if not _LIVE_VIEW_TOKEN_RE.fullmatch(token):
             raise SystemExit("--token must be at least 12 URL-safe characters")
+        _write_live_view_token(token)
         return token
     import os
     import secrets
@@ -1805,6 +1804,14 @@ def _resolve_live_view_token(explicit: str | None) -> str:
     except OSError:
         pass
     token = secrets.token_urlsafe(9)
+    _write_live_view_token(token)
+    return token
+
+
+def _write_live_view_token(token: str) -> None:
+    import os
+
+    token_path = os.path.expanduser("~/.config/beddington/liveview.token")
     try:
         os.makedirs(os.path.dirname(token_path), exist_ok=True)
         with open(token_path, "w", encoding="utf-8") as handle:
@@ -1812,7 +1819,6 @@ def _resolve_live_view_token(explicit: str | None) -> str:
         os.chmod(token_path, 0o600)
     except OSError:
         pass
-    return token
 
 
 def _read_live_view_token() -> str | None:
@@ -1825,6 +1831,18 @@ def _read_live_view_token() -> str | None:
             return handle.read().strip() or None
     except OSError:
         return None
+
+
+def _notify_live_view_cry_alert(
+    notifier: LiveViewNotifier, score: float
+) -> dict[str, bool]:
+    notifier.token = _read_live_view_token() or ""
+    try:
+        return notifier.notify(
+            "Cry detected", f"Sustained crying (cry score {score:.2f})"
+        )
+    except Exception:
+        return {"lan": False}
 
 
 def _live_view_json(

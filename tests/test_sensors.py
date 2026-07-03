@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -450,6 +451,76 @@ def test_radar_reader_degrades_when_library_missing(monkeypatch) -> None:
     assert reader.read() == {}
     assert reader.read() == {}
     assert reader._thread is None
+
+
+def test_radar_stream_returns_when_aioesphomeapi_on_stop_fires(monkeypatch) -> None:
+    async def run_stream_until_disconnect() -> bool:
+        connected = asyncio.Event()
+        subscribed = asyncio.Event()
+
+        class FakeAPIClient:
+            instances: list["FakeAPIClient"] = []
+
+            def __init__(self, host: str, port: int, password: str):
+                self.host = host
+                self.port = port
+                self.password = password
+                self.connect_kwargs: dict[str, object] = {}
+                FakeAPIClient.instances.append(self)
+
+            async def connect(self, **kwargs: object) -> None:
+                self.connect_kwargs = kwargs
+                connected.set()
+
+            async def list_entities_services(self) -> tuple[list[object], list[object]]:
+                return [], []
+
+            def subscribe_states(self, callback: object) -> None:
+                self.callback = callback
+                subscribed.set()
+
+            async def disconnect(self) -> None:
+                pass
+
+        monkeypatch.setitem(
+            sys.modules,
+            "aioesphomeapi",
+            SimpleNamespace(APIClient=FakeAPIClient),
+        )
+
+        task = asyncio.create_task(Mr60RadarReader("192.0.2.10")._stream())
+        await connected.wait()
+        client = FakeAPIClient.instances[0]
+        assert "on_stop" in client.connect_kwargs
+        assert client.connect_kwargs["login"] is True
+        await subscribed.wait()
+        on_stop = client.connect_kwargs["on_stop"]
+        assert callable(on_stop)
+        await on_stop(expected=True)
+        return await task
+
+    try:
+        assert asyncio.run(run_stream_until_disconnect()) is True
+    finally:
+        monkeypatch.delitem(sys.modules, "aioesphomeapi", raising=False)
+
+
+def test_radar_reader_returns_empty_when_cached_update_is_stale(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "aioesphomeapi", None)
+    now = 100.0
+    reader = Mr60RadarReader("192.0.2.10", staleness_window_seconds=3.0)
+    reader._started = True
+    reader._now = lambda: now
+
+    reader._update_latest("person_present", True)
+    assert reader.read() == {"person_present": True}
+
+    now = 103.1
+    assert reader.read() == {}
+
+    now = 104.0
+    reader._update_latest("person_present", False)
+    assert reader.read() == {"person_present": False}
 
 
 def test_pipeline_appends_environment_samples_without_changing_detection_events(
