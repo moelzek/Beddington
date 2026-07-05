@@ -252,6 +252,12 @@ main{width:min(100%,960px);margin:0 auto;padding:0 14px 18px}
 #alertbanner{display:none;position:sticky;top:0;left:0;right:0;z-index:30;
 width:100%;background:#B4232C;color:#fff;font-weight:800;font-size:15px;
 padding:12px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.t2-alerts{display:grid;gap:8px;margin:0 0 12px}
+.t2-alert-card{border:1px solid rgba(232,177,84,.78);border-radius:8px;
+background:#1b160d;padding:12px;color:var(--text)}
+.t2-alert-title{font-size:16px;font-weight:850;line-height:1.25;margin:0 0 4px}
+.t2-alert-message,.t2-alert-action{color:var(--muted);font-size:13px;line-height:1.35}
+.t2-alert-action{margin-top:6px;color:var(--attention);font-weight:800}
 .topstrip{position:sticky;top:0;z-index:18;display:flex;gap:8px;align-items:center;
 justify-content:space-between;padding:10px 14px;background:rgba(5,6,7,.92);
 backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -381,6 +387,7 @@ __ENGINEERING_SECTION__
 const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",SNAPSHOT="__SNAPSHOT__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
 let HIST={},STATE=null,LASTDIGEST=0,LASTHISTORY=0,activeSensor=SENSORS.length?SENSORS[0].key:"";
 let snapshotFailures=0;
+const SEENT2SEQ={};
 const HAS_STATE=!!SNAPSHOT,MODEURL=READINGS?READINGS.replace("/readings.json","/mode"):"";
 async function loadDigest(){const e=document.getElementById("digest-text");if(!e)return;
 const now=Date.now();if(now-LASTDIGEST<60000 && e.dataset.loaded==="1")return;LASTDIGEST=now;
@@ -502,9 +509,9 @@ if(SNAPSHOT){loadSnapshot(true);return;}
 try{const r=await fetch(READINGS,{cache:"no-store"});if(r.ok)renderReadings(await r.json());}catch(e){}}
 async function pollReadings(){if(!READINGS||SNAPSHOT)return;try{const r=await fetch(READINGS,{cache:"no-store"});
 if(r.ok)renderReadings(await r.json());}catch(e){}setTimeout(pollReadings,3000);}
-function renderStateUnavailable(){text("state-chip","State unavailable");text("state-label","State unavailable. Live camera may still work.");
+function renderStateUnavailable(){text("state-chip","State unavailable");text("state-label","Monitor unreachable — it may be offline. Live camera may still work.");
 text("confidence-line","");text("since-line","");text("action-label","Check the camera");text("action-detail","Use the live view for a direct look.");
-setHidden("room-action",true);
+setHidden("room-action",true);renderT2Alerts([]);
 const r=el("readings");if(r&&!r.childElementCount)renderOverlay([],LASTMODE.mode,LASTMODE.mode_auto);}
 function renderHealth(h){["camera","readings","radar","history"].forEach(function(k){const item=h&&h[k]?h[k]:{status:"missing"};
 const n=el("health-"+k);if(!n)return;const status=String(item.status||"missing");
@@ -536,10 +543,21 @@ card.onkeydown=canGo?function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventD
 const room=d.room_action,rc=el("room-action");if(!rc)return;if(room){setHidden("room-action",false);
 text("room-action-label",room.label||"Check the room");text("room-action-detail",room.detail||"The readings need a direct look.");}
 else setHidden("room-action",true);}
+function notifyT2(item){const seq=item&&typeof item.seq==="number"?item.seq:null;
+if(seq===null||SEENT2SEQ[seq])return;SEENT2SEQ[seq]=true;
+try{if(item.notification&&item.notification.browser&&"Notification" in window&&Notification.permission==="granted")
+new Notification(item.title||"Attention",{body:item.message||""});}catch(e){}}
+function renderT2Alerts(alerts){const box=el("t2-alerts");if(!box)return;box.innerHTML="";
+(alerts||[]).filter(function(a){return a&&a.tier==="T2"&&a.active;}).forEach(function(a){
+notifyT2(a);const card=document.createElement("div");card.className="t2-alert-card";
+const title=document.createElement("div");title.className="t2-alert-title";title.textContent=a.title||"Attention";card.appendChild(title);
+const msg=document.createElement("div");msg.className="t2-alert-message";msg.textContent=a.message||"";card.appendChild(msg);
+const action=a.action||{};if(action.label){const act=document.createElement("div");act.className="t2-alert-action";act.textContent=action.label;card.appendChild(act);}
+box.appendChild(card);});box.hidden=!box.childElementCount;}
 function renderSnapshot(d){STATE=d;snapshotFailures=0;renderHealth(d.health||{});overlayFromSnapshot(d);
 text("state-chip",d.label||"Reading the room...");text("state-label",d.label||"Reading the room...");
 const c=d.confidence||{};text("confidence-line",c.band?("confidence: "+c.band+(c.basis?" · "+c.basis:"")):"");
-const since=tsTime(d.since_ts);text("since-line",since?"since "+since:"");renderAction(d);renderSensorCards(d);}
+const since=tsTime(d.since_ts);text("since-line",since?"since "+since:"");renderAction(d);renderT2Alerts(d.alerts||[]);renderSensorCards(d);}
 let SNAPTIMER=null;
 async function loadSnapshot(force){if(!SNAPSHOT)return;
 if(SNAPTIMER){clearTimeout(SNAPTIMER);SNAPTIMER=null;}
@@ -695,6 +713,7 @@ def _dashboard_page(
             else ""
         )
         state_sections = (
+            '<section id="t2-alerts" class="t2-alerts" aria-live="polite" hidden></section>'
             '<section id="state-home" class="state-grid">'
             '<section id="state-hero" class="BabyStateHero state-hero" aria-live="polite" aria-label="Baby state">'
             '<div id="state-label" class="state-label">Reading the room...</div>'

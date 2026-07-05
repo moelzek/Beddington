@@ -69,7 +69,7 @@ Hard product constraints:
 | Assistant room labels | Real | `src/beddington/assistant.py` | Temperature comfortable 16-20 C; humidity 40-60%; pressure label can be "normal" for room pressure. |
 | `/state.json` | **PROPOSED** | Formal schema in Section 2 | Server-side state derivation. Client derivation from display strings is rejected. |
 | Multi-alert `/alerts.json` | **PROPOSED** | Formal schema in Section 4 | Replaces single `_AlertState` for T2/T3 and server-side ack/snooze. |
-| `[liveview.state]` | **PROPOSED** | TOML schema in Section 2 | New config block; not present in current config. |
+| `[liveview.state]` | Real | TOML schema in Section 2 | Configures deterministic snapshot thresholds. |
 | Caregiver identity | **FUTURE** | Missing signal: trusted caregiver identity or person classification | Not derivable from current sensors or camera stream. |
 
 ## 1. IA & Navigation Map
@@ -119,7 +119,7 @@ Exactly one active state is selected by top-down precedence. Higher-precedence s
 | 1 | `crying` | "Crying detected — {m} min" | Active cry alert or sustained cry score | Real alert source: `POST /alert`, `/alerts.json`, `cli.py::_notify_live_view_cry_alert`; state output **PROPOSED** `/state.json`. |
 | 2 | `sensor_unreliable` | "Sensors need attention" | Reading staleness, camera stream health, radar clutter | **PROPOSED** health contract; raw readings and stream exist. |
 | 3 | `not_detected` | "No one detected" or "No presence reading" | `person_present` false vs missing; `radar_person_present()` corroboration rules | Real raw signal in `/readings.json` source snapshot and SQLite `readings`; missing/no-one split required in **PROPOSED** `/state.json`. |
-| 4 | `caregiver_present` | "Large movement — someone's in the room" | Caregiver identity | **FUTURE**; missing signal: trusted caregiver identity or person classification. V1 may only display large/multiple movement as evidence, not identity. |
+| 4 | `caregiver_present` | "Someone's in the room — {n} radar targets" | Sustained fresh `target_count >= 2` with corroborated presence | Implemented v1 as multi-target, movement-only evidence. No identity claim. |
 | 5 | `wiggling` | "Moving in the last {n} min" | Server-counted `motion_detected` transitions | Real `motion_detected` readings; transition count must be server-side, not from downsampled client history. |
 | 6 | `sleeping` | "Still for {n} min · best guess" | Presence plus no motion for threshold | Real presence/motion signals; state output **PROPOSED** `/state.json`. Internal key only. |
 | 7 | `calm` | "Quiet, occasional movement · best guess" | Presence, sparse motion, no active cry alert | Real signals; absence of alert is not proof of no crying. Internal key only. |
@@ -140,7 +140,7 @@ Incoming samples
   +-- Presence false or uncorroborated? -----------> not_detected
   |                                                  label: "No one detected"
   |
-  +-- FUTURE caregiver identity? ------------------> caregiver_present
+  +-- Sustained multiple radar targets? -----------> caregiver_present
   |
   +-- Motion transition in window? ----------------> wiggling
   |
@@ -166,7 +166,7 @@ Incoming samples
 
 ### Thresholds, Hysteresis, Dwell
 
-These defaults live in **PROPOSED** `[liveview.state]` TOML. They are product defaults, not current repo config.
+These defaults live in real `[liveview.state]` TOML and configure the deterministic snapshot engine.
 
 | Rule | Default | Unit | Applies to | Behavior |
 |---|---:|---|---|---|
@@ -188,6 +188,11 @@ These defaults live in **PROPOSED** `[liveview.state]` TOML. They are product de
 | `room_cold_below_c` | 16 | C | room action | Below this surfaces `adjust_room`. |
 | `room_warm_above_c` | 20 | C | room action | Above this surfaces `adjust_room`. |
 | `room_temp_hysteresis_c` | 0.5 | C | room action | Room action clears only after returning inside range by 0.5 C. |
+| `caregiver_min_targets` | 2 | count | `caregiver_present` | Require multiple radar targets; this is not identity. |
+| `caregiver_dwell_s` | 5 | seconds | `caregiver_present` | Require sustained multi-target samples before emitting. |
+| `caregiver_release_s` | 30 | seconds | `caregiver_present` | Hold briefly after the last multi-target sample to avoid flapping. |
+| `t2_repeat_cooldown_s` | 600 | seconds | T2 attention alerts | Prevent immediate re-raise after recovery. |
+| `device_restart_notice_s` | 120 | seconds | `device_restarted` T2 | Show restart notice only near process start. |
 
 High-precedence overrides:
 
@@ -402,7 +407,7 @@ Confidence is not duration and is not cry probability. It is a band explaining t
 }
 ```
 
-### PROPOSED `[liveview.state]` TOML Schema
+### `[liveview.state]` TOML Schema
 
 ```toml
 [liveview.state]
@@ -432,15 +437,23 @@ room_cold_below_c = 16.0
 room_warm_above_c = 20.0
 room_temp_hysteresis_c = 0.5
 
+# Multi-target room presence, no identity claim
+caregiver_min_targets = 2
+caregiver_dwell_s = 5.0
+caregiver_release_s = 30.0
+
+# T2 attention alerts in the snapshot alerts array
+t2_repeat_cooldown_s = 600.0
+device_restart_notice_s = 120.0
+
 # Payload and evidence limits
 max_evidence_items = 8
-max_alerts_returned = 20
 ```
 
 Validation rules:
 
 - Durations must be non-negative.
-- `health_bad_checks_to_enter`, `health_recovered_checks_to_exit`, and `quiet_max_motion_transitions` must be integers >= 1, except `quiet_max_motion_transitions` may be 0.
+- `health_bad_checks_to_enter`, `health_recovered_checks_to_exit`, `caregiver_min_targets`, and `max_evidence_items` must be integers >= 1; `quiet_max_motion_transitions` may be 0.
 - `room_cold_below_c` must be less than `room_warm_above_c`.
 - `room_temp_hysteresis_c` must be >= 0 and <= 2.
 
@@ -458,7 +471,7 @@ Actions are suggestions. The UI must phrase them as suggested next steps and alw
 | `sensor_unreliable` | `reposition_device` or `check_power` | "Check the device" | "One or more readings need attention." | **PROPOSED** health fields in `/state.json`. |
 | `not_detected` with no reading | `check_room` | "Check the room" | "There is no presence reading right now." | Real presence raw signal; missing split **PROPOSED** in `/state.json`. |
 | `not_detected` with false reading | `check_camera` | "Check the camera" | "Radar does not detect anyone." | Real `person_present=false`/corroboration; camera source real. |
-| `caregiver_present` | `none` | "No suggested action" | "Large movement is visible in the room." | **FUTURE** caregiver identity; v1 movement-only evidence must not identify the person. |
+| `caregiver_present` | `none` | "No suggested action" | "Multiple radar targets are visible in the room." | Implemented v1 from the multi-target rule; copy must not identify the person. |
 | `wiggling` | `check_camera` | "Check the camera" | "Movement was detected recently." | Real `motion_detected`; server transition count **PROPOSED**. |
 | `sleeping` | `none` | "No suggested action" | "Stillness is a best guess from the available readings." | Real presence/motion; state output **PROPOSED**. |
 | `calm` | `none` | "No suggested action" | "Quiet movement pattern is a best guess from the available readings." | Real presence/motion and no active alert; state output **PROPOSED**. |
@@ -472,7 +485,7 @@ Room comfort actions are separate from the baby-observation state.
 |---|---|---|---|---|
 | Temperature < 16 C | `adjust_room` | "Adjust room" | "Room temperature is {t}°C · a bit cool." | Real `/readings.json.temperature`; `assistant._temp_label()`. |
 | Temperature > 20 C | `adjust_room` | "Adjust room" | "Room temperature is {t}°C · a bit warm." | Real `/readings.json.temperature`; `assistant._temp_label()`. |
-| Temperature back inside range with hysteresis | no `room_action` | - | - | **PROPOSED** `[liveview.state].room_temp_hysteresis_c`. |
+| Temperature back inside range with hysteresis | no `room_action` | - | - | Real `[liveview.state].room_temp_hysteresis_c`. |
 
 If the baby-observation state has `none` but the room is too warm/cool, Home shows:
 
@@ -491,7 +504,7 @@ The current repo supports one active alert via `_AlertState`. T2/T3 alerts requi
 | Tier | Severity | Triggers | UI | Sound/notification | Source |
 |---|---|---|---|---|---|
 | T1 Urgent | Red | Sustained crying | Sticky banner plus alert tray item until ack or TTL | Beep after Web-Audio unlock; browser notification if granted | Real `_AlertState`, `/alert`, `/alerts.json`; multi-alert fields **PROPOSED**. |
-| T2 Attention | Amber | Room too warm/cool, sensor stale/offline, camera down, device restarted | Amber alert card, not full-screen | Browser notification; no beep by default, including at night | **PROPOSED** multi-alert contract; room temperature source real. |
+| T2 Attention | Amber | Room too warm/cool, sensor stale/offline, camera down, device restarted | Amber alert card, not full-screen | Browser notification; no beep by default, including at night | Implemented v1 in snapshot `alerts[]`; multi-alert `/alerts.json` remains **PROPOSED**. |
 | T3 Info | Inline | Soothe started/stopped, night summary ready, day/night switch | Quiet inline item or timeline marker | No notification | **PROPOSED** multi-alert contract; Soothe and mode sources real. |
 
 ### Lifecycle
@@ -907,7 +920,7 @@ Desktop interaction rules:
 | `sensor_unreliable` | "Sensors need attention" | Device/sensor issue, not a baby judgement. |
 | `not_detected` false reading | "No one detected" | Only when a presence reading exists and does not detect anyone. |
 | `not_detected` missing reading | "No presence reading" | Required distinct copy for missing data. |
-| `caregiver_present` | "Large movement — someone's in the room" | **FUTURE**; do not claim identity until signal exists. |
+| `caregiver_present` | "Someone's in the room — {n} radar targets" | Implemented v1 from sustained multi-target radar evidence; do not claim identity. |
 | `wiggling` | "Moving in the last {n} min" | Motion observation. |
 | `sleeping` | "Still for {n} min · best guess" | Internal key only; display is stillness. |
 | `calm` | "Quiet, occasional movement · best guess" | Internal key only; display is movement pattern. |
@@ -1103,7 +1116,7 @@ Use these factual points:
 | AC-21 | Radar vitals are hidden without breathing lock and labelled rough radar estimate when shown. | Fixture with heart only, then breathing+heart. | 2, 5 | Real `_dashboard_fields()` and `assistant._vitals_phrase()`. |
 | AC-22 | State computation is server-side; client does not parse `/readings.json` display strings for state. | Code review/static check. | 2, 10 | **PROPOSED** `/state.json`. |
 | AC-23 | Motion transition counts come from server raw samples, not downsampled chart points. | Compare dense fixture with downsampled `/history.json`. | 2, 4, 10 | Real SQLite `readings`; **PROPOSED** state evidence. |
-| AC-24 | FUTURE caregiver identity state is not emitted unless a named caregiver identity/person-classification signal exists. | Fixture lacks FUTURE signal; assert no `caregiver_present`. | 2, 5 | **FUTURE** caregiver identity signal. |
+| AC-24 | `caregiver_present` is emitted only from the sustained multi-target radar rule, and its copy never claims identity. | Fixtures cover sustained multi-target, single-target, missing target count, false presence, and uncorroborated presence. | 2, 5 | Real radar `target_count` plus corroborated presence. |
 
 ### Safety-Language Test Plan
 

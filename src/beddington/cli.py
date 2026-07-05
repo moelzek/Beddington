@@ -2807,7 +2807,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     )
     snapshot_provider = None
     if sampler is not None:
-        snapshot_engine = LiveSnapshotEngine()
+        snapshot_engine = LiveSnapshotEngine(config.liveview.state, process_start_ts=time.time())
 
         def snapshot_provider(ctx: dict[str, object]) -> dict[str, object]:
             try:

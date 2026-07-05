@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from types import SimpleNamespace
 
 from beddington.liveview import (
     _SOI,
@@ -178,6 +179,8 @@ def test_build_viewer_html_state_first_dashboard() -> None:
     assert "/history.json?token=t" in html
     assert "/snapshot.json?token=t" in html
     assert 'id="state-hero"' in html
+    assert 'id="t2-alerts"' in html
+    assert "renderT2Alerts" in html
     assert "BabyStateHero" in html
     assert 'id="action-panel"' in html
     assert 'id="sensor-cards"' in html
@@ -185,6 +188,106 @@ def test_build_viewer_html_state_first_dashboard() -> None:
     assert 'id="engineering" class="engineering"' in html
     assert "room_temperature_c" in html  # sensor spec embedded
     assert 'id="tabs"' not in html
+
+
+def test_build_viewer_html_has_monitor_unreachable_copy() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+
+    assert "Monitor unreachable — it may be offline. Live camera may still work." in html
+
+
+def test_live_view_command_passes_liveview_state_thresholds_to_snapshot_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import beddington.cli as cli
+    from beddington.config import AppConfig, LiveviewConfig
+    from beddington.live_snapshot import SnapshotThresholds
+
+    captured: dict[str, object] = {}
+    thresholds = SnapshotThresholds(caregiver_dwell_s=1.25)
+
+    class FakeEngine:
+        def __init__(self, received_thresholds, process_start_ts=None):
+            captured["thresholds"] = received_thresholds
+            captured["process_start_ts"] = process_start_ts
+
+        def build(self, **_kwargs):
+            return {"schema_version": 1, "caregiver_dwell_s": captured["thresholds"].caregiver_dwell_s}
+
+    class FakeSampler:
+        def __init__(self, _readers, _interval, store=None):
+            self.store = store
+
+        def start(self) -> None:
+            captured["sampler_started"] = True
+
+        def stop(self) -> None:
+            captured["sampler_stopped"] = True
+
+        def latest(self) -> dict[str, object]:
+            return {}
+
+        def history(self) -> list[tuple[float, dict[str, object]]]:
+            return []
+
+        def mode(self) -> str:
+            return "night"
+
+        def override(self) -> None:
+            return None
+
+        def set_override(self, _mode: str | None) -> None:
+            pass
+
+        def set_frame_age(self, _age: float | None) -> None:
+            pass
+
+    def fake_serve_live_view(**kwargs):
+        captured["snapshot"] = kwargs["snapshot_provider"]({"alerts": {"active": False}})
+
+    monkeypatch.setattr("beddington.cli.build_sensor_readers", lambda _config: [object()])
+    monkeypatch.setattr("beddington.cli._SensorSampler", FakeSampler)
+    monkeypatch.setattr("beddington.cli._resolve_live_view_token", lambda _token: "token")
+    monkeypatch.setattr("beddington.cli._lan_ip", lambda _bind: "127.0.0.1")
+    monkeypatch.setattr("beddington.cli._build_soothe_presets", lambda _config: {})
+    monkeypatch.setattr("beddington.cli.time.time", lambda: 1234.0)
+    monkeypatch.setattr("beddington.live_snapshot.LiveSnapshotEngine", FakeEngine)
+    monkeypatch.setattr("beddington.liveview.RpicamFrameSource", lambda _cmd: object())
+    monkeypatch.setattr("beddington.liveview.serve_live_view", fake_serve_live_view)
+
+    args = SimpleNamespace(
+        port=8080,
+        width=640,
+        height=480,
+        fps=15,
+        token=None,
+        no_sensors=False,
+        no_history=True,
+        sensor_interval=3.0,
+        history_db=":memory:",
+        history_hours=1.0,
+        night_camera_num=None,
+        camera_num=0,
+        night=False,
+        bind="127.0.0.1",
+        rotate=0,
+    )
+
+    result = cli._live_view_command(
+        args,
+        AppConfig(liveview=LiveviewConfig(state=thresholds)),
+    )
+
+    assert result == 0
+    assert captured["thresholds"] is thresholds
+    assert captured["process_start_ts"] == 1234.0
+    assert captured["snapshot"] == {"schema_version": 1, "caregiver_dwell_s": 1.25}
+    assert captured["sampler_started"] is True
+    assert captured["sampler_stopped"] is True
 
 
 def test_build_viewer_html_rotate() -> None:

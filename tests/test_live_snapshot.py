@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from beddington.live_snapshot import LiveSnapshotEngine
+from beddington.live_snapshot import LiveSnapshotEngine, SnapshotThresholds
 
 NOW = 1_000.0
 ACTION_KEYS = {
@@ -122,6 +122,114 @@ def test_active_cry_alert_beats_stillness_and_emits_alert_item() -> None:
             "active": True,
         }
     ]
+
+
+def test_caregiver_present_from_sustained_multi_target_radar_only() -> None:
+    history = [
+        (NOW - 8.0, _sample(motion=False) | {"target_count": 2}),
+        (NOW - 2.0, _sample(motion=False) | {"target_count": 2}),
+    ]
+
+    snapshot = _build(LiveSnapshotEngine(), history)
+
+    assert snapshot["baby_state"] == "caregiver_present"
+    assert snapshot["label"] == "Someone's in the room — 2 radar targets"
+    assert snapshot["confidence"] == {
+        "band": "medium",
+        "basis": "multiple radar targets; identity unknown",
+    }
+    assert snapshot["arousal_score"] is None
+    assert snapshot["recommended_action"] == {
+        "key": "none",
+        "label": "No suggested action",
+        "detail": "Multiple radar targets are visible in the room.",
+        "evidence_signals": ["presence", "motion"],
+    }
+    assert any(
+        item["signal"] == "target_count" and item["value"] == 2
+        for item in snapshot["evidence"]
+    )
+
+
+def test_caregiver_present_requires_multiple_fresh_correlated_targets() -> None:
+    single_target = [
+        (NOW - 8.0, _sample(motion=False)),
+        (NOW - 2.0, _sample(motion=False)),
+    ]
+    missing_target_count = [
+        (NOW - 8.0, _sample(target=False, motion=False)),
+        (NOW - 2.0, _sample(target=False, motion=False)),
+    ]
+    missing_presence = [
+        (NOW - 8.0, _sample(present=None, motion=False) | {"target_count": 2}),
+        (NOW - 2.0, _sample(present=None, motion=False) | {"target_count": 2}),
+    ]
+    false_presence = [
+        (NOW - 8.0, _sample(present=False, motion=False) | {"target_count": 2}),
+        (NOW - 2.0, _sample(present=False, motion=False) | {"target_count": 2}),
+    ]
+    uncorroborated_presence = [
+        (NOW - 20.0, _sample(motion=False) | {"target_count": 2}),
+        (NOW - 2.0, _sample(target=False, motion=False)),
+    ]
+
+    for history in (
+        single_target,
+        missing_target_count,
+        missing_presence,
+        false_presence,
+        uncorroborated_presence,
+    ):
+        assert _build(LiveSnapshotEngine(), history)["baby_state"] != "caregiver_present"
+
+
+def test_caregiver_present_release_holds_then_falls_through() -> None:
+    engine = LiveSnapshotEngine()
+    active_history = [
+        (NOW - 8.0, _sample(motion=False) | {"target_count": 2}),
+        (NOW - 2.0, _sample(motion=False) | {"target_count": 2}),
+    ]
+    assert _build(engine, active_history, now=NOW)["baby_state"] == "caregiver_present"
+
+    held = _build(engine, [(NOW + 18.0, _sample(motion=False))], now=NOW + 20.0)
+    released = _build(engine, [(NOW + 33.0, _sample(motion=False))], now=NOW + 35.0)
+
+    assert held["baby_state"] == "caregiver_present"
+    assert released["baby_state"] != "caregiver_present"
+
+    false_engine = LiveSnapshotEngine()
+    assert _build(false_engine, active_history, now=NOW)["baby_state"] == "caregiver_present"
+    false_presence = _build(
+        false_engine,
+        [(NOW + 3.0, _sample(present=False, target=False, motion=False))],
+        now=NOW + 5.0,
+    )
+    assert false_presence["baby_state"] != "caregiver_present"
+
+
+def test_caregiver_present_loses_to_higher_precedence_states() -> None:
+    history = [
+        (NOW - 8.0, _sample(motion=False) | {"target_count": 2}),
+        (NOW - 2.0, _sample(motion=False) | {"target_count": 2}),
+    ]
+
+    crying = _build(LiveSnapshotEngine(), history, alerts=_alerts(True))
+    unreliable = _build(
+        LiveSnapshotEngine(SnapshotThresholds(health_bad_checks_to_enter=1)),
+        history,
+        camera_age=9.0,
+    )
+    missing_presence = _build(
+        LiveSnapshotEngine(),
+        [
+            (NOW - 8.0, _sample(present=None, motion=False) | {"target_count": 2}),
+            (NOW - 2.0, _sample(present=None, motion=False) | {"target_count": 2}),
+        ],
+    )
+
+    assert crying["baby_state"] == "crying"
+    assert unreliable["baby_state"] == "sensor_unreliable"
+    assert missing_presence["baby_state"] == "not_detected"
 
 
 def test_camera_down_enters_sensor_unreliable_after_two_bad_builds() -> None:
@@ -339,6 +447,107 @@ def test_room_action_temperature_hysteresis_warm_and_cold() -> None:
     assert _build(cold, [(NOW - 2.0, _sample(temp=15.8))])["room_action"]["key"] == "adjust_room"
     assert _build(cold, [(NOW - 2.0, _sample(temp=16.3))])["room_action"]["key"] == "adjust_room"
     assert _build(cold, [(NOW - 2.0, _sample(temp=16.6))])["room_action"] is None
+
+
+def _alert_of_type(snapshot: dict[str, object], alert_type: str) -> dict[str, object] | None:
+    return next(
+        (item for item in snapshot["alerts"] if item.get("type") == alert_type),
+        None,
+    )
+
+
+def test_t2_room_warm_alert_uses_hysteresis_and_cooldown() -> None:
+    engine = LiveSnapshotEngine()
+
+    raised = _build(engine, [(NOW - 2.0, _sample(temp=20.2))], now=NOW)
+    held = _build(engine, [(NOW - 2.0, _sample(temp=19.7))], now=NOW + 1.0)
+    cleared = _build(engine, [(NOW - 2.0, _sample(temp=19.4))], now=NOW + 2.0)
+    blocked = _build(engine, [(NOW - 2.0, _sample(temp=20.2))], now=NOW + 3.0)
+
+    warm = _alert_of_type(raised, "room_warm")
+    assert warm is not None
+    assert warm["tier"] == "T2"
+    assert warm["title"] == "Room a bit warm"
+    assert warm["message"] == "Temperature 20.2°C; usual room range 16-20°C."
+    assert warm["action"]["key"] == "adjust_room"
+    assert warm["notification"] == {"browser": True, "sound": False}
+    assert _alert_of_type(held, "room_warm")["seq"] == warm["seq"]
+    assert _alert_of_type(cleared, "room_warm") is None
+    assert _alert_of_type(blocked, "room_warm") is None
+
+
+def test_t2_room_cool_alert() -> None:
+    snapshot = _build(LiveSnapshotEngine(), [(NOW - 2.0, _sample(temp=15.8))])
+    cool = _alert_of_type(snapshot, "room_cool")
+
+    assert cool is not None
+    assert cool["title"] == "Room a bit cool"
+    assert cool["message"] == "Temperature 15.8°C; usual room range 16-20°C."
+    assert cool["notification"]["sound"] is False
+
+
+def test_t2_sensor_stale_and_camera_down_alerts_when_unreliable_latched() -> None:
+    engine = LiveSnapshotEngine(SnapshotThresholds(health_bad_checks_to_enter=1))
+    snapshot = _build(engine, [(NOW - 20.0, _sample(motion=False))], camera_age=9.0)
+
+    stale = _alert_of_type(snapshot, "sensor_stale")
+    camera = _alert_of_type(snapshot, "camera_down")
+
+    assert snapshot["baby_state"] == "sensor_unreliable"
+    assert stale is not None
+    assert stale["action"]["key"] == "reposition_device"
+    assert stale["message"] == "No fresh readings, radar, history reading for 20s."
+    assert {item["signal"] for item in stale["evidence"]} == {"readings", "radar", "history"}
+    assert camera is not None
+    assert camera["action"]["key"] == "check_camera"
+    assert camera["message"] == "No camera frame for 9s."
+    assert all(
+        item["notification"]["sound"] is False
+        for item in snapshot["alerts"]
+        if item["tier"] == "T2"
+    )
+
+
+def test_t2_device_restarted_active_then_expires() -> None:
+    engine = LiveSnapshotEngine(
+        SnapshotThresholds(device_restart_notice_s=5.0),
+        process_start_ts=NOW - 1.0,
+    )
+
+    active = _build(engine, _sleep_history(NOW), now=NOW)
+    expired = _build(engine, _sleep_history(NOW + 6.0), now=NOW + 6.0)
+
+    restart = _alert_of_type(active, "device_restarted")
+    assert restart is not None
+    assert restart["message"] == "Readings resumed after a restart."
+    assert restart["action"] == {
+        "key": "none",
+        "label": "No suggested action",
+        "detail": "Review recent readings.",
+        "evidence_signals": ["device"],
+    }
+    assert restart["notification"]["sound"] is False
+    assert _alert_of_type(expired, "device_restarted") is None
+
+
+def test_t1_item_shape_unchanged_when_t2_is_active() -> None:
+    snapshot = _build(
+        LiveSnapshotEngine(),
+        [(NOW - 2.0, _sample(temp=20.2))],
+        alerts=_alerts(True, score=0.92, age=65.0),
+    )
+
+    assert snapshot["alerts"][0] == {
+        "tier": "T1",
+        "type": "cry_sustained",
+        "title": "Cry detected",
+        "message": "cry score 0.9",
+        "score": 0.92,
+        "seq": 7,
+        "age_s": 65.0,
+        "active": True,
+    }
+    assert _alert_of_type(snapshot, "room_warm") is not None
 
 
 def test_vitals_suppress_heart_without_respiratory_and_use_exact_caveat() -> None:

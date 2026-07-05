@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
+
+from .live_snapshot import SnapshotThresholds
 
 
 @dataclass(frozen=True)
@@ -169,6 +171,11 @@ class SootheConfig:
 
 
 @dataclass(frozen=True)
+class LiveviewConfig:
+    state: SnapshotThresholds = SnapshotThresholds()
+
+
+@dataclass(frozen=True)
 class AppConfig:
     detection: DetectionConfig = DetectionConfig()
     notifications: NotificationConfig = NotificationConfig()
@@ -178,6 +185,7 @@ class AppConfig:
     sensors: SensorsConfig = SensorsConfig()
     sounds: SoundsConfig = SoundsConfig()
     soothe: SootheConfig = SootheConfig()
+    liveview: LiveviewConfig = LiveviewConfig()
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -195,6 +203,31 @@ def _coerce_bool(value: object, default: bool) -> bool:
     return bool(value)
 
 
+def _load_liveview(
+    raw_liveview: object,
+    default: LiveviewConfig,
+) -> LiveviewConfig:
+    if not isinstance(raw_liveview, dict):
+        return default
+    return LiveviewConfig(
+        state=_load_liveview_state(raw_liveview.get("state", {}), default.state),
+    )
+
+
+def _load_liveview_state(
+    raw_state: object,
+    default: SnapshotThresholds,
+) -> SnapshotThresholds:
+    if not isinstance(raw_state, dict):
+        return default
+    values: dict[str, object] = {}
+    for item in fields(SnapshotThresholds):
+        current = getattr(default, item.name)
+        raw_value = raw_state.get(item.name, current)
+        values[item.name] = int(raw_value) if isinstance(current, int) else float(raw_value)
+    return SnapshotThresholds(**values)
+
+
 def load_config(path: Path | None = None) -> AppConfig:
     config = AppConfig()
     if path:
@@ -208,6 +241,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         sensors = raw.get("sensors", {})
         sounds = raw.get("sounds", {})
         soothe = raw.get("soothe", {})
+        liveview = raw.get("liveview", {})
         raw_soothe_presets = soothe.get("presets")
         raw_soothe_steps = soothe.get("steps")
         soothe_preset = str(soothe.get("preset", config.soothe.preset))
@@ -293,6 +327,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 quiet_check=quiet_check,
                 learn=learn,
             ),
+            liveview=_load_liveview(liveview, config.liveview),
         )
 
     config = replace(
@@ -643,6 +678,42 @@ def _validate(config: AppConfig) -> None:
     ):
         if value < 0:
             raise ValueError(f"detection.{name} must be non-negative")
+    live_state = config.liveview.state
+    for name, value in (
+        ("max_reading_age_s", live_state.max_reading_age_s),
+        ("max_camera_frame_age_s", live_state.max_camera_frame_age_s),
+        ("max_radar_age_s", live_state.max_radar_age_s),
+        ("state_min_dwell_s", live_state.state_min_dwell_s),
+        ("cry_clear_grace_s", live_state.cry_clear_grace_s),
+        ("presence_false_dwell_s", live_state.presence_false_dwell_s),
+        ("motion_window_s", live_state.motion_window_s),
+        ("motion_active_min_s", live_state.motion_active_min_s),
+        ("wiggling_release_s", live_state.wiggling_release_s),
+        ("still_min_s", live_state.still_min_s),
+        ("still_exit_motion_s", live_state.still_exit_motion_s),
+        ("quiet_window_s", live_state.quiet_window_s),
+        ("room_temp_hysteresis_c", live_state.room_temp_hysteresis_c),
+        ("caregiver_dwell_s", live_state.caregiver_dwell_s),
+        ("caregiver_release_s", live_state.caregiver_release_s),
+        ("t2_repeat_cooldown_s", live_state.t2_repeat_cooldown_s),
+        ("device_restart_notice_s", live_state.device_restart_notice_s),
+    ):
+        if value < 0:
+            raise ValueError(f"liveview.state.{name} must be non-negative")
+    for name, value in (
+        ("health_bad_checks_to_enter", live_state.health_bad_checks_to_enter),
+        ("health_recovered_checks_to_exit", live_state.health_recovered_checks_to_exit),
+        ("caregiver_min_targets", live_state.caregiver_min_targets),
+        ("max_evidence_items", live_state.max_evidence_items),
+    ):
+        if value < 1:
+            raise ValueError(f"liveview.state.{name} must be at least 1")
+    if live_state.quiet_max_motion_transitions < 0:
+        raise ValueError("liveview.state.quiet_max_motion_transitions must be non-negative")
+    if live_state.room_cold_below_c >= live_state.room_warm_above_c:
+        raise ValueError("liveview.state.room_cold_below_c must be less than room_warm_above_c")
+    if live_state.room_temp_hysteresis_c > 2.0:
+        raise ValueError("liveview.state.room_temp_hysteresis_c must be between 0 and 2")
     if config.soothe.player not in {"none", "auto"}:
         raise ValueError("soothe.player must be 'none' or 'auto'")
     if config.soothe.min_play_seconds < 0:
