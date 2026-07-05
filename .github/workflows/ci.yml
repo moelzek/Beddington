@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install package
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest
+
+  baseline-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install package
+        run: python -m pip install -e ".[dev]"
+
+      - name: Generate synthetic wav
+        run: |
+          python - <<'PY'
+          import math
+          import struct
+          import wave
+
+          sample_rate = 16_000
+          duration_seconds = 2
+          amplitude = 0.2
+          sample_count = sample_rate * duration_seconds
+          phase = 0.0
+
+          with wave.open("synthetic.wav", "wb") as wav:
+              wav.setnchannels(1)
+              wav.setsampwidth(2)
+              wav.setframerate(sample_rate)
+
+              for index in range(sample_count):
+                  progress = index / sample_count
+                  frequency = 220.0 + (660.0 * progress)
+                  phase += (2.0 * math.pi * frequency) / sample_rate
+                  sample = int(amplitude * 32767 * math.sin(phase))
+                  wav.writeframes(struct.pack("<h", sample))
+          PY
+
+      - name: Download model
+        run: python -m beddington download-model
+
+      - name: Analyze synthetic wav
+        run: python -m beddington --config config/default.toml analyze synthetic.wav --output output/baseline
+
+      - name: Assert baseline outputs
+        run: |
+          test -f output/baseline/events.json
+          test -f output/baseline/night-log.txt
+          test -f output/baseline/morning-digest.txt
