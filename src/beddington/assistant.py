@@ -938,10 +938,6 @@ def answer_question(
     return lead_response(question, llm_translator, ask_llm=ask_llm)
 
 
-def _deterministic_answer_question(question: str, snapshot: dict[str, object]) -> str:
-    return _deterministic_answer_result(question, snapshot).answer
-
-
 def _deterministic_answer_result(
     question: str,
     snapshot: dict[str, object],

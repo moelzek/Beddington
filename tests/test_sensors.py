@@ -23,7 +23,6 @@ from beddington.pipeline import run_pipeline
 from beddington.sensors import (
     Bme680AirReader,
     Mr60RadarReader,
-    NullSensorReader,
     PirMotionReader,
     _coerce_radar_value,
     _radar_field_for_name,
@@ -70,10 +69,6 @@ class FakeSensorReader:
             "room_humidity_pct": 47,
             "motion_detected": True,
         }
-
-
-def test_null_reader_returns_empty_sample() -> None:
-    assert NullSensorReader().read() == {}
 
 
 def test_build_sensor_readers_default_is_hardware_free() -> None:

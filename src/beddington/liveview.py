@@ -975,7 +975,6 @@ class _ModeBroker:
         # last read from together with the object it belongs to; because each
         # viewer thread threads its own seq through, we keep the last-served
         # broker per caller via the seq the caller reports (see wait_for_frame).
-        self._last_active: FrameBroker | None = None
 
     def _active(self) -> FrameBroker:
         return self._brokers.get(self._mode_getter()) or next(iter(self._brokers.values()))

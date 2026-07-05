@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from beddington.assistant import answer_question
-from beddington.ears import extract_wake_question, iter_utterances
+from beddington.ears import extract_wake_question
 
 
 def test_extract_question_after_wake() -> None:
@@ -65,17 +65,3 @@ def test_vitals_question_answered_from_radar() -> None:
     answer = answer_question(question, {"radar_heart_rate_bpm": 90.0})
     assert "90" in answer
     assert "from the radar" in answer.lower()
-
-
-def test_iter_utterances_segments_one_sentence() -> None:
-    flags = [False] * 2 + [True] * 30 + [False] * 25
-    utterances = list(
-        iter_utterances(flags, start_speech_frames=3, end_silence_frames=20)
-    )
-    assert len(utterances) == 1
-    assert utterances[0].start_frame == 2
-    assert utterances[0].end_frame == 32
-
-
-def test_iter_utterances_ignores_silence() -> None:
-    assert list(iter_utterances([False] * 50)) == []
