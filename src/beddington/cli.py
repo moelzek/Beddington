@@ -282,6 +282,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Low-light mode (longer shutter + higher gain; needs some ambient light)",
     )
     live.add_argument("--token", default=None, help="Access token; generated if unset")
+    live.add_argument("--tls-cert", type=Path, help="TLS certificate for HTTPS")
+    live.add_argument("--tls-key", type=Path, help="TLS private key for HTTPS")
     live.add_argument(
         "--worker-token",
         default="",
@@ -2814,6 +2816,10 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
 
     if args.port <= 0 or args.width <= 0 or args.height <= 0 or args.fps <= 0:
         raise SystemExit("--port, --width, --height and --fps must be positive")
+    tls_cert = getattr(args, "tls_cert", None)
+    tls_key = getattr(args, "tls_key", None)
+    if bool(tls_cert) != bool(tls_key):
+        raise SystemExit("--tls-cert and --tls-key must be provided together")
 
     token = _resolve_live_view_token(args.token)
     worker_token = str(getattr(args, "worker_token", "") or "").strip()
@@ -2896,6 +2902,16 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         if _soothe_presets
         else None
     )
+    audio_broker = None
+    talk_player = None
+    if config.liveview.audio.enabled:
+        from .liveaudio import AudioBroker, TalkPlayer
+
+        audio_broker = AudioBroker(
+            device=config.liveview.audio.device,
+            max_listeners=config.liveview.audio.max_listeners,
+        )
+        talk_player = TalkPlayer(max_seconds=config.liveview.audio.talk_max_seconds)
     snapshot_provider = None
     if sampler is not None:
         snapshot_engine = LiveSnapshotEngine(config.liveview.state, process_start_ts=time.time())
@@ -2943,10 +2959,11 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         mode_getter = None
 
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
-    url = f"http://{shown_ip}:{args.port}/?token={token}"
+    scheme = "https" if tls_cert and tls_key else "http"
+    url = f"{scheme}://{shown_ip}:{args.port}/?token={token}"
     overlay = "video + live room readings" if readings_provider else "video only"
 
-    print("Beddington live view — LAN only, no Internet, no recording, no audio.")
+    print("Beddington live view — LAN only, no Internet, no recording.")
     if dual:
         print(
             f"  Day eye = camera {args.camera_num}, night eye = camera "
@@ -2956,6 +2973,11 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         mode = " (night / low-light)" if args.night else ""
         print(f"  Camera {args.camera_num}{mode}")
     print(f"  {args.width}x{args.height}, ~{args.fps} fps ({overlay})")
+    if audio_broker is not None:
+        audio_note = "listen + push-to-talk"
+        if scheme != "https":
+            audio_note += " (talk needs HTTPS in the browser)"
+        print(f"  Audio enabled: {audio_note}")
     print(f"  Open on your phone (same WiFi):  {url}")
     if worker_token:
         print(f"  Worker token (read + annotate only):  {worker_token}")
@@ -2979,6 +3001,10 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             events_provider=events_provider,
             worker_token=worker_token,
             annotation_sink=_annotation_sink if store is not None else None,
+            audio_broker=audio_broker,
+            talk_player=talk_player,
+            tls_cert=str(tls_cert) if tls_cert else None,
+            tls_key=str(tls_key) if tls_key else None,
             broker_sink=(
                 (lambda broker: sampler.set_frame_age(getattr(broker, "frame_age", None)))
                 if sampler is not None
@@ -2992,6 +3018,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             sampler.stop()
         if soothe is not None:
             soothe.stop()
+        if audio_broker is not None:
+            audio_broker.close()
     return 0
 
 
