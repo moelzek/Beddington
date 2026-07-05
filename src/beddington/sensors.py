@@ -16,12 +16,6 @@ class SensorReader(Protocol):
     def read(self) -> dict[str, object]: ...
 
 
-@dataclass(frozen=True)
-class NullSensorReader:
-    def read(self) -> dict[str, object]:
-        return {}
-
-
 class Bme680AirReader:
     def __init__(self, i2c_address: int = 0x76, include_gas: bool = False):
         self.i2c_address = i2c_address

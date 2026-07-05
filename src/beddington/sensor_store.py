@@ -39,7 +39,6 @@ class SensorStore:
     """SQLite-backed rolling history of sensor readings."""
 
     def __init__(self, path: str) -> None:
-        self._path = path
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
