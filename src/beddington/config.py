@@ -171,8 +171,17 @@ class SootheConfig:
 
 
 @dataclass(frozen=True)
+class LiveviewAudioConfig:
+    enabled: bool = False
+    device: str | None = None
+    max_listeners: int = 3
+    talk_max_seconds: float = 20.0
+
+
+@dataclass(frozen=True)
 class LiveviewConfig:
     state: SnapshotThresholds = SnapshotThresholds()
+    audio: LiveviewAudioConfig = LiveviewAudioConfig()
 
 
 @dataclass(frozen=True)
@@ -221,6 +230,25 @@ def _load_liveview(
         return default
     return LiveviewConfig(
         state=_load_liveview_state(raw_liveview.get("state", {}), default.state),
+        audio=_load_liveview_audio(raw_liveview.get("audio", {}), default.audio),
+    )
+
+
+def _load_liveview_audio(
+    raw_audio: object,
+    default: LiveviewAudioConfig,
+) -> LiveviewAudioConfig:
+    if not isinstance(raw_audio, dict):
+        return default
+    raw_device = raw_audio.get("device", default.device)
+    device = str(raw_device).strip() if raw_device is not None else None
+    return LiveviewAudioConfig(
+        enabled=_coerce_bool(raw_audio.get("enabled"), default.enabled),
+        device=device or None,
+        max_listeners=int(raw_audio.get("max_listeners", default.max_listeners)),
+        talk_max_seconds=float(
+            raw_audio.get("talk_max_seconds", default.talk_max_seconds)
+        ),
     )
 
 
@@ -752,6 +780,11 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("liveview.state.room_cold_below_c must be less than room_warm_above_c")
     if live_state.room_temp_hysteresis_c > 2.0:
         raise ValueError("liveview.state.room_temp_hysteresis_c must be between 0 and 2")
+    live_audio = config.liveview.audio
+    if live_audio.max_listeners < 1:
+        raise ValueError("liveview.audio.max_listeners must be at least 1")
+    if live_audio.talk_max_seconds <= 0:
+        raise ValueError("liveview.audio.talk_max_seconds must be positive")
     if config.soothe.player not in {"none", "auto"}:
         raise ValueError("soothe.player must be 'none' or 'auto'")
     if config.soothe.min_play_seconds < 0:

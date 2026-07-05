@@ -11,10 +11,18 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from beddington.liveaudio import (
+    TALK_MAX_BYTES,
+    AudioClientTooSlow,
+    TalkBusy,
+    TalkPlaybackError,
+    TalkResult,
+)
 from beddington.liveview import (
     _SOI,
     _AlertState,
@@ -573,6 +581,44 @@ class _FakeSoothe:
         return {"ok": True, "playing": None, "context": ""}
 
 
+class _FakeAudioBroker:
+    max_listeners = 2
+
+    def __init__(self) -> None:
+        self.listeners = 0
+
+    def add_listener(self) -> None:
+        self.listeners += 1
+
+    def remove_listener(self) -> None:
+        self.listeners -= 1
+
+    def wait_for_block(self, seq: int, timeout: float = 2.0):
+        del timeout
+        if seq == 0:
+            return 1, b"\x01\x00\x02\x00"
+        raise AudioClientTooSlow("done")
+
+    def close(self) -> None:
+        return
+
+
+class _FakeTalkPlayer:
+    def __init__(self, *, playing: bool = False, exc: Exception | None = None) -> None:
+        self._playing = playing
+        self.exc = exc
+        self.calls: list[tuple[bytes, str]] = []
+
+    def playing(self) -> bool:
+        return self._playing
+
+    def play(self, data: bytes, content_type: str) -> TalkResult:
+        self.calls.append((data, content_type))
+        if self.exc is not None:
+            raise self.exc
+        return TalkResult(seconds=1.25)
+
+
 class _FakeSocket:
     def __init__(self, request: bytes | object) -> None:
         self._request = request
@@ -617,11 +663,36 @@ def _start_handler_server(
     return httpd, f"http://{host}:{port}"
 
 
+def _handler_response(handler: type, request: bytes) -> bytes:
+    sock = _FakeSocket(io.BytesIO(request))
+    handler(sock, ("127.0.0.1", 12345), object())
+    return sock.output.getvalue()
+
+
+def _response_json(raw: bytes) -> object:
+    return json.loads(raw.split(b"\r\n\r\n", 1)[1])
+
+
 def _post_json(url: str, payload: object, token: str = "tk"):
     request = urllib.request.Request(
         f"{url}?token={token}",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    return urllib.request.urlopen(request, timeout=2)
+
+
+def _post_talk(
+    base: str,
+    token: str,
+    data: bytes = b"clip",
+    content_type: str = "audio/webm",
+):
+    request = urllib.request.Request(
+        f"{base}/talk?token={token}",
+        data=data,
+        headers={"Content-Type": content_type},
         method="POST",
     )
     return urllib.request.urlopen(request, timeout=2)
@@ -793,6 +864,7 @@ def test_build_viewer_html_has_soothe_section() -> None:
     assert "Cry trigger sound" in html
     assert "addPresetGroups" in html
     assert "card.onclick" in html
+    assert "playing your voice" in html
     assert "Sounds" in html
     assert "Music" in html
     assert "/soothe?token=t" in html
@@ -1463,6 +1535,277 @@ def test_frame_jpg_works_with_dual_camera_serve_live_view_wiring() -> None:
     finally:
         day.close()
         night.close()
+
+
+def test_audio_endpoints_404_when_disabled() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+
+    audio = _handler_response(
+        handler,
+        b"GET /audio.pcm?token=tk HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    talk = _handler_response(
+        handler,
+        (
+            b"POST /talk?token=tk HTTP/1.1\r\nHost: test\r\n"
+            b"Content-Type: audio/webm\r\nContent-Length: 4\r\n\r\nclip"
+        ),
+    )
+
+    assert b" 404 " in audio
+    assert b" 404 " in talk
+
+
+def test_audio_endpoints_require_full_token() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "full-token",
+        "Cot cam",
+        worker_token="worker-token",
+        audio_broker=_FakeAudioBroker(),
+        talk_player=_FakeTalkPlayer(),
+    )
+    talk_bad = (
+        b"POST /talk?token=bad HTTP/1.1\r\nHost: test\r\n"
+        b"Content-Type: audio/webm\r\nContent-Length: 4\r\n\r\nclip"
+    )
+    talk_worker = (
+        b"POST /talk?token=worker-token HTTP/1.1\r\nHost: test\r\n"
+        b"Content-Type: audio/webm\r\nContent-Length: 4\r\n\r\nclip"
+    )
+
+    assert b" 401 " in _handler_response(
+        handler,
+        b"GET /audio.pcm?token=bad HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    assert b" 403 " in _handler_response(
+        handler,
+        b"GET /audio.pcm?token=worker-token HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    assert b" 401 " in _handler_response(handler, talk_bad)
+    assert b" 403 " in _handler_response(handler, talk_worker)
+
+    audio = _handler_response(
+        handler,
+        b"GET /audio.pcm?token=full-token HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    assert b" 200 " in audio
+    assert audio.endswith(b"\x01\x00\x02\x00")
+
+
+def test_talk_validates_size_type_busy_and_success() -> None:
+    player = _FakeTalkPlayer()
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        audio_broker=_FakeAudioBroker(),
+        talk_player=player,
+    )
+    wrong_type = _handler_response(
+        handler,
+        (
+            b"POST /talk?token=tk HTTP/1.1\r\nHost: test\r\n"
+            b"Content-Type: text/plain\r\nContent-Length: 4\r\n\r\nclip"
+        ),
+    )
+    assert b" 415 " in wrong_type
+
+    oversized = _handler_response(
+        handler,
+        (
+            b"POST /talk?token=tk HTTP/1.1\r\nHost: test\r\n"
+            b"Content-Type: audio/webm\r\nContent-Length: "
+            + str(TALK_MAX_BYTES + 1).encode()
+            + b"\r\n\r\n"
+        ),
+    )
+    assert b" 413 " in oversized
+
+    success = _handler_response(
+        handler,
+        (
+            b"POST /talk?token=tk HTTP/1.1\r\nHost: test\r\n"
+            b"Content-Type: audio/webm;codecs=opus\r\n"
+            b"Content-Length: 4\r\n\r\nclip"
+        ),
+    )
+    assert _response_json(success) == {"ok": True, "seconds": 1.25}
+    assert player.calls == [(b"clip", "audio/webm;codecs=opus")]
+
+    busy_handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        audio_broker=_FakeAudioBroker(),
+        talk_player=_FakeTalkPlayer(exc=TalkBusy("busy")),
+    )
+    busy = _handler_response(
+        busy_handler,
+        (
+            b"POST /talk?token=tk HTTP/1.1\r\nHost: test\r\n"
+            b"Content-Type: audio/webm\r\nContent-Length: 4\r\n\r\nclip"
+        ),
+    )
+    assert b" 409 " in busy
+
+
+def test_talk_playback_error_returns_5xx() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        audio_broker=_FakeAudioBroker(),
+        talk_player=_FakeTalkPlayer(exc=TalkPlaybackError("ffmpeg")),
+    )
+    failed = _handler_response(
+        handler,
+        (
+            b"POST /talk?token=tk HTTP/1.1\r\nHost: test\r\n"
+            b"Content-Type: audio/webm\r\nContent-Length: 4\r\n\r\nclip"
+        ),
+    )
+    assert b" 500 " in failed
+
+
+def test_soothe_json_reports_talk_playing() -> None:
+    soothe = _FakeSoothe()
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        soothe=soothe,
+        audio_broker=_FakeAudioBroker(),
+        talk_player=_FakeTalkPlayer(playing=True),
+    )
+    raw = _handler_response(
+        handler,
+        b"GET /soothe.json?token=tk HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    payload = _response_json(raw)
+    assert payload["playing"] == "talk"
+    assert payload["talk"] is True
+
+    soothe.play("white_noise")
+    raw = _handler_response(
+        handler,
+        b"GET /soothe.json?token=tk HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    payload = _response_json(raw)
+    assert payload["playing"] == "white_noise"
+    assert payload["talk"] is True
+
+
+def test_build_viewer_html_audio_controls_only_when_enabled() -> None:
+    disabled = build_viewer_html(
+        "/stream.mjpg?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+    assert 'id="audio"' not in disabled
+    assert "LAN only · no cloud · no recording · no audio streaming" in disabled
+
+    enabled = build_viewer_html(
+        "/stream.mjpg?token=t",
+        audio_path="/audio.pcm?token=t",
+        talk_path="/talk?token=t",
+    )
+    assert 'id="audio" class="audio-section"' in enabled
+    assert 'id="listen-btn"' in enabled
+    assert 'id="talk-btn"' in enabled
+    assert "/audio.pcm?token=t" in enabled
+    assert "/talk?token=t" in enabled
+    assert "live audio available" in enabled
+    assert "Talk needs the https:// URL." in enabled
+
+
+def test_worker_dashboard_omits_audio_controls() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "full-token",
+        "Cot cam",
+        worker_token="worker-token",
+        audio_broker=_FakeAudioBroker(),
+        talk_player=_FakeTalkPlayer(),
+    )
+
+    worker_page = _handler_response(
+        handler,
+        b"GET /?token=worker-token HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+    full_page = _handler_response(
+        handler,
+        b"GET /?token=full-token HTTP/1.1\r\nHost: test\r\n\r\n",
+    )
+
+    assert b" 200 " in worker_page
+    assert b'id="audio"' not in worker_page
+    assert b"/audio.pcm?token=worker-token" not in worker_page
+    assert b" 200 " in full_page
+    assert b'id="audio" class="audio-section"' in full_page
+
+
+def test_live_view_tls_args_parse_and_wrap_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    import beddington.cli as cli
+    import beddington.liveview as lv
+
+    args = cli.build_parser().parse_args(
+        [
+            "live-view",
+            "--tls-cert",
+            "cert.pem",
+            "--tls-key",
+            "key.pem",
+        ]
+    )
+    assert args.tls_cert == Path("cert.pem")
+    assert args.tls_key == Path("key.pem")
+
+    captured: dict[str, object] = {}
+
+    class FakeHTTPD:
+        def __init__(self, address, handler):
+            captured["address"] = address
+            captured["handler"] = handler
+            self.socket = object()
+
+        def serve_forever(self) -> None:
+            captured["served"] = True
+
+        def server_close(self) -> None:
+            captured["closed"] = True
+
+    class FakeContext:
+        def __init__(self, protocol):
+            captured["protocol"] = protocol
+
+        def load_cert_chain(self, certfile, keyfile):
+            captured["certfile"] = certfile
+            captured["keyfile"] = keyfile
+
+        def wrap_socket(self, socket, server_side=False):
+            captured["wrapped_socket"] = socket
+            captured["server_side"] = server_side
+            return "wrapped"
+
+    source = _FakeFrameSource([JPEG_A])
+    monkeypatch.setattr(lv, "_DaemonThreadingHTTPServer", FakeHTTPD)
+    monkeypatch.setattr(lv.ssl, "SSLContext", FakeContext)
+
+    lv.serve_live_view(
+        host="127.0.0.1",
+        port=8088,
+        token="tk",
+        source=source,
+        tls_cert="cert.pem",
+        tls_key="key.pem",
+    )
+
+    assert captured["protocol"] == lv.ssl.PROTOCOL_TLS_SERVER
+    assert captured["certfile"] == "cert.pem"
+    assert captured["keyfile"] == "key.pem"
+    assert captured["server_side"] is True
+    assert captured["served"] is True
+    assert captured["closed"] is True
 
 
 def test_worker_token_gets_and_annotates_but_cannot_control() -> None:
