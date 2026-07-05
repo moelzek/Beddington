@@ -92,6 +92,19 @@ def _start_stub_server():
     return httpd, base, state
 
 
+def test_pi_client_accepts_self_signed_tls_for_https_base_url() -> None:
+    import ssl
+
+    https_client = PiClient("https://192.168.1.72:8088", "worker-token", timeout=2)
+    context = https_client._ssl_context
+    assert isinstance(context, ssl.SSLContext)
+    assert context.check_hostname is False
+    assert context.verify_mode == ssl.CERT_NONE
+
+    http_client = PiClient("http://192.168.1.72:8088", "worker-token", timeout=2)
+    assert http_client._ssl_context is None
+
+
 def test_pi_client_round_trips_and_raises_on_500() -> None:
     httpd, base, state = _start_stub_server()
     client = PiClient(base, "worker-token", timeout=2)

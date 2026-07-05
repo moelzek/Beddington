@@ -19,8 +19,11 @@ from beddington.cli import (
     _duck_dashboard_soothe,
     _format_sensor_line,
     _is_degenerate,
+    _live_view_json,
     _maybe_play_wake_chime,
     _notify_live_view_cry_alert,
+    _read_live_view_scheme,
+    _write_live_view_scheme,
     _clear_pending_wake_for_soothe_command,
     _recover_from_utterance_error,
     _record_run_soothe_outcomes,
@@ -451,6 +454,83 @@ def test_resolve_live_view_token_rejects_weak_explicit_token(
         _resolve_live_view_token("x")
     with pytest.raises(SystemExit, match="12 URL-safe"):
         _resolve_live_view_token("not safe enough")
+
+
+def test_live_view_scheme_roundtrip_and_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    # Unknown scheme defaults to http, so the change is a no-op until TLS is on.
+    assert _read_live_view_scheme() == "http"
+
+    _write_live_view_scheme("https")
+    scheme_path = tmp_path / ".config" / "beddington" / "liveview.scheme"
+    assert scheme_path.read_text(encoding="utf-8") == "https"
+    assert scheme_path.stat().st_mode & 0o777 == 0o600
+    assert _read_live_view_scheme() == "https"
+
+    # Anything other than "https" is normalised to http.
+    _write_live_view_scheme("ftp")
+    assert _read_live_view_scheme() == "http"
+
+
+def test_live_view_json_uses_https_with_unverified_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ssl
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_live_view_scheme("https")
+
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout=None, context=None):  # noqa: ANN001
+        captured["url"] = request.full_url
+        captured["context"] = context
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    result = _live_view_json("/soothe.json", "token", 8088)
+
+    assert result == {"ok": True}
+    assert str(captured["url"]).startswith("https://127.0.0.1:8088/soothe.json")
+    context = captured["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.check_hostname is False
+    assert context.verify_mode == ssl.CERT_NONE
+
+
+def test_live_view_json_uses_http_without_context_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        def read(self) -> bytes:
+            return b"{}"
+
+    def fake_urlopen(request, timeout=None, context=None):  # noqa: ANN001
+        captured["url"] = request.full_url
+        captured["context"] = context
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    _live_view_json("/soothe.json", "token", 8088)
+
+    assert str(captured["url"]).startswith("http://127.0.0.1:8088/soothe.json")
+    assert captured["context"] is None
 
 
 def test_user_services_do_not_order_after_install_target() -> None:

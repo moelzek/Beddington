@@ -1987,6 +1987,37 @@ def _read_live_view_token() -> str | None:
         return None
 
 
+def _write_live_view_scheme(scheme: str) -> None:
+    """Record whether live-view is serving http or https so loopback clients
+    (listen-assistant soothe polling, auto-soothe) reach it on the right scheme."""
+    import os
+
+    scheme = "https" if scheme == "https" else "http"
+    scheme_path = os.path.expanduser("~/.config/beddington/liveview.scheme")
+    try:
+        os.makedirs(os.path.dirname(scheme_path), exist_ok=True)
+        with open(scheme_path, "w", encoding="utf-8") as handle:
+            handle.write(scheme)
+        os.chmod(scheme_path, 0o600)
+    except OSError:
+        pass
+
+
+def _read_live_view_scheme() -> str:
+    """Scheme live-view last served on. Defaults to http when unknown, so the
+    change is a no-op until TLS is actually enabled."""
+    import os
+
+    try:
+        with open(
+            os.path.expanduser("~/.config/beddington/liveview.scheme"),
+            encoding="utf-8",
+        ) as handle:
+            return "https" if handle.read().strip() == "https" else "http"
+    except OSError:
+        return "http"
+
+
 def _notify_live_view_cry_alert(
     notifier: LiveViewNotifier, score: float
 ) -> dict[str, bool]:
@@ -1999,6 +2030,15 @@ def _notify_live_view_cry_alert(
         return {"lan": False}
 
 
+def _loopback_tls_context() -> "ssl.SSLContext":
+    import ssl
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 def _live_view_json(
     path: str,
     token: str,
@@ -2009,11 +2049,16 @@ def _live_view_json(
     import urllib.parse
     import urllib.request
 
+    scheme = _read_live_view_scheme()
     query = urllib.parse.urlencode({"token": token, **dict(params or {})})
     request = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}?{query}", method=method
+        f"{scheme}://127.0.0.1:{port}{path}?{query}", method=method
     )
-    body = urllib.request.urlopen(request, timeout=3).read()
+    # The self-signed cert is issued for the Pi's LAN IP, not 127.0.0.1, and has
+    # no chain to trust — so on loopback we skip verification. The token still
+    # gates access; TLS here only satisfies the browser's secure-context rule.
+    context = _loopback_tls_context() if scheme == "https" else None
+    body = urllib.request.urlopen(request, timeout=3, context=context).read()
     if not body:
         return {}
     payload = json.loads(body.decode())
@@ -3113,6 +3158,9 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
 
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     scheme = "https" if tls_cert and tls_key else "http"
+    # Loopback clients (listen-assistant soothe polling, auto-soothe) read this
+    # to reach the dashboard on the scheme it is actually serving.
+    _write_live_view_scheme(scheme)
     url = f"{scheme}://{shown_ip}:{args.port}/?token={token}"
     overlay = "video + live room readings" if readings_provider else "video only"
 

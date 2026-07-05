@@ -35,6 +35,16 @@ class PiClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = float(timeout)
+        # When the Pi serves TLS with the self-signed LAN cert, accept it: the
+        # token gates access and this runs on a trusted local network.
+        self._ssl_context = None
+        if self.base_url.startswith("https://"):
+            import ssl
+
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            self._ssl_context = context
 
     def _url(self, path: str) -> str:
         query = urllib.parse.urlencode({"token": self.token})
@@ -42,7 +52,9 @@ class PiClient:
 
     def _get_json(self, path: str) -> dict:
         try:
-            with urllib.request.urlopen(self._url(path), timeout=self.timeout) as response:
+            with urllib.request.urlopen(
+                self._url(path), timeout=self.timeout, context=self._ssl_context
+            ) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raise WorkerHTTPError(exc.code, path) from exc
@@ -59,7 +71,9 @@ class PiClient:
     def get_frame(self) -> bytes | None:
         try:
             with urllib.request.urlopen(
-                self._url("/frame.jpg"), timeout=self.timeout
+                self._url("/frame.jpg"),
+                timeout=self.timeout,
+                context=self._ssl_context,
             ) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
@@ -82,7 +96,9 @@ class PiClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(
+                request, timeout=self.timeout, context=self._ssl_context
+            ) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raise WorkerHTTPError(exc.code, "/annotate") from exc
