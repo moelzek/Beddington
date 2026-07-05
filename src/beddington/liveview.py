@@ -21,9 +21,12 @@ from __future__ import annotations
 import hmac
 import html
 import json
+import math
+import re
 import subprocess
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -46,6 +49,11 @@ _STREAM_WRITE_TIMEOUT = 20.0
 # Header read timeout (seconds) for newly accepted connections, so a client that
 # drips request bytes cannot pin a handler before authentication.
 _HEADER_READ_TIMEOUT = 5.0
+_ANNOTATION_BODY_MAX_BYTES = 8 * 1024
+_ANNOTATION_DETAIL_MAX_CHARS = 2000
+_ANNOTATION_KIND_RE = re.compile(r"^worker_[a-z0-9_]{1,40}$")
+_ANNOTATION_RATE_LIMIT = 30
+_ANNOTATION_RATE_WINDOW_S = 60.0
 
 
 class _DaemonThreadingHTTPServer(ThreadingHTTPServer):
@@ -1028,7 +1036,12 @@ def _make_handler(
     alert_state: _AlertState | None = None,
     snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
     events_provider: Callable[[], dict[str, object]] | None = None,
+    worker_token: str = "",
+    annotation_sink: Callable[[str, float, str], int | None] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
+    annotation_attempts: deque[float] = deque()
+    annotation_lock = threading.Lock()
+
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
 
@@ -1043,6 +1056,11 @@ def _make_handler(
             query = parse_qs(urlparse(self.path).query)
             return (query.get("token") or [""])[0]
 
+        def _auth_tiers(self, provided: str) -> tuple[bool, bool]:
+            full = is_authorised(provided, token)
+            worker = bool(worker_token) and is_authorised(provided, worker_token)
+            return full, worker
+
         def _deny(self) -> None:
             self.send_response(401)
             self.send_header("Content-Type", "text/plain")
@@ -1051,30 +1069,33 @@ def _make_handler(
 
         def do_GET(self) -> None:  # noqa: N802 (stdlib naming)
             path = urlparse(self.path).path
-            if not is_authorised(self._provided_token(), token):
+            provided = self._provided_token()
+            full, worker = self._auth_tiers(provided)
+            if not (full or worker):
                 self._deny()
                 return
             if path == "/":
+                link_token = token if full else provided
                 readings_path = (
-                    f"/readings.json?token={token}" if readings_provider else None
+                    f"/readings.json?token={link_token}" if readings_provider else None
                 )
                 history_path = (
-                    f"/history.json?token={token}" if history_provider else None
+                    f"/history.json?token={link_token}" if history_provider else None
                 )
                 digest_path = (
-                    f"/digest.json?token={token}" if digest_provider else None
+                    f"/digest.json?token={link_token}" if digest_provider else None
                 )
-                soothe_path = f"/soothe?token={token}" if soothe is not None else None
+                soothe_path = f"/soothe?token={link_token}" if soothe is not None else None
                 alerts_path = (
-                    f"/alerts.json?token={token}" if alert_state is not None else None
+                    f"/alerts.json?token={link_token}" if alert_state is not None else None
                 )
                 snapshot_path = (
-                    f"/snapshot.json?token={token}"
+                    f"/snapshot.json?token={link_token}"
                     if snapshot_provider is not None
                     else None
                 )
                 body = build_viewer_html(
-                    f"/stream.mjpg?token={token}",
+                    f"/stream.mjpg?token={link_token}",
                     title,
                     readings_path,
                     history_path,
@@ -1135,6 +1156,21 @@ def _make_handler(
                     "camera_frame_age_s": frame_age,
                 }
                 self._send_json(snapshot_provider(ctx))
+            elif path == "/frame.jpg":
+                if not hasattr(broker, "wait_for_frame"):
+                    self.send_error(404)
+                    return
+                seq, frame = broker.wait_for_frame(0, timeout=2.0)  # type: ignore[attr-defined]
+                if frame is None:
+                    self._send_json({"ok": False, "error": "no frame"}, status=503)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(frame)))
+                self.send_header("X-Frame-Seq", str(seq))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(frame)
             elif path == "/stream.mjpg":
                 # Cap concurrent viewers: a full house of slow/malicious readers
                 # must not exhaust threads/FDs. Over the cap -> 503, don't open
@@ -1193,18 +1229,118 @@ def _make_handler(
             else:
                 self.send_error(404)
 
-        def _send_json(self, payload: object) -> None:
+        def _send_json(self, payload: object, status: int = 200) -> None:
             body = json.dumps(payload).encode()
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
+        def _annotation_rate_limited(self) -> bool:
+            now = time.monotonic()
+            cutoff = now - _ANNOTATION_RATE_WINDOW_S
+            with annotation_lock:
+                while annotation_attempts and annotation_attempts[0] < cutoff:
+                    annotation_attempts.popleft()
+                if len(annotation_attempts) >= _ANNOTATION_RATE_LIMIT:
+                    return True
+                annotation_attempts.append(now)
+                return False
+
+        def _handle_annotate(self) -> None:
+            if self._annotation_rate_limited():
+                self._send_json({"ok": False, "error": "rate limited"}, status=429)
+                return
+            if annotation_sink is None:
+                self.send_error(404)
+                return
+            raw_length = self.headers.get("Content-Length")
+            if raw_length is None:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            try:
+                length = int(raw_length)
+            except ValueError:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            if length < 0:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            if length > _ANNOTATION_BODY_MAX_BYTES:
+                self._send_json({"ok": False, "error": "body too large"}, status=413)
+                return
+            try:
+                payload = json.loads(self.rfile.read(length))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._send_json({"ok": False, "error": "invalid json"}, status=400)
+                return
+            if not isinstance(payload, dict):
+                self._send_json(
+                    {"ok": False, "error": "body must be an object"},
+                    status=400,
+                )
+                return
+
+            kind = payload.get("kind")
+            if not isinstance(kind, str) or not _ANNOTATION_KIND_RE.fullmatch(kind):
+                self._send_json({"ok": False, "error": "bad kind"}, status=400)
+                return
+            raw_detail = payload.get("detail")
+            if not isinstance(raw_detail, str):
+                self._send_json({"ok": False, "error": "detail required"}, status=400)
+                return
+            detail = raw_detail.strip()
+            if not detail:
+                self._send_json({"ok": False, "error": "detail required"}, status=400)
+                return
+            if len(detail) > _ANNOTATION_DETAIL_MAX_CHARS:
+                self._send_json({"ok": False, "error": "detail too long"}, status=400)
+                return
+            now_wall = time.time()
+            if "ts" in payload:
+                try:
+                    ts = float(payload["ts"])
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "bad ts"}, status=400)
+                    return
+                if (
+                    not math.isfinite(ts)
+                    or ts < now_wall - 24 * 3600
+                    or ts > now_wall + 60
+                ):
+                    self._send_json({"ok": False, "error": "bad ts"}, status=400)
+                    return
+            else:
+                ts = now_wall
+            try:
+                row_id = annotation_sink(kind, ts, detail)
+            except Exception:
+                self._send_json({"ok": False}, status=500)
+                return
+            self._send_json({"ok": True, "id": row_id})
+
         def do_POST(self) -> None:  # noqa: N802 (stdlib naming)
             path = urlparse(self.path).path
-            if not is_authorised(self._provided_token(), token):
+            provided = self._provided_token()
+            full, worker = self._auth_tiers(provided)
+            if not (full or worker):
+                self._deny()
+                return
+            if path == "/annotate":
+                self._handle_annotate()
+                return
+            if not full:
                 self._deny()
                 return
             if path == "/soothe" and soothe is not None:
@@ -1367,6 +1503,8 @@ def serve_live_view(
     rotate: int = 0,
     snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
     events_provider: Callable[[], dict[str, object]] | None = None,
+    worker_token: str = "",
+    annotation_sink: Callable[[str, float, str], int | None] | None = None,
     broker_sink: Callable[[object], None] | None = None,
 ) -> None:
     """Serve the live view until interrupted.
@@ -1409,6 +1547,7 @@ def serve_live_view(
         broker, token, title, readings_provider, history_provider, digest_provider,
         soothe, mode_setter, rotate, alert_state=_AlertState(),
         snapshot_provider=snapshot_provider, events_provider=events_provider,
+        worker_token=worker_token, annotation_sink=annotation_sink,
     )
     httpd = _DaemonThreadingHTTPServer((host, port), handler)
     try:

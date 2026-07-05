@@ -283,6 +283,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live.add_argument("--token", default=None, help="Access token; generated if unset")
     live.add_argument(
+        "--worker-token",
+        default="",
+        help="Optional scoped token for worker reads and annotations only",
+    )
+    live.add_argument(
         "--bind",
         default="0.0.0.0",
         help="Interface to bind. Default binds the LAN; do not port-forward this.",
@@ -325,6 +330,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     note.add_argument("text", help="The note to remember")
     note.add_argument("--history-db", default=_DEFAULT_HISTORY_DB)
+
+    worker = subparsers.add_parser(
+        "worker",
+        help="Run the LAN enrichment worker against a live-view server",
+    )
+    worker.add_argument("--url", help="Live-view base URL, e.g. http://pi:8088")
+    worker.add_argument("--token", help="Live-view or scoped worker token")
+    worker.add_argument("--snapshot-interval", type=float)
+    worker.add_argument("--events-interval", type=float)
+    worker.add_argument("--timeout", type=float)
+    worker.add_argument(
+        "--analyzer",
+        action="append",
+        help="Analyzer name or module:attr import path; repeatable",
+    )
+    worker.add_argument(
+        "--once",
+        action="store_true",
+        help="Run one poll/analyze/annotate iteration and exit",
+    )
     return parser
 
 
@@ -388,6 +413,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _night_digest_command(args, config)
     if args.command == "note":
         return _note_command(args)
+    if args.command == "worker":
+        return _worker_command(args, config)
 
     detector = _build_alarm_detector(args.model)
     if args.soothe:
@@ -2732,6 +2759,55 @@ def _note_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _worker_command(args: argparse.Namespace, config: AppConfig) -> int:
+    import os
+
+    from .worker import PiClient, WorkerLoop, load_analyzer
+
+    url = str(args.url or config.worker.base_url).strip()
+    if not url:
+        raise SystemExit(
+            "worker needs --url or worker.base_url in the config"
+        )
+    token = str(args.token or os.getenv("BEDDINGTON_LIVEVIEW_TOKEN", "")).strip()
+    if not token:
+        raise SystemExit(
+            "worker needs --token or BEDDINGTON_LIVEVIEW_TOKEN"
+        )
+    snapshot_interval = (
+        float(args.snapshot_interval)
+        if args.snapshot_interval is not None
+        else config.worker.snapshot_interval_s
+    )
+    events_interval = (
+        float(args.events_interval)
+        if args.events_interval is not None
+        else config.worker.events_interval_s
+    )
+    timeout = (
+        float(args.timeout)
+        if args.timeout is not None
+        else config.worker.request_timeout_s
+    )
+    analyzer_specs = tuple(args.analyzer or config.worker.analyzers or ("state_change",))
+    try:
+        analyzers = [load_analyzer(spec) for spec in analyzer_specs]
+        loop = WorkerLoop(
+            PiClient(url, token, timeout),
+            analyzers,
+            snapshot_interval,
+            events_interval,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if args.once:
+        posted = loop.run_once()
+        print(f"Posted {posted} annotation(s).")
+        return 0
+    loop.run_forever()
+    return 0
+
+
 def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
     from .live_snapshot import LiveSnapshotEngine
@@ -2740,6 +2816,14 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         raise SystemExit("--port, --width, --height and --fps must be positive")
 
     token = _resolve_live_view_token(args.token)
+    worker_token = str(getattr(args, "worker_token", "") or "").strip()
+    if worker_token:
+        if not _LIVE_VIEW_TOKEN_RE.fullmatch(worker_token):
+            raise SystemExit(
+                "--worker-token must be at least 12 URL-safe characters"
+            )
+        if worker_token == token:
+            raise SystemExit("--worker-token must differ from --token")
 
     # Sensors + providers first, so the night-eye switch can read the day/night mode.
     sampler: _SensorSampler | None = None
@@ -2796,6 +2880,13 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             store.append_event("sound_played", now, ended_ts=now, detail=detail)
         except Exception:
             pass
+
+    def _annotation_sink(kind: str, ts: float, detail: str) -> int | None:
+        if store is None:
+            return None
+        # Quick SQLite point insert: it shares SensorStore's lock with timeline
+        # reads but never touches the alert/control path.
+        return store.append_event(kind, ts, ended_ts=ts, detail=detail)
 
     _soothe_presets = _build_soothe_presets(config)
     soothe = (
@@ -2866,6 +2957,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         print(f"  Camera {args.camera_num}{mode}")
     print(f"  {args.width}x{args.height}, ~{args.fps} fps ({overlay})")
     print(f"  Open on your phone (same WiFi):  {url}")
+    if worker_token:
+        print(f"  Worker token (read + annotate only):  {worker_token}")
     print("  The token is required. Keep this on a trusted network; do not")
     print("  port-forward this port. Press Ctrl-C to stop.")
     try:
@@ -2884,6 +2977,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             rotate=args.rotate,
             snapshot_provider=snapshot_provider,
             events_provider=events_provider,
+            worker_token=worker_token,
+            annotation_sink=_annotation_sink if store is not None else None,
             broker_sink=(
                 (lambda broker: sampler.set_frame_age(getattr(broker, "frame_age", None)))
                 if sampler is not None
