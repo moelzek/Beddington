@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import http.client
 import json
 import re
 import shutil
@@ -12,8 +13,11 @@ import urllib.error
 import urllib.request
 from types import SimpleNamespace
 
+import pytest
+
 from beddington.liveview import (
     _SOI,
+    _AlertState,
     _HEADER_READ_TIMEOUT,
     FrameBroker,
     _DaemonThreadingHTTPServer,
@@ -603,6 +607,26 @@ def _free_port() -> int:
     return port
 
 
+def _start_handler_server(
+    handler: type,
+) -> tuple[_DaemonThreadingHTTPServer, str]:
+    httpd = _DaemonThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    host, port = httpd.server_address
+    return httpd, f"http://{host}:{port}"
+
+
+def _post_json(url: str, payload: object, token: str = "tk"):
+    request = urllib.request.Request(
+        f"{url}?token={token}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    return urllib.request.urlopen(request, timeout=2)
+
+
 def test_serve_live_view_requires_token_and_streams() -> None:
     source = _FakeFrameSource([JPEG_A, JPEG_B])
     token = "secret-token"
@@ -1144,3 +1168,448 @@ def test_serve_live_view_serves_events_json_and_broker_sink() -> None:
             assert denied.code == 401
     finally:
         source.close()
+
+
+def test_annotate_requires_token_and_validates_payload() -> None:
+    rows: list[tuple[str, float, str]] = []
+
+    def sink(kind: str, ts: float, detail: str) -> int:
+        rows.append((kind, ts, detail))
+        return 7
+
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam", annotation_sink=sink)
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"}, token="")
+        assert denied.value.code == 401
+
+        bad_cases = [
+            ({"kind": "manual_note", "detail": "x"}, "bad kind"),
+            ({"kind": "worker_note", "detail": "   "}, "detail required"),
+            ({"kind": "worker_note", "detail": "x" * 2001}, "detail too long"),
+            ({"kind": "worker_note", "detail": "x", "ts": time.time() + 120}, "bad ts"),
+        ]
+        for payload, error in bad_cases:
+            with pytest.raises(urllib.error.HTTPError) as rejected:
+                _post_json(f"{base}/annotate", payload)
+            assert rejected.value.code == 400
+            body = json.loads(rejected.value.read())
+            assert body["error"] == error
+
+        with pytest.raises(urllib.error.HTTPError) as too_large:
+            _post_json(
+                f"{base}/annotate",
+                {"kind": "worker_note", "detail": "x" * (9 * 1024)},
+            )
+        assert too_large.value.code == 413
+        assert rows == []
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_rejects_negative_content_length_without_reading() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        annotation_sink=lambda _kind, _ts, _detail: 1,
+    )
+    httpd, _base = _start_handler_server(handler)
+    conn = http.client.HTTPConnection(
+        "127.0.0.1",
+        httpd.server_address[1],
+        timeout=2,
+    )
+    try:
+        conn.putrequest("POST", "/annotate?token=tk")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", "-1")
+        conn.endheaders()
+        response = conn.getresponse()
+        body = json.loads(response.read())
+        assert response.status == 411
+        assert body == {"ok": False, "error": "content length required"}
+    finally:
+        conn.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_invalid_utf8_returns_invalid_json() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        annotation_sink=lambda _kind, _ts, _detail: 1,
+    )
+    httpd, base = _start_handler_server(handler)
+    request = urllib.request.Request(
+        f"{base}/annotate?token=tk",
+        data=b"\xff\xfe{",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as rejected:
+            urllib.request.urlopen(request, timeout=2)
+        assert rejected.value.code == 400
+        assert json.loads(rejected.value.read()) == {
+            "ok": False,
+            "error": "invalid json",
+        }
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_rate_limit_counts_invalid_attempts() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        annotation_sink=lambda _kind, _ts, _detail: 1,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        for _ in range(30):
+            with pytest.raises(urllib.error.HTTPError) as rejected:
+                _post_json(f"{base}/annotate", {"kind": "manual_note", "detail": "x"})
+            assert rejected.value.code == 400
+
+        with pytest.raises(urllib.error.HTTPError) as limited:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"})
+        assert limited.value.code == 429
+        assert json.loads(limited.value.read())["error"] == "rate limited"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_404_without_sink() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"})
+        assert missing.value.code == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_sink_exception_returns_500_and_server_continues() -> None:
+    def sink(_kind: str, _ts: float, _detail: str) -> int:
+        raise RuntimeError("boom")
+
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        events_provider=lambda: {"events": []},
+        annotation_sink=sink,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as failed:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"})
+        assert failed.value.code == 500
+        assert json.loads(failed.value.read()) == {"ok": False}
+
+        body = urllib.request.urlopen(f"{base}/events.json?token=tk", timeout=2).read()
+        assert json.loads(body) == {"events": []}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_success_writes_fake_sink_and_does_not_raise_alert() -> None:
+    alert_state = _AlertState()
+    before = alert_state.snapshot()
+    rows: list[tuple[str, float, str]] = []
+
+    def sink(kind: str, ts: float, detail: str) -> int:
+        rows.append((kind, ts, detail))
+        return 123
+
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        alert_state=alert_state,
+        annotation_sink=sink,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        response = _post_json(
+            f"{base}/annotate",
+            {"kind": "worker_observation", "detail": "  movement changed  "},
+        )
+        assert json.loads(response.read()) == {"ok": True, "id": 123}
+        assert rows and rows[0][0] == "worker_observation"
+        assert rows[0][2] == "movement changed"
+        assert alert_state.snapshot() == before
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_real_sensor_store_surfaces_in_timeline(tmp_path) -> None:
+    from beddington.sensor_store import SensorStore
+
+    store = SensorStore(str(tmp_path / "events.db"))
+
+    def sink(kind: str, ts: float, detail: str) -> int | None:
+        return store.append_event(kind, ts, ended_ts=ts, detail=detail)
+
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam", annotation_sink=sink)
+    httpd, base = _start_handler_server(handler)
+    try:
+        ts = time.time()
+        response = _post_json(
+            f"{base}/annotate",
+            {"kind": "worker_observation", "detail": "state changed", "ts": ts},
+        )
+        assert json.loads(response.read())["ok"] is True
+        timeline = store.timeline_since(ts - 1)
+        assert timeline == [
+            {
+                "kind": "worker_observation",
+                "started_ts": ts,
+                "ended_ts": ts,
+                "detail": "state changed",
+            }
+        ]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        store.close()
+
+
+def test_frame_jpg_requires_token_and_serves_latest_frame() -> None:
+    broker = FrameBroker()
+    broker.publish(JPEG_A)
+    handler = _make_handler(broker, "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(f"{base}/frame.jpg", timeout=2)
+        assert denied.value.code == 401
+
+        response = urllib.request.urlopen(f"{base}/frame.jpg?token=tk", timeout=2)
+        assert response.read() == JPEG_A
+        assert response.headers["Content-Type"] == "image/jpeg"
+        assert response.headers["X-Frame-Seq"] == "1"
+        assert response.headers["Cache-Control"] == "no-store"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_frame_jpg_503_when_no_frame_published() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as unavailable:
+            urllib.request.urlopen(f"{base}/frame.jpg?token=tk", timeout=3)
+        assert unavailable.value.code == 503
+        assert json.loads(unavailable.value.read()) == {
+            "ok": False,
+            "error": "no frame",
+        }
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_frame_jpg_404_without_broker() -> None:
+    handler = _make_handler(object(), "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(f"{base}/frame.jpg?token=tk", timeout=2)
+        assert missing.value.code == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_frame_jpg_works_with_dual_camera_serve_live_view_wiring() -> None:
+    day = _FakeFrameSource([JPEG_A])
+    night = _FakeFrameSource([JPEG_B])
+    token = "tk"
+    port = _free_port()
+    mode = {"v": "day"}
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "sources": {"day": day, "night": night},
+            "mode_getter": lambda: mode["v"],
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        assert urllib.request.urlopen(f"{base}/frame.jpg?token={token}", timeout=2).read() == JPEG_A
+        mode["v"] = "night"
+        time.sleep(0.1)
+        assert urllib.request.urlopen(f"{base}/frame.jpg?token={token}", timeout=2).read() == JPEG_B
+    finally:
+        day.close()
+        night.close()
+
+
+def test_worker_token_gets_and_annotates_but_cannot_control() -> None:
+    broker = FrameBroker()
+    broker.publish(JPEG_A)
+    alert_state = _AlertState()
+    soothe = _FakeSoothe()
+    annotations: list[tuple[str, str]] = []
+    mode = {"value": "night"}
+
+    def set_mode(value: str | None) -> str:
+        mode["value"] = value or "night"
+        return mode["value"]
+
+    def annotation_sink(kind: str, _ts: float, detail: str) -> int:
+        annotations.append((kind, detail))
+        return len(annotations)
+
+    handler = _make_handler(
+        broker,
+        "full-token",
+        "Cot cam",
+        soothe=soothe,
+        mode_setter=set_mode,
+        alert_state=alert_state,
+        snapshot_provider=lambda _ctx: {
+            "label": "Still for 1 min",
+            "confidence": {"band": "low"},
+        },
+        events_provider=lambda: {"events": []},
+        worker_token="worker-token",
+        annotation_sink=annotation_sink,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        snapshot = json.loads(
+            urllib.request.urlopen(
+                f"{base}/snapshot.json?token=worker-token", timeout=2
+            ).read()
+        )
+        assert snapshot["label"] == "Still for 1 min"
+        events = json.loads(
+            urllib.request.urlopen(
+                f"{base}/events.json?token=worker-token", timeout=2
+            ).read()
+        )
+        assert events == {"events": []}
+        assert (
+            urllib.request.urlopen(
+                f"{base}/frame.jpg?token=worker-token", timeout=2
+            ).read()
+            == JPEG_A
+        )
+        assert json.loads(
+            _post_json(
+                f"{base}/annotate",
+                {"kind": "worker_observation", "detail": "state changed"},
+                token="worker-token",
+            ).read()
+        ) == {"ok": True, "id": 1}
+
+        before = alert_state.snapshot()
+        for path in (
+            "/alert?token=worker-token",
+            "/soothe?token=worker-token&action=play&preset=white_noise",
+            "/mode?token=worker-token&set=day",
+            "/autosoothe?token=worker-token&enabled=1&preset=white_noise",
+        ):
+            with pytest.raises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(
+                    urllib.request.Request(f"{base}{path}", method="POST"),
+                    timeout=2,
+                )
+            assert denied.value.code == 401
+        assert alert_state.snapshot() == before
+
+        alert = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/alert?token=full-token&title=Cry&message=x",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert alert["ok"] is True
+        played = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/soothe?token=full-token&action=play&preset=white_noise",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert played["playing"] == "white_noise"
+        forced = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/mode?token=full-token&set=day",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert forced == {"mode": "day", "mode_auto": False}
+        autosoothe = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/autosoothe?token=full-token&enabled=1&preset=white_noise",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert autosoothe["enabled"] is True
+        assert json.loads(
+            _post_json(
+                f"{base}/annotate",
+                {"kind": "worker_observation", "detail": "full token note"},
+                token="full-token",
+            ).read()
+        ) == {"ok": True, "id": 2}
+        assert annotations == [
+            ("worker_observation", "state changed"),
+            ("worker_observation", "full token note"),
+        ]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_worker_token_unset_does_not_authenticate_worker_tier() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "full-token",
+        "Cot cam",
+        snapshot_provider=lambda _ctx: {"label": "Still for 1 min"},
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(
+                f"{base}/snapshot.json?token=worker-token",
+                timeout=2,
+            )
+        assert denied.value.code == 401
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

@@ -176,6 +176,15 @@ class LiveviewConfig:
 
 
 @dataclass(frozen=True)
+class WorkerConfig:
+    base_url: str = ""
+    snapshot_interval_s: float = 3.0
+    events_interval_s: float = 15.0
+    request_timeout_s: float = 5.0
+    analyzers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class AppConfig:
     detection: DetectionConfig = DetectionConfig()
     notifications: NotificationConfig = NotificationConfig()
@@ -186,6 +195,7 @@ class AppConfig:
     sounds: SoundsConfig = SoundsConfig()
     soothe: SootheConfig = SootheConfig()
     liveview: LiveviewConfig = LiveviewConfig()
+    worker: WorkerConfig = WorkerConfig()
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -228,6 +238,32 @@ def _load_liveview_state(
     return SnapshotThresholds(**values)
 
 
+def _load_worker(
+    raw_worker: object,
+    default: WorkerConfig,
+) -> WorkerConfig:
+    if not isinstance(raw_worker, dict):
+        return default
+    raw_analyzers = raw_worker.get("analyzers", default.analyzers)
+    if isinstance(raw_analyzers, list):
+        analyzers = tuple(str(item) for item in raw_analyzers)
+    else:
+        analyzers = default.analyzers
+    return WorkerConfig(
+        base_url=str(raw_worker.get("base_url", default.base_url)),
+        snapshot_interval_s=float(
+            raw_worker.get("snapshot_interval_s", default.snapshot_interval_s)
+        ),
+        events_interval_s=float(
+            raw_worker.get("events_interval_s", default.events_interval_s)
+        ),
+        request_timeout_s=float(
+            raw_worker.get("request_timeout_s", default.request_timeout_s)
+        ),
+        analyzers=analyzers,
+    )
+
+
 def load_config(path: Path | None = None) -> AppConfig:
     config = AppConfig()
     if path:
@@ -242,6 +278,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         sounds = raw.get("sounds", {})
         soothe = raw.get("soothe", {})
         liveview = raw.get("liveview", {})
+        worker = raw.get("worker", {})
         raw_soothe_presets = soothe.get("presets")
         raw_soothe_steps = soothe.get("steps")
         soothe_preset = str(soothe.get("preset", config.soothe.preset))
@@ -328,6 +365,7 @@ def load_config(path: Path | None = None) -> AppConfig:
                 learn=learn,
             ),
             liveview=_load_liveview(liveview, config.liveview),
+            worker=_load_worker(worker, config.worker),
         )
 
     config = replace(
@@ -787,3 +825,12 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("sensors.radar.port must be a valid TCP port")
     if not 0.0 <= config.sounds.threshold <= 1.0:
         raise ValueError("sounds.threshold must be between 0 and 1")
+    worker = config.worker
+    if worker.base_url.strip() and not worker.base_url.startswith(("http://", "https://")):
+        raise ValueError("worker.base_url must start with http:// or https://")
+    if worker.snapshot_interval_s <= 0:
+        raise ValueError("worker.snapshot_interval_s must be positive")
+    if worker.events_interval_s <= 0:
+        raise ValueError("worker.events_interval_s must be positive")
+    if worker.request_timeout_s <= 0:
+        raise ValueError("worker.request_timeout_s must be positive")

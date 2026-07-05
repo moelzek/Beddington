@@ -36,6 +36,13 @@ t2_repeat_cooldown_s = 600.0
 device_restart_notice_s = 120.0
 max_evidence_items = 8
 
+# [worker]
+# base_url = "http://127.0.0.1:8088"
+# snapshot_interval_s = 3.0
+# events_interval_s = 15.0
+# request_timeout_s = 5.0
+# analyzers = ["state_change"]
+
 [sounds]
 # Record non-cry baby/room sounds the mic hears (cooing, laughter, snoring, etc.)
 # as observer-only context for the night story. Off by default; the deterministic
