@@ -2633,6 +2633,7 @@ def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:
 
 def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
+    from .live_snapshot import LiveSnapshotEngine
 
     if args.port <= 0 or args.width <= 0 or args.height <= 0 or args.fps <= 0:
         raise SystemExit("--port, --width, --height and --fps must be positive")
@@ -2683,6 +2684,26 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         if _soothe_presets
         else None
     )
+    snapshot_provider = None
+    if sampler is not None:
+        snapshot_engine = LiveSnapshotEngine()
+
+        def snapshot_provider(ctx: dict[str, object]) -> dict[str, object]:
+            try:
+                return snapshot_engine.build(
+                    history=sampler.history(),
+                    now=time.time(),
+                    alerts=dict(ctx.get("alerts") or {"active": False}),
+                    mode=sampler.mode(),
+                    mode_auto=sampler.override() is None,
+                    camera_frame_age_s=ctx.get("camera_frame_age_s")
+                    if isinstance(ctx.get("camera_frame_age_s"), (int, float))
+                    else None,
+                    soothe_playing=soothe.playing() if soothe is not None else None,
+                    autosoothe=soothe.autosoothe() if soothe is not None else None,
+                )
+            except Exception:
+                return {"schema_version": 1, "error": "snapshot_unavailable"}
 
     def _make_source(camera: int, night: bool) -> object:
         return RpicamFrameSource(
@@ -2740,6 +2761,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             soothe=soothe,
             mode_setter=(sampler.set_override if sampler is not None else None),
             rotate=args.rotate,
+            snapshot_provider=snapshot_provider,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")
