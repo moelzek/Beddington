@@ -6,12 +6,13 @@ main processes:
 
 | Process | What it does | Notes |
 |---|---|---|
-| Live-view dashboard | Camera, sensor readings, alerts, and history on port 8088 | LAN only. Do not port-forward it. |
-| Voice assistant | Answers local spoken questions from the latest readings | Owns the mic while running. |
-| Cry monitor | Runs the cry detection pipeline and writes night outputs | Cannot share the mic with the assistant. |
+| Live-view dashboard | Camera, sensor readings, alerts, history, and optional two-way audio on port 8088 | LAN only. Do not port-forward it. |
+| Voice assistant | Answers local spoken questions from the latest readings | Shares the PipeWire-managed mic on the production Pi. |
+| Cry monitor | Runs the cry detection pipeline and writes night outputs | Shares the PipeWire-managed mic on the production Pi. |
 
-The assistant and cry-detection `listen` path cannot use the same USB mic at the
-same time. Stop one before starting the other.
+On the production Debian/PipeWire Pi, the USB mic and I2S speaker are
+multiplexed: live-view listen can capture while `listen-assistant` is running,
+and dashboard talk playback mixes with soothe playback.
 
 ## Hardware
 
@@ -23,7 +24,7 @@ same time. Stop one before starting the other.
 | BME688 air sensor | Optional | `[sensors.air]` | I2C address `0x76`. |
 | HC-SR501 PIR | Optional | `[sensors.motion]` | GPIO 4. Context only. |
 | Seeed MR60BHA2 radar | Optional | `[sensors.radar]` | ESPHome API host on port 6053. |
-| Speaker | Optional | `[soothe]` and `[narrator]` | Used for Soothe and spoken replies. |
+| Speaker | Optional | `[soothe]`, `[narrator]`, and `[liveview.audio]` | Used for Soothe, spoken replies, and dashboard talk playback. |
 
 ## Fresh Install
 
@@ -68,9 +69,52 @@ Touch only the sections that match your hardware and comfort thresholds:
 | `[sensors.radar]` | Enable radar and set `host` plus port 6053. |
 | `[soothe]` | Choose whether local sound playback is enabled. |
 | `[liveview.state]` | Tune deterministic live-view state thresholds. |
+| `[liveview.audio]` | Enable opt-in dashboard listen and push-to-talk. |
 
 Keep port 8088 on the LAN. Never port-forward it. The dashboard URL contains a
 token, but the LAN is still the trust boundary.
+
+## Optional Live-View Audio
+
+Two-way dashboard audio is off by default. To enable it, add:
+
+```toml
+[liveview.audio]
+enabled = true
+# device = "USB PnP Sound Device"  # optional sounddevice input override
+max_listeners = 3
+talk_max_seconds = 20.0
+```
+
+Listen works over plain HTTP because the browser only plays audio. Talk uses the
+browser microphone, so phone browsers require the dashboard to be opened over
+HTTPS, even on the LAN.
+
+Generate a self-signed certificate for the Pi's LAN IP:
+
+```bash
+bash scripts/make_liveview_cert.sh 192.168.1.72
+```
+
+Start live-view with the generated files:
+
+```bash
+python -m beddington --config config/pi-product.toml live-view \
+  --tls-cert certs/liveview-192.168.1.72.crt \
+  --tls-key certs/liveview-192.168.1.72.key
+```
+
+The first phone visit will show a browser warning because the certificate is
+self-signed. Accept it only on your own LAN and keep using the `https://` URL
+printed by live-view.
+
+Browser recording formats are handled by ffmpeg on the Pi: Chrome/Android
+usually sends `audio/webm;codecs=opus`, while iPhone Safari sends `audio/mp4`
+AAC. Expected latency is well under a second for listen. Talk latency is the
+length of the held clip plus about one second for upload, decode, and playback.
+
+No dashboard audio is saved. Listen is a live PCM stream, and talk uses only
+transient temp files that are deleted after playback or failure.
 
 ## systemd User Services
 
@@ -196,7 +240,7 @@ backup, reinstall in the venv if needed, and restart.
 | Symptom | Likely cause | What to try |
 |---|---|---|
 | Camera busy | Live-view owns the camera | `systemctl --user stop beddington-liveview`, then retry the camera command. |
-| Mic unavailable | Assistant and cry monitor are competing | Stop `beddington-assistant` before running cry detection. |
+| Mic unavailable | Audio stack or device selection issue | Check PipeWire/WirePlumber, the USB mic, and `[liveview.audio].device` if set. |
 | Camera fails after cold boot | CSI/I2C was not settled | Keep the `ExecStartPre=/bin/sleep 25` delay, then restart live-view. |
 | Phone gets 401 | Token mismatch or token rotated | Reopen the URL from `head -3 ~/liveview.log`. |
 | Radar unreachable | Wrong host or ESPHome port blocked | Check `[sensors.radar].host` and port 6053. |
@@ -205,8 +249,9 @@ backup, reinstall in the venv if needed, and restart.
 
 ## Privacy
 
-Beddington is offline by design. The dashboard is LAN-only. It does not record
-audio or stream audio. Do not expose port 8088 to the internet.
+Beddington is offline by design. The dashboard is LAN-only. Audio is off by
+default; when enabled, it streams only on the LAN and does not record audio to
+disk. Do not expose port 8088 to the internet.
 
 Local data on disk includes:
 
