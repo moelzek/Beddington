@@ -657,6 +657,7 @@ class FrameBroker:
 
     def __init__(self) -> None:
         self._frame: bytes | None = None
+        self._published_at: float | None = None
         self._seq = 0
         self._cond = threading.Condition()
         self._closed = False
@@ -664,6 +665,7 @@ class FrameBroker:
     def publish(self, frame: bytes) -> None:
         with self._cond:
             self._frame = frame
+            self._published_at = time.monotonic()
             self._seq += 1
             self._cond.notify_all()
 
@@ -676,6 +678,12 @@ class FrameBroker:
     def closed(self) -> bool:
         with self._cond:
             return self._closed
+
+    def frame_age(self) -> float | None:
+        with self._cond:
+            if self._published_at is None:
+                return None
+            return max(0.0, time.monotonic() - self._published_at)
 
     def wait_for_frame(
         self, last_seq: int, timeout: float = 5.0
@@ -744,6 +752,7 @@ def _make_handler(
     mode_setter: Callable[[str | None], str] | None = None,
     rotate: int = 0,
     alert_state: _AlertState | None = None,
+    snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
@@ -825,6 +834,20 @@ def _make_handler(
                 self._send_json(
                     alert_state.snapshot() if alert_state is not None else {"active": False}
                 )
+            elif path == "/snapshot.json":
+                if snapshot_provider is None:
+                    self.send_error(404)
+                    return
+                frame_age = broker.frame_age() if hasattr(broker, "frame_age") else None
+                ctx = {
+                    "alerts": (
+                        alert_state.snapshot()
+                        if alert_state is not None
+                        else {"active": False}
+                    ),
+                    "camera_frame_age_s": frame_age,
+                }
+                self._send_json(snapshot_provider(ctx))
             elif path == "/stream.mjpg":
                 # Cap concurrent viewers: a full house of slow/malicious readers
                 # must not exhaust threads/FDs. Over the cap -> 503, don't open
@@ -1021,6 +1044,9 @@ class _ModeBroker:
         )
         return active.closed
 
+    def frame_age(self) -> float | None:
+        return self._active().frame_age()
+
     def close(self) -> None:
         for broker in self._brokers.values():
             broker.close()
@@ -1052,6 +1078,7 @@ def serve_live_view(
     soothe: object | None = None,
     mode_setter: Callable[[str | None], str] | None = None,
     rotate: int = 0,
+    snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
@@ -1088,6 +1115,7 @@ def serve_live_view(
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider,
         soothe, mode_setter, rotate, alert_state=_AlertState(),
+        snapshot_provider=snapshot_provider,
     )
     httpd = _DaemonThreadingHTTPServer((host, port), handler)
     try:
