@@ -108,6 +108,48 @@ The first phone visit will show a browser warning because the certificate is
 self-signed. Accept it only on your own LAN and keep using the `https://` URL
 printed by live-view.
 
+Internal clients follow the scheme automatically. When live-view starts with
+`--tls-cert/--tls-key` it records the scheme in
+`~/.config/beddington/liveview.scheme`, and the loopback callers
+(listen-assistant soothe polling and auto-soothe) then reach the dashboard over
+`https://127.0.0.1` with verification disabled — the token still gates access,
+and the cert is only there to satisfy the browser's secure-context rule. No
+extra config is needed for those clients. If a LAN computer worker is pointed at
+the Pi (`[worker].base_url`), switch its URL to `https://192.168.1.72:8088`; the
+worker accepts the self-signed cert the same way.
+
+### Enabling TLS on the deployed Pi
+
+On the running Pi (`lab@192.168.1.72`, repo at `~/Labie`, config
+`config/demo.toml`):
+
+```bash
+ssh lab@192.168.1.72
+cd ~/Labie
+
+# 1. Generate the cert for the Pi's LAN IP (writes certs/liveview-192.168.1.72.{crt,key}).
+bash scripts/make_liveview_cert.sh 192.168.1.72
+
+# 2. Add the TLS flags to the live-view unit's ExecStart, then reload + restart.
+#    Append to the existing `live-view ...` line:
+#      --tls-cert /home/lab/Labie/certs/liveview-192.168.1.72.crt \
+#      --tls-key  /home/lab/Labie/certs/liveview-192.168.1.72.key
+systemctl --user daemon-reload
+systemctl --user restart beddington-liveview
+
+# 3. Restart the assistant so its soothe/auto-soothe clients re-read the scheme.
+systemctl --user restart beddington-assistant
+
+# 4. Confirm the printed URL is now https and both services are healthy.
+head -3 ~/liveview.log
+systemctl --user status beddington-liveview beddington-assistant
+```
+
+The persisted access token is unchanged, so the phone URL keeps the same token
+and only the scheme flips to `https://`. To roll back, remove the two `--tls-*`
+flags and restart both services; `liveview.scheme` reverts to `http` on the next
+live-view start.
+
 Browser recording formats are handled by ffmpeg on the Pi: Chrome/Android
 usually sends `audio/webm;codecs=opus`, while iPhone Safari sends `audio/mp4`
 AAC. Expected latency is well under a second for listen. Talk latency is the
