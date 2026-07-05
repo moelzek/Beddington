@@ -194,3 +194,102 @@ def test_store_night_aggregates_tallies_recent_soothe_outcomes(tmp_path: Path) -
         ("waves", 1, 2),
     ]
     store.close()
+
+
+def test_store_events_point_and_episode_roundtrip(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    row = store.append_event("stirring", 100.0)
+    assert isinstance(row, int)
+    store.append_event("manual_note", 150.0, ended_ts=150.0, detail="gave a feed")
+    store.close_event(row, 130.0)
+
+    timeline = store.timeline_since(0.0)
+    assert [(e["kind"], e["started_ts"], e["ended_ts"]) for e in timeline] == [
+        ("stirring", 100.0, 130.0),
+        ("manual_note", 150.0, 150.0),
+    ]
+    assert timeline[1]["detail"] == "gave a feed"
+    store.close()
+
+
+def test_store_timeline_merges_cry_episodes_chronologically(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    store.append_event("sound_played", 200.0, ended_ts=200.0, detail="rain")
+    store.append_cry_episode(100.0, ended_ts=140.0)
+    store.append_cry_episode(300.0, duration_seconds=60.0)  # no ended_ts stored
+    store.append_cry_episode(400.0)  # open cry
+
+    timeline = store.timeline_since(0.0)
+    assert [e["kind"] for e in timeline] == [
+        "crying", "sound_played", "crying", "crying",
+    ]
+    assert timeline[0]["ended_ts"] == 140.0
+    assert timeline[2]["ended_ts"] == 360.0  # started + duration
+    assert timeline[3]["ended_ts"] == 400.0  # terminal start-only row
+    store.close()
+
+
+def test_store_timeline_window_keeps_open_and_overlapping(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    store.append_event("room_warm", 10.0, ended_ts=20.0)  # fully before window
+    row = store.append_event("caregiver_present", 30.0)  # open, started before
+    store.append_event("stirring", 50.0, ended_ts=120.0)  # ends inside window
+    assert row is not None
+
+    timeline = store.timeline_since(100.0)
+    assert [e["kind"] for e in timeline] == ["caregiver_present", "stirring"]
+    store.close()
+
+
+def test_store_prune_keeps_open_events(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    store.append_event("stirring", 10.0, ended_ts=20.0)
+    open_row = store.append_event("caregiver_present", 15.0)
+    removed = store.prune(100.0)
+    assert removed == 1
+    timeline = store.timeline_since(0.0)
+    assert [e["kind"] for e in timeline] == ["caregiver_present"]
+    assert open_row is not None
+    store.close()
+
+
+def test_store_close_stale_events_recovers_from_crash(tmp_path: Path) -> None:
+    path = str(tmp_path / "s.db")
+    store = SensorStore(path)
+    store.append_event("stirring", 100.0)  # never closed: simulated crash
+    store.append_event("manual_note", 110.0, ended_ts=110.0, detail="note")
+    store.close()
+
+    reopened = SensorStore(path)
+    assert reopened.close_stale_events() == 1
+    timeline = reopened.timeline_since(0.0)
+    assert all(e["ended_ts"] is not None for e in timeline)
+    stirring = [e for e in timeline if e["kind"] == "stirring"][0]
+    assert stirring["ended_ts"] == 100.0  # closed at its start: all we know
+    reopened.close()
+
+
+def test_store_close_event_never_ends_before_start(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    row = store.append_event("stirring", 100.0)
+    store.close_event(row, 40.0)
+    assert store.timeline_since(0.0)[0]["ended_ts"] == 100.0
+    store.close()
+
+
+def test_store_close_event_ignores_double_close(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    row = store.append_event("stirring", 100.0)
+    store.close_event(row, 130.0)
+    store.close_event(row, 500.0)  # a late/racing second close is a no-op
+    assert store.timeline_since(0.0)[0]["ended_ts"] == 130.0
+    store.close()
+
+
+def test_store_timeline_terminal_open_cry_is_not_billed_to_now(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    store.append_cry_episode(100.0)  # monitor exited mid-cry: start only
+    row = store.timeline_since(0.0)[0]
+    assert row["kind"] == "crying"
+    assert row["ended_ts"] == 100.0  # all we know is that it began
+    store.close()

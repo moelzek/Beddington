@@ -332,6 +332,7 @@ def _scene_phrase(snapshot: dict[str, object]) -> str:
 _NIGHT_WORDS = (
     "the night", "overnight", "last night", "night summary", "summary",
     "recap", "digest", "how was the night", "how did the night",
+    "what happened",
 )
 _HISTORY_WINDOW_SECONDS = 12 * 3600
 

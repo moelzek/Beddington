@@ -1008,6 +1008,7 @@ def _make_handler(
     rotate: int = 0,
     alert_state: _AlertState | None = None,
     snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
+    events_provider: Callable[[], dict[str, object]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
@@ -1070,11 +1071,17 @@ def _make_handler(
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
-            elif path in ("/readings.json", "/history.json", "/digest.json"):
+            elif path in (
+                "/readings.json",
+                "/history.json",
+                "/digest.json",
+                "/events.json",
+            ):
                 provider = {
                     "/readings.json": readings_provider,
                     "/history.json": history_provider,
                     "/digest.json": digest_provider,
+                    "/events.json": events_provider,
                 }[path]
                 payload = provider() if provider else {}
                 self._send_json(payload)
@@ -1340,14 +1347,18 @@ def serve_live_view(
     mode_setter: Callable[[str | None], str] | None = None,
     rotate: int = 0,
     snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
+    events_provider: Callable[[], dict[str, object]] | None = None,
+    broker_sink: Callable[[object], None] | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
     Pass a single ``source`` (``frames()`` + ``close()``), or ``sources`` — a
     {mode: source} map plus a ``mode_getter`` — to follow the day-eye / night-eye
-    switch. ``*_provider`` callables back ``/readings.json``, ``/history.json`` and
-    ``/digest.json``; ``soothe`` (presets()/playing()/play()/stop()) backs the
-    Soothe section.
+    switch. ``*_provider`` callables back ``/readings.json``, ``/history.json``,
+    ``/digest.json`` and ``/events.json``; ``soothe``
+    (presets()/playing()/play()/stop()) backs the Soothe section.
+    ``broker_sink`` receives the frame broker before serving starts, so the
+    caller can late-bind ``broker.frame_age`` (the broker only exists here).
     """
     if sources:
         brokers: dict[str, FrameBroker] = {}
@@ -1373,10 +1384,12 @@ def serve_live_view(
     else:
         raise ValueError("serve_live_view needs a source or sources")
 
+    if broker_sink is not None:
+        broker_sink(broker)
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider,
         soothe, mode_setter, rotate, alert_state=_AlertState(),
-        snapshot_provider=snapshot_provider,
+        snapshot_provider=snapshot_provider, events_provider=events_provider,
     )
     httpd = _DaemonThreadingHTTPServer((host, port), handler)
     try:

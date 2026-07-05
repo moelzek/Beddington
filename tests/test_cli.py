@@ -1369,3 +1369,86 @@ def test_recover_from_utterance_error_reports_not_playing_when_resume_fails() ->
         resume=failing_resume,
     )
     assert playing is False
+
+
+def test_note_command_stores_manual_note(tmp_path, capsys) -> None:
+    db = tmp_path / "s.db"
+    assert main(["note", "gave a feed at 2am", "--history-db", str(db)]) == 0
+    assert "Noted: gave a feed at 2am" in capsys.readouterr().out
+    store = SensorStore(str(db))
+    timeline = store.timeline_since(0.0)
+    store.close()
+    assert len(timeline) == 1
+    assert timeline[0]["kind"] == "manual_note"
+    assert timeline[0]["detail"] == "gave a feed at 2am"
+    assert timeline[0]["ended_ts"] == timeline[0]["started_ts"]
+
+
+def test_note_command_rejects_empty_text(tmp_path) -> None:
+    with pytest.raises(SystemExit):
+        main(["note", "   ", "--history-db", str(tmp_path / "s.db")])
+
+
+def test_sampler_apply_episode_changes_persists(tmp_path) -> None:
+    from beddington.episodes import EpisodeChange
+
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+    sampler._apply_episode_changes(
+        [EpisodeChange("start", "stirring", 100.0)]
+    )
+    assert [e["ended_ts"] for e in store.timeline_since(0.0)] == [None]
+    sampler._apply_episode_changes(
+        [EpisodeChange("end", "stirring", 130.0)]
+    )
+    timeline = store.timeline_since(0.0)
+    assert [(e["kind"], e["started_ts"], e["ended_ts"]) for e in timeline] == [
+        ("stirring", 100.0, 130.0)
+    ]
+    store.close()
+
+
+def test_sampler_stop_flushes_open_episodes(tmp_path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+    # Open an episode through the real tracker path (never started the thread).
+    sampler._record_episodes(100.0, {"motion_detected": True})
+    sampler.stop()
+    reopened = SensorStore(str(tmp_path / "s.db"))
+    timeline = reopened.timeline_since(0.0)
+    reopened.close()
+    assert [e["kind"] for e in timeline] == ["stirring"]
+    assert timeline[0]["ended_ts"] is not None
+
+
+def test_dashboard_soothe_on_play_called_after_success(monkeypatch) -> None:
+    from types import SimpleNamespace as NS
+
+    played: list[tuple[str, str]] = []
+    step = SootheStepConfig(name="rain")
+    soothe = _DashboardSoothe({"rain": step}, "rain", on_play=lambda n, c: played.append((n, c)))
+    monkeypatch.setattr(
+        soothe, "_player", NS(play=lambda s: {"played": True}, stop_all=lambda: None)
+    )
+    result = soothe.play("rain", context="settling")
+    assert result["ok"] is True
+    assert played == [("rain", "settling")]
+    # A failed play must not record an event.
+    monkeypatch.setattr(
+        soothe, "_player", NS(play=lambda s: {"played": False, "reason": "busy"}, stop_all=lambda: None)
+    )
+    soothe.play("rain")
+    assert len(played) == 1
+
+
+def test_sampler_record_episodes_survives_poisoned_frame_age(tmp_path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+
+    def bad_frame_age() -> float:
+        raise RuntimeError("broker gone")
+
+    sampler.set_frame_age(bad_frame_age)
+    # Must not raise: the sensor thread lives behind this call.
+    sampler._record_episodes(100.0, {"motion_detected": True})
+    store.close()

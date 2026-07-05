@@ -120,10 +120,113 @@ def _trend_lines(aggregates: Mapping[str, object] | None) -> list[str]:
     return lines
 
 
+def _duration_minutes(row: Mapping[str, object], now_ts: float) -> float:
+    started = row.get("started_ts")
+    if not isinstance(started, (int, float)):
+        return 0.0
+    ended = row.get("ended_ts")
+    end_value = float(ended) if isinstance(ended, (int, float)) else now_ts
+    return max(0.0, (end_value - float(started)) / 60)
+
+
+def _minutes_phrase(minutes: float) -> str:
+    if minutes >= 90:
+        return f"about {minutes / 60:.1f} hours"
+    if minutes >= 1:
+        return f"about {minutes:.0f} minute{'s' if round(minutes) != 1 else ''}"
+    return "under a minute"
+
+
+def summarise_events(
+    timeline: list[Mapping[str, object]] | None,
+    time_label: Callable[[float], str] | None = None,
+    now_ts: float | None = None,
+) -> list[str]:
+    """Plain-English lines from the derived event timeline (SensorStore
+    ``timeline_since``). Stirring is deliberately left out — the movement read
+    already comes from the motion series in ``summarise_night`` — and every
+    line stays observational (the banned-word set applies here too)."""
+    if not timeline:
+        return []
+    if time_label is None:
+        time_label = lambda ts: time.strftime("%H:%M", time.localtime(ts))  # noqa: E731
+    now = time.time() if now_ts is None else float(now_ts)
+
+    by_kind: dict[str, list[Mapping[str, object]]] = {}
+    for row in timeline:
+        kind = str(row.get("kind") or "")
+        if kind:
+            by_kind.setdefault(kind, []).append(row)
+
+    lines: list[str] = []
+
+    cries = by_kind.get("crying", [])
+    if cries:
+        count = len(cries)
+        longest = max(_duration_minutes(row, now) for row in cries)
+        plural = "s" if count != 1 else ""
+        extra = f", the longest {_minutes_phrase(longest)}" if longest >= 1 else ""
+        lines.append(f"• {count} crying spell{plural}{extra}.")
+
+    visits = by_kind.get("caregiver_present", [])
+    if visits:
+        count = len(visits)
+        if count == 1:
+            lines.append("• Someone came into the room once.")
+        else:
+            lines.append(f"• Someone came into the room {count} times.")
+
+    plays = by_kind.get("sound_played", [])
+    if plays:
+        labels: dict[str, int] = {}
+        for row in plays:
+            label = _sound_label(str(row.get("detail") or "").split(" · ")[0])
+            if label:
+                labels[label] = labels.get(label, 0) + 1
+        if labels:
+            parts = ", ".join(
+                f"{label} ×{n}" if n > 1 else label
+                for label, n in sorted(labels.items(), key=lambda kv: (-kv[1], kv[0]))
+            )
+            total = sum(labels.values())
+            plural = "s" if total != 1 else ""
+            lines.append(f"• {total} soothing sound{plural} played ({parts}).")
+
+    for kind, phrase in (("room_warm", "warm"), ("room_cold", "cold")):
+        rows = by_kind.get(kind, [])
+        if rows:
+            minutes = sum(_duration_minutes(row, now) for row in rows)
+            lines.append(f"• The room ran {phrase} for {_minutes_phrase(minutes)}.")
+
+    unseen = by_kind.get("baby_not_visible", [])
+    if unseen:
+        minutes = sum(_duration_minutes(row, now) for row in unseen)
+        lines.append(
+            f"• The camera could not see the cot for {_minutes_phrase(minutes)}."
+        )
+
+    gaps = by_kind.get("sensor_unavailable", [])
+    if gaps:
+        keys = sorted({str(row.get("detail") or "a sensor") for row in gaps})
+        lines.append(
+            "• Some sensor readings dropped out for a while "
+            f"({', '.join(keys)})."
+        )
+
+    for row in by_kind.get("manual_note", []):
+        started = row.get("started_ts")
+        note = str(row.get("detail") or "").strip()
+        if note and isinstance(started, (int, float)):
+            lines.append(f"• Note at {time_label(float(started))}: {note}")
+
+    return lines
+
+
 def summarise_night(
     series: dict[str, object],
     time_label: Callable[[float], str] | None = None,
     aggregates: Mapping[str, object] | None = None,
+    timeline: list[Mapping[str, object]] | None = None,
 ) -> str:
     """Plain-English recap of the room from a per-sensor time series."""
     if time_label is None:
@@ -131,7 +234,19 @@ def summarise_night(
 
     trend_lines = _trend_lines(aggregates)
     all_ts = [p[0] for key in series for p in _points(series, key)]
+    # Bill still-open episodes only up to the last recorded reading: after an
+    # unclean death, orphan open rows must not count the dead hours as
+    # "room warm" / "not visible" time.
+    event_lines = summarise_events(
+        timeline,
+        time_label=time_label,
+        now_ts=max(all_ts) if all_ts else None,
+    )
     if not all_ts:
+        if event_lines:
+            return "\n".join(
+                ["Here's what I noticed:"] + event_lines + trend_lines
+            )
         if trend_lines:
             return "\n".join(["Here's the recent pattern:"] + trend_lines)
         return "I don't have enough history yet for a night summary."
@@ -193,6 +308,7 @@ def summarise_night(
             phrase = f"fairly restless — {stirs} spells of movement"
         lines.append(f"• Movement: {phrase} (best guess).")
 
+    lines.extend(event_lines)
     lines.extend(trend_lines)
 
     if _values(series, "radar_respiratory_rate") or _values(series, "radar_heart_rate_bpm"):

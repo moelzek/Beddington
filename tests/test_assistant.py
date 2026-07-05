@@ -359,6 +359,8 @@ def test_is_night_question() -> None:
     assert is_night_question("how was the night")
     assert is_night_question("Paddington, give me the night summary")
     assert is_night_question("what happened overnight")
+    assert is_night_question("what happened last night")
+    assert is_night_question("Paddington, what happened while I was away")
     assert is_night_question("recap please")
     # current-reading questions are not night questions
     assert not is_night_question("what is the temperature")

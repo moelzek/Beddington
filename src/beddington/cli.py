@@ -318,6 +318,13 @@ def build_parser() -> argparse.ArgumentParser:
     night.add_argument(
         "--speak", action="store_true", help="Speak the digest aloud (Piper)"
     )
+    note = subparsers.add_parser(
+        "note",
+        help="Save a short parent note into the event history "
+        "(text only, shows up in the night recap)",
+    )
+    note.add_argument("text", help="The note to remember")
+    note.add_argument("--history-db", default=_DEFAULT_HISTORY_DB)
     return parser
 
 
@@ -379,6 +386,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _live_view_command(args, config)
     if args.command == "night-digest":
         return _night_digest_command(args, config)
+    if args.command == "note":
+        return _note_command(args)
 
     detector = _build_alarm_detector(args.model)
     if args.soothe:
@@ -579,9 +588,13 @@ def _summarise_store_night(store: object, window_seconds: float) -> str:
     from .night_digest import summarise_night
 
     now = time.time()
+    timeline_since = getattr(store, "timeline_since", None)
     return summarise_night(
         store.series(now - window_seconds),
         aggregates=store.night_aggregates(_NIGHT_DIGEST_TREND_NIGHTS, now_ts=now),
+        timeline=(
+            timeline_since(now - window_seconds) if callable(timeline_since) else None
+        ),
     )
 
 
@@ -1544,6 +1557,46 @@ class _SensorSampler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._closed_store = False
+        self._frame_age: object | None = None  # callable () -> float | None
+        self._episode_tracker = None
+        self._open_event_rows: dict[tuple[str, str], int] = {}
+        if store is not None:
+            from .episodes import EpisodeTracker
+
+            self._episode_tracker = EpisodeTracker()
+
+    def set_frame_age(self, frame_age: object | None) -> None:
+        """Late-bind the camera frame-age callable (the frame broker only
+        exists once ``serve_live_view`` runs)."""
+        self._frame_age = frame_age if callable(frame_age) else None
+
+    def _record_episodes(self, now: float, snapshot: dict[str, object]) -> None:
+        """Feed the episode tracker every tick — including empty snapshots, so
+        a total sensor outage still opens sensor_unavailable episodes."""
+        if self._episode_tracker is None or self._store is None:
+            return
+        try:
+            age = self._frame_age() if self._frame_age is not None else None
+            if not isinstance(age, (int, float)) or isinstance(age, bool):
+                age = None
+            changes = self._episode_tracker.update(now, snapshot, age)
+            self._apply_episode_changes(changes)
+        except Exception:
+            pass
+
+    def _apply_episode_changes(self, changes: list) -> None:
+        for change in changes:
+            key = (change.kind, change.detail)
+            if change.action == "start":
+                row = self._store.append_event(
+                    change.kind, change.ts, detail=change.detail
+                )
+                if row is not None:
+                    self._open_event_rows[key] = row
+            else:
+                row = self._open_event_rows.pop(key, None)
+                if row is not None:
+                    self._store.close_event(row, change.ts)
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -1562,8 +1615,9 @@ class _SensorSampler:
                 snapshot = _read_sensor_snapshot(self._readers, warm_seconds=0.0)
             except Exception:
                 snapshot = {}
+            now = time.time()
+            self._record_episodes(now, snapshot)
             if snapshot:
-                now = time.time()
                 lux = snapshot.get("room_illuminance_lx")
                 with self._lock:
                     self._latest = snapshot
@@ -1606,8 +1660,24 @@ class _SensorSampler:
 
     def stop(self) -> None:
         self._stop.set()
+        joined = True
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=self._interval + 0.5)
+            # A slow sensor read can outlive the join timeout; flushing while
+            # the tick thread still runs would race the tracker, so leave the
+            # open rows for the next startup's close_stale_events instead.
+            joined = not self._thread.is_alive()
+        if (
+            joined
+            and self._episode_tracker is not None
+            and self._store is not None
+            and not self._closed_store
+        ):
+            # Close any open episodes so shutdown never leaves NULL ended_ts rows.
+            try:
+                self._apply_episode_changes(self._episode_tracker.flush(time.time()))
+            except Exception:
+                pass
         if self._store is not None and not self._closed_store:
             close = getattr(self._store, "close", None)
             if callable(close):
@@ -1715,7 +1785,10 @@ class _DashboardSoothe:
     dashboard's soothe controls. One sound at a time; stop ends it."""
 
     def __init__(
-        self, presets: dict[str, SootheStepConfig], default: str | None = None
+        self,
+        presets: dict[str, SootheStepConfig],
+        default: str | None = None,
+        on_play: Callable[[str, str], None] | None = None,
     ) -> None:
         from .soothe import SubprocessSoothePlayer
 
@@ -1725,6 +1798,7 @@ class _DashboardSoothe:
         self._default = default if default in presets else next(iter(presets), None)
         self._playing: str | None = None
         self._context = ""
+        self._on_play = on_play
         self._lock = threading.Lock()
 
     def presets(self) -> list[dict[str, str]]:
@@ -1775,12 +1849,20 @@ class _DashboardSoothe:
             result = self._player.play(loop_step)
             self._playing = name if result.get("played") else None
             self._context = _normalise_soothe_context(context) if self._playing else ""
-            return {
+            response = {
                 "ok": bool(result.get("played")),
                 "playing": self._playing,
                 "context": self._context,
                 "reason": result.get("reason"),
             }
+        # Record the play outside the lock: play() spawns a subprocess under
+        # it, so the event write must not add DB latency inside.
+        if response["ok"] and self._on_play is not None:
+            try:
+                self._on_play(name, str(response["context"] or ""))
+            except Exception:
+                pass
+        return response
 
     def stop(self) -> dict[str, object]:
         with self._lock:
@@ -2631,6 +2713,25 @@ def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:
     return 0
 
 
+def _note_command(args: argparse.Namespace) -> int:
+    """Store a short parent note as a derived event (text only, no audio)."""
+    import os
+
+    from .sensor_store import SensorStore
+
+    text = " ".join(str(args.text).split())
+    if not text:
+        raise SystemExit("The note text is empty.")
+    store = SensorStore(os.path.expanduser(args.history_db))
+    try:
+        now = time.time()
+        store.append_event("manual_note", now, ended_ts=now, detail=text)
+    finally:
+        store.close()
+    print(f"Noted: {text}")
+    return 0
+
+
 def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
     from .live_snapshot import LiveSnapshotEngine
@@ -2642,9 +2743,11 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
 
     # Sensors + providers first, so the night-eye switch can read the day/night mode.
     sampler: _SensorSampler | None = None
+    store = None
     readings_provider = None
     history_provider = None
     digest_provider = None
+    events_provider = None
     if not args.no_sensors:
         import os
 
@@ -2652,12 +2755,14 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
 
         readers = build_sensor_readers(config.sensors)
         if readers:
-            store = None
             if not args.no_history:
                 try:
                     from .sensor_store import SensorStore
 
                     store = SensorStore(os.path.expanduser(args.history_db))
+                    # A crash can leave episodes open forever; nothing can
+                    # genuinely be open at startup, so close the orphans now.
+                    store.close_stale_events()
                 except Exception:
                     store = None
             sampler = _SensorSampler(readers, args.sensor_interval, store=store)
@@ -2675,12 +2780,28 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
                 digest_provider = (  # noqa: E731
                     lambda: {"text": _summarise_store_night(store, window)}
                 )
+                events_provider = lambda: {  # noqa: E731
+                    "window_hours": max(0.1, args.history_hours),
+                    "events": store.timeline_since(time.time() - window),
+                }
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
+    def _record_sound_played(name: str, context: str) -> None:
+        if store is None:
+            return
+        detail = f"{name} · {context}" if context else name
+        try:
+            now = time.time()
+            store.append_event("sound_played", now, ended_ts=now, detail=detail)
+        except Exception:
+            pass
+
     _soothe_presets = _build_soothe_presets(config)
     soothe = (
-        _DashboardSoothe(_soothe_presets, config.soothe.preset)
+        _DashboardSoothe(
+            _soothe_presets, config.soothe.preset, on_play=_record_sound_played
+        )
         if _soothe_presets
         else None
     )
@@ -2762,6 +2883,12 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             mode_setter=(sampler.set_override if sampler is not None else None),
             rotate=args.rotate,
             snapshot_provider=snapshot_provider,
+            events_provider=events_provider,
+            broker_sink=(
+                (lambda broker: sampler.set_frame_age(getattr(broker, "frame_age", None)))
+                if sampler is not None
+                else None
+            ),
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")

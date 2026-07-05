@@ -1000,3 +1000,44 @@ def test_iter_jpeg_frames_resyncs_on_cap_crossed_chunk_with_recovered_frame() ->
         b"\x00" * 4096 + JPEG_A,     # this chunk crosses the cap AND holds a real frame
     ]
     assert list(iter_jpeg_frames(chunks)) == [JPEG_A]
+
+
+def test_serve_live_view_serves_events_json_and_broker_sink() -> None:
+    source = _FakeFrameSource([JPEG_A])
+    token = "tk"
+    port = _free_port()
+    timeline = [
+        {"kind": "crying", "started_ts": 1.0, "ended_ts": 61.0, "detail": ""}
+    ]
+    sunk: list[object] = []
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "source": source,
+            "events_provider": lambda: {"window_hours": 12, "events": timeline},
+            "broker_sink": sunk.append,
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        body = urllib.request.urlopen(
+            f"{base}/events.json?token={token}", timeout=2
+        ).read()
+        payload = json.loads(body)
+        assert payload["events"] == timeline
+        # The broker was handed to the sink before serving started, and it
+        # exposes frame_age for the episode tracker.
+        assert len(sunk) == 1 and hasattr(sunk[0], "frame_age")
+        try:
+            urllib.request.urlopen(f"{base}/events.json?token=wrong", timeout=2)
+            raise AssertionError("expected 401")
+        except urllib.error.HTTPError as denied:
+            assert denied.code == 401
+    finally:
+        source.close()

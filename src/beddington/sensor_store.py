@@ -2,8 +2,9 @@
 
 A tiny SQLite store (stdlib only) so the dashboard graphs show real trends over
 hours/nights and survive restarts, and so a night digest can summarise the room
-later. It holds only *derived numbers* (temperature, humidity, presence as 0/1,
-…) — never raw audio or video — and prunes old rows so storage stays small.
+later. It holds only *derived data* (temperature, humidity, presence as 0/1,
+short event labels like "stirring" or "sound_played", …) — never raw audio or
+video — and prunes old rows so storage stays small.
 
 One row per (timestamp, sensor key, value). Booleans are stored as 0/1 and gas
 resistance in raw ohms; the display ``scale`` (ohms→kΩ) is applied on read, matching
@@ -66,6 +67,17 @@ class SensorStore:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cry_episodes_ts ON cry_episodes(started_ts)"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS events"
+            " (started_ts REAL NOT NULL, ended_ts REAL, kind TEXT NOT NULL,"
+            " detail TEXT NOT NULL DEFAULT '')"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(started_ts)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_kind_ts ON events(kind, started_ts)"
+        )
         self._conn.commit()
 
     def _ensure_soothe_outcome_context(self) -> None:
@@ -127,12 +139,13 @@ class SensorStore:
 
     def prune(self, older_than_ts: float) -> int:
         """Delete rows older than ``older_than_ts`` from ALL history tables
-        (readings, soothe_outcomes and cry_episodes) in one transaction, so the
-        on-device store stays small. Returns the total rows removed across the
-        three tables.
+        (readings, soothe_outcomes, cry_episodes and events) in one transaction,
+        so the on-device store stays small. Returns the total rows removed.
 
-        cry_episodes are keyed by ``started_ts`` (there is no ``ts`` column), so an
-        episode is only pruned once its start time is older than the boundary.
+        cry_episodes and events are keyed by ``started_ts`` (there is no ``ts``
+        column), so a row is only pruned once its start time is older than the
+        boundary — and an event that is still open (``ended_ts`` NULL) is never
+        pruned, so an in-flight episode cannot vanish mid-night.
         """
         boundary = float(older_than_ts)
         with self._lock:
@@ -145,6 +158,10 @@ class SensorStore:
             ).rowcount
             removed += self._conn.execute(
                 "DELETE FROM cry_episodes WHERE started_ts < ?", (boundary,)
+            ).rowcount
+            removed += self._conn.execute(
+                "DELETE FROM events WHERE started_ts < ? AND ended_ts IS NOT NULL",
+                (boundary,),
             ).rowcount
             self._conn.commit()
             return removed
@@ -274,6 +291,108 @@ class SensorStore:
                 for sound_name, successes, attempts in soothe_rows
             ],
         }
+
+    def append_event(
+        self,
+        kind: str,
+        started_ts: float,
+        ended_ts: float | None = None,
+        detail: str = "",
+    ) -> int | None:
+        """Record a derived event. Point events pass ``ended_ts=started_ts``;
+        episodes leave it ``None`` and are completed later via ``close_event``.
+        Returns the row id (or None if the start time is not finite)."""
+        started = float(started_ts)
+        if not math.isfinite(started):
+            return None
+        ended: float | None = None
+        if ended_ts is not None:
+            ended_value = float(ended_ts)
+            if math.isfinite(ended_value):
+                ended = max(started, ended_value)
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT INTO events (started_ts, ended_ts, kind, detail) "
+                "VALUES (?, ?, ?, ?)",
+                (started, ended, str(kind), str(detail or "")),
+            )
+            self._conn.commit()
+            return cursor.lastrowid
+
+    def close_event(self, event_id: int, ended_ts: float) -> None:
+        ended = float(ended_ts)
+        if not math.isfinite(ended):
+            return
+        with self._lock:
+            self._conn.execute(
+                "UPDATE events SET ended_ts = MAX(started_ts, ?) "
+                "WHERE rowid = ? AND ended_ts IS NULL",
+                (ended, int(event_id)),
+            )
+            self._conn.commit()
+
+    def close_stale_events(self) -> int:
+        """Close events left open by a crash (``ended_ts`` stays NULL when the
+        process dies before ``close_event``). Called once at live-view startup —
+        nothing can genuinely be open then — so orphans do not pollute every
+        future timeline. The end is set to the start: we only know it began."""
+        with self._lock:
+            closed = self._conn.execute(
+                "UPDATE events SET ended_ts = started_ts WHERE ended_ts IS NULL"
+            ).rowcount
+            self._conn.commit()
+            return closed
+
+    def timeline_since(self, since_ts: float) -> list[dict[str, object]]:
+        """Chronological parent-friendly timeline: derived events merged with
+        cry episodes (as kind="crying"). Includes rows that started since the
+        boundary, are still open, or ended after it."""
+        boundary = float(since_ts)
+        timeline: list[dict[str, object]] = []
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT started_ts, ended_ts, kind, detail FROM events "
+                "WHERE started_ts >= ? OR ended_ts IS NULL OR ended_ts >= ? "
+                "ORDER BY started_ts",
+                (boundary, boundary),
+            )
+            for started, ended, kind, detail in cursor.fetchall():
+                timeline.append(
+                    {
+                        "kind": str(kind),
+                        "started_ts": float(started),
+                        "ended_ts": float(ended) if ended is not None else None,
+                        "detail": str(detail or ""),
+                    }
+                )
+            cursor = self._conn.execute(
+                "SELECT started_ts, ended_ts, duration_seconds FROM cry_episodes "
+                "WHERE started_ts >= ? OR (ended_ts IS NOT NULL AND ended_ts >= ?) "
+                "ORDER BY started_ts",
+                (boundary, boundary),
+            )
+            for started, ended, duration in cursor.fetchall():
+                started_value = float(started)
+                if ended is not None:
+                    ended_value = float(ended)
+                elif duration is not None:
+                    ended_value = started_value + max(0.0, float(duration))
+                else:
+                    # A start-only cry row is a terminal artifact (the monitor
+                    # exited mid-cry); nothing ever closes cry rows, so billing
+                    # it to "now" would report an hours-long cry. All we know
+                    # is that it began.
+                    ended_value = started_value
+                timeline.append(
+                    {
+                        "kind": "crying",
+                        "started_ts": started_value,
+                        "ended_ts": ended_value,
+                        "detail": "",
+                    }
+                )
+        timeline.sort(key=lambda row: row["started_ts"])
+        return timeline
 
     def close(self) -> None:
         with self._lock:
