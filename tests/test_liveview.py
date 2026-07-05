@@ -761,6 +761,69 @@ def test_alert_state_expires_after_ttl(monkeypatch) -> None:
     assert a.snapshot()["active"] is False
 
 
+def test_snapshot_json_requires_token() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        snapshot_provider=lambda _ctx: {"schema_version": 1},
+    )
+    request = io.BytesIO(b"GET /snapshot.json HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    assert b" 401 " in sock.output.getvalue()
+
+
+def test_snapshot_json_serves_provider_with_alerts_and_frame_age() -> None:
+    from beddington.liveview import _AlertState
+
+    broker = FrameBroker()
+    broker.publish(JPEG_A)
+    alerts = _AlertState()
+    alerts.raise_alert("Cry detected", "cry score 0.9", 0.9)
+    seen: dict[str, object] = {}
+
+    def provider(ctx: dict[str, object]) -> dict[str, object]:
+        seen.update(ctx)
+        return {
+            "schema_version": 1,
+            "alert_active": ctx["alerts"]["active"],
+            "has_frame_age": isinstance(ctx["camera_frame_age_s"], float),
+        }
+
+    handler = _make_handler(
+        broker,
+        "tk",
+        "Cot cam",
+        alert_state=alerts,
+        snapshot_provider=provider,
+    )
+    request = io.BytesIO(b"GET /snapshot.json?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    raw = sock.output.getvalue()
+    body = raw.split(b"\r\n\r\n", 1)[1]
+    payload = json.loads(body)
+    assert b" 200 " in raw
+    assert payload == {"schema_version": 1, "alert_active": True, "has_frame_age": True}
+    assert seen["alerts"]["active"] is True
+    assert isinstance(seen["camera_frame_age_s"], float)
+
+
+def test_snapshot_json_404_without_provider() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+    request = io.BytesIO(b"GET /snapshot.json?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    assert b" 404 " in sock.output.getvalue()
+
+
 def test_dashboard_wires_alert_banner_and_poll_path() -> None:
     from beddington.liveview import build_viewer_html
 
