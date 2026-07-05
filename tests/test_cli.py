@@ -732,6 +732,60 @@ def test_soothe_via_dashboard_next_uses_best_preset_excluding_current(
     )
 
 
+def test_soothe_via_dashboard_next_uses_ducked_current_when_live_state_blank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object] | None, str]] = []
+    outcome_contexts: list[str | None] = []
+
+    def fake_live_view_json(
+        path: str,
+        token: str,
+        port: int,
+        params: dict[str, object] | None = None,
+        method: str = "GET",
+    ) -> dict[str, object]:
+        del token, port
+        calls.append((path, params, method))
+        if path == "/soothe.json":
+            return {
+                "presets": [
+                    {"key": "rain", "label": "rain"},
+                    {"key": "ocean_waves", "label": "ocean waves"},
+                    {"key": "white_noise", "label": "white noise"},
+                ],
+                "playing": "",
+                "context": "",
+                "default": "rain",
+            }
+        return {"ok": True, "playing": params["preset"] if params else None}
+
+    monkeypatch.setattr("beddington.cli._read_live_view_token", lambda: "token")
+    monkeypatch.setattr("beddington.cli._live_view_json", fake_live_view_json)
+    monkeypatch.setattr(
+        "beddington.cli._load_soothe_outcomes",
+        lambda _db, context=None: outcome_contexts.append(context) or [],
+    )
+    config = AppConfig(
+        soothe=SootheConfig(
+            preset="rain",
+            learn=SootheLearnConfig(enabled=True, min_samples=1),
+        )
+    )
+
+    assert _soothe_via_dashboard(
+        {"action": "next"},
+        config=config,
+        ducked={"preset": "rain", "context": "sleep"},
+    ) == "Playing ocean waves for sleep."
+    assert calls[-1] == (
+        "/soothe",
+        {"action": "play", "preset": "ocean_waves", "context": "sleep"},
+        "POST",
+    )
+    assert outcome_contexts == ["sleep"]
+
+
 def test_soothe_via_dashboard_play_best_uses_context_specific_music(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -783,6 +837,52 @@ def test_soothe_via_dashboard_play_best_uses_context_specific_music(
     assert calls[-1] == (
         "/soothe",
         {"action": "play", "preset": "piano", "context": "sleep"},
+        "POST",
+    )
+
+
+def test_soothe_via_dashboard_play_best_excludes_ducked_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object] | None, str]] = []
+
+    def fake_live_view_json(
+        path: str,
+        token: str,
+        port: int,
+        params: dict[str, object] | None = None,
+        method: str = "GET",
+    ) -> dict[str, object]:
+        del token, port
+        calls.append((path, params, method))
+        if path == "/soothe.json":
+            return {
+                "presets": [
+                    {
+                        "key": "soothing_music",
+                        "label": "Soothing music",
+                        "category": "music",
+                    },
+                    {"key": "lofi_rain", "label": "Lofi rain", "category": "music"},
+                ],
+                "playing": "",
+                "context": "",
+                "default": "soothing_music",
+            }
+        return {"ok": True, "playing": params["preset"] if params else None}
+
+    monkeypatch.setattr("beddington.cli._read_live_view_token", lambda: "token")
+    monkeypatch.setattr("beddington.cli._live_view_json", fake_live_view_json)
+    config = AppConfig(soothe=SootheConfig(preset="soothing_music"))
+
+    assert _soothe_via_dashboard(
+        {"action": "play_best", "category": "music"},
+        config=config,
+        ducked={"preset": "soothing_music", "context": "sleep"},
+    ) == "Playing lofi rain for sleep."
+    assert calls[-1] == (
+        "/soothe",
+        {"action": "play", "preset": "lofi_rain", "context": "sleep"},
         "POST",
     )
 
@@ -1369,3 +1469,106 @@ def test_recover_from_utterance_error_reports_not_playing_when_resume_fails() ->
         resume=failing_resume,
     )
     assert playing is False
+
+
+def test_note_command_stores_manual_note(tmp_path, capsys) -> None:
+    db = tmp_path / "s.db"
+    assert main(["note", "gave a feed at 2am", "--history-db", str(db)]) == 0
+    assert "Noted: gave a feed at 2am" in capsys.readouterr().out
+    store = SensorStore(str(db))
+    timeline = store.timeline_since(0.0)
+    store.close()
+    assert len(timeline) == 1
+    assert timeline[0]["kind"] == "manual_note"
+    assert timeline[0]["detail"] == "gave a feed at 2am"
+    assert timeline[0]["ended_ts"] == timeline[0]["started_ts"]
+
+
+def test_note_command_rejects_empty_text(tmp_path) -> None:
+    with pytest.raises(SystemExit):
+        main(["note", "   ", "--history-db", str(tmp_path / "s.db")])
+
+
+def test_sampler_apply_episode_changes_persists(tmp_path) -> None:
+    from beddington.episodes import EpisodeChange
+
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+    sampler._apply_episode_changes(
+        [EpisodeChange("start", "stirring", 100.0)]
+    )
+    assert [e["ended_ts"] for e in store.timeline_since(0.0)] == [None]
+    sampler._apply_episode_changes(
+        [EpisodeChange("end", "stirring", 130.0)]
+    )
+    timeline = store.timeline_since(0.0)
+    assert [(e["kind"], e["started_ts"], e["ended_ts"]) for e in timeline] == [
+        ("stirring", 100.0, 130.0)
+    ]
+    store.close()
+
+
+def test_sampler_stop_flushes_open_episodes(tmp_path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+    # Open an episode through the real tracker path (never started the thread).
+    sampler._record_episodes(100.0, {"motion_detected": True})
+    sampler.stop()
+    reopened = SensorStore(str(tmp_path / "s.db"))
+    timeline = reopened.timeline_since(0.0)
+    reopened.close()
+    assert [e["kind"] for e in timeline] == ["stirring"]
+    assert timeline[0]["ended_ts"] is not None
+
+
+def test_dashboard_soothe_on_play_called_after_success(monkeypatch) -> None:
+    from types import SimpleNamespace as NS
+
+    played: list[tuple[str, str]] = []
+    step = SootheStepConfig(name="rain")
+    soothe = _DashboardSoothe({"rain": step}, "rain", on_play=lambda n, c: played.append((n, c)))
+    monkeypatch.setattr(
+        soothe, "_player", NS(play=lambda s: {"played": True}, stop_all=lambda: None)
+    )
+    result = soothe.play("rain", context="settling")
+    assert result["ok"] is True
+    assert played == [("rain", "settling")]
+    # A failed play must not record an event.
+    monkeypatch.setattr(
+        soothe, "_player", NS(play=lambda s: {"played": False, "reason": "busy"}, stop_all=lambda: None)
+    )
+    soothe.play("rain")
+    assert len(played) == 1
+
+
+def test_sampler_record_episodes_survives_poisoned_frame_age(tmp_path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+
+    def bad_frame_age() -> float:
+        raise RuntimeError("broker gone")
+
+    sampler.set_frame_age(bad_frame_age)
+    # Must not raise: the sensor thread lives behind this call.
+    sampler._record_episodes(100.0, {"motion_detected": True})
+    store.close()
+
+
+def test_sampler_record_episodes_injects_cry_alert_probe_without_mutating_snapshot(
+    tmp_path,
+) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    sampler = _SensorSampler([], 1.0, store=store)
+    snapshot = {"motion_detected": False}
+
+    sampler.set_cry_alert_probe(lambda: True)
+    sampler._record_episodes(100.0, snapshot)
+    sampler.set_cry_alert_probe(lambda: False)
+    sampler._record_episodes(130.0, snapshot)
+
+    crying = [event for event in store.timeline_since(0.0) if event["kind"] == "crying"]
+    assert [(event["started_ts"], event["ended_ts"]) for event in crying] == [
+        (100.0, 130.0)
+    ]
+    assert "cry_alert_active" not in snapshot
+    store.close()

@@ -283,6 +283,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live.add_argument("--token", default=None, help="Access token; generated if unset")
     live.add_argument(
+        "--worker-token",
+        default="",
+        help="Optional scoped token for worker reads and annotations only",
+    )
+    live.add_argument(
         "--bind",
         default="0.0.0.0",
         help="Interface to bind. Default binds the LAN; do not port-forward this.",
@@ -318,6 +323,53 @@ def build_parser() -> argparse.ArgumentParser:
     night.add_argument(
         "--speak", action="store_true", help="Speak the digest aloud (Piper)"
     )
+    note = subparsers.add_parser(
+        "note",
+        help="Save a short parent note into the event history "
+        "(text only, shows up in the night recap)",
+    )
+    note.add_argument("text", help="The note to remember")
+    note.add_argument("--history-db", default=_DEFAULT_HISTORY_DB)
+
+    worker = subparsers.add_parser(
+        "worker",
+        help="Run the LAN enrichment worker against a live-view server",
+    )
+    worker.add_argument("--url", help="Live-view base URL, e.g. http://pi:8088")
+    worker.add_argument("--token", help="Live-view or scoped worker token")
+    worker.add_argument("--snapshot-interval", type=float)
+    worker.add_argument("--events-interval", type=float)
+    worker.add_argument("--timeout", type=float)
+    worker.add_argument(
+        "--analyzer",
+        action="append",
+        help="Analyzer name or module:attr import path; repeatable",
+    )
+    worker.add_argument(
+        "--once",
+        action="store_true",
+        help="Run one poll/analyze/annotate iteration and exit",
+    )
+
+    vision = subparsers.add_parser(
+        "vision-bench",
+        help="Collect and score stock COCO person detections on live-view frames",
+    )
+    vision.add_argument(
+        "--mode",
+        choices=("collect", "analyze", "labels-template", "report"),
+        required=True,
+    )
+    vision.add_argument("--url", help="Live-view base URL, e.g. http://pi:8088")
+    vision.add_argument("--token", help="Live-view or scoped worker token")
+    vision.add_argument("--out", type=Path, help="Output directory for collect mode")
+    vision.add_argument("--interval", type=float, default=5.0)
+    vision.add_argument("--duration", type=float)
+    vision.add_argument("--frames", type=Path, help="Directory of collected JPG frames")
+    vision.add_argument("--detections", type=Path, help="JSONL detections path")
+    vision.add_argument("--labels", type=Path, help="CSV labels path")
+    vision.add_argument("--annotate", type=Path, help="Directory for annotated frames")
+    vision.add_argument("--report-out", type=Path, help="Markdown report path")
     return parser
 
 
@@ -379,6 +431,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _live_view_command(args, config)
     if args.command == "night-digest":
         return _night_digest_command(args, config)
+    if args.command == "note":
+        return _note_command(args)
+    if args.command == "worker":
+        return _worker_command(args, config)
+    if args.command == "vision-bench":
+        return _vision_bench_command(args, config)
 
     detector = _build_alarm_detector(args.model)
     if args.soothe:
@@ -579,9 +637,13 @@ def _summarise_store_night(store: object, window_seconds: float) -> str:
     from .night_digest import summarise_night
 
     now = time.time()
+    timeline_since = getattr(store, "timeline_since", None)
     return summarise_night(
         store.series(now - window_seconds),
         aggregates=store.night_aggregates(_NIGHT_DIGEST_TREND_NIGHTS, now_ts=now),
+        timeline=(
+            timeline_since(now - window_seconds) if callable(timeline_since) else None
+        ),
     )
 
 
@@ -1075,6 +1137,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 soothe_cmd,
                                 port=dashboard_port,
                                 config=config,
+                                ducked=resume_after_answer,
                             )
                             _action = str(soothe_cmd.get("action") or "")
                             if _action in {"play", "play_best", "next"}:
@@ -1544,6 +1607,59 @@ class _SensorSampler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._closed_store = False
+        self._frame_age: object | None = None  # callable () -> float | None
+        self._cry_alert_probe: object | None = None  # callable () -> bool | None
+        self._episode_tracker = None
+        self._open_event_rows: dict[tuple[str, str], int] = {}
+        if store is not None:
+            from .episodes import EpisodeTracker
+
+            self._episode_tracker = EpisodeTracker()
+
+    def set_frame_age(self, frame_age: object | None) -> None:
+        """Late-bind the camera frame-age callable (the frame broker only
+        exists once ``serve_live_view`` runs)."""
+        self._frame_age = frame_age if callable(frame_age) else None
+
+    def set_cry_alert_probe(self, probe: object | None) -> None:
+        self._cry_alert_probe = probe if callable(probe) else None
+
+    def _record_episodes(self, now: float, snapshot: dict[str, object]) -> None:
+        """Feed the episode tracker every tick — including empty snapshots, so
+        a total sensor outage still opens sensor_unavailable episodes."""
+        if self._episode_tracker is None or self._store is None:
+            return
+        try:
+            age = self._frame_age() if self._frame_age is not None else None
+            if not isinstance(age, (int, float)) or isinstance(age, bool):
+                age = None
+            tracker_snapshot = snapshot
+            if self._cry_alert_probe is not None:
+                try:
+                    cry_alert_active = self._cry_alert_probe()
+                except Exception:
+                    cry_alert_active = None
+                if isinstance(cry_alert_active, bool):
+                    tracker_snapshot = dict(snapshot)
+                    tracker_snapshot["cry_alert_active"] = cry_alert_active
+            changes = self._episode_tracker.update(now, tracker_snapshot, age)
+            self._apply_episode_changes(changes)
+        except Exception:
+            pass
+
+    def _apply_episode_changes(self, changes: list) -> None:
+        for change in changes:
+            key = (change.kind, change.detail)
+            if change.action == "start":
+                row = self._store.append_event(
+                    change.kind, change.ts, detail=change.detail
+                )
+                if row is not None:
+                    self._open_event_rows[key] = row
+            else:
+                row = self._open_event_rows.pop(key, None)
+                if row is not None:
+                    self._store.close_event(row, change.ts)
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -1562,8 +1678,9 @@ class _SensorSampler:
                 snapshot = _read_sensor_snapshot(self._readers, warm_seconds=0.0)
             except Exception:
                 snapshot = {}
+            now = time.time()
+            self._record_episodes(now, snapshot)
             if snapshot:
-                now = time.time()
                 lux = snapshot.get("room_illuminance_lx")
                 with self._lock:
                     self._latest = snapshot
@@ -1606,8 +1723,24 @@ class _SensorSampler:
 
     def stop(self) -> None:
         self._stop.set()
+        joined = True
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=self._interval + 0.5)
+            # A slow sensor read can outlive the join timeout; flushing while
+            # the tick thread still runs would race the tracker, so leave the
+            # open rows for the next startup's close_stale_events instead.
+            joined = not self._thread.is_alive()
+        if (
+            joined
+            and self._episode_tracker is not None
+            and self._store is not None
+            and not self._closed_store
+        ):
+            # Close any open episodes so shutdown never leaves NULL ended_ts rows.
+            try:
+                self._apply_episode_changes(self._episode_tracker.flush(time.time()))
+            except Exception:
+                pass
         if self._store is not None and not self._closed_store:
             close = getattr(self._store, "close", None)
             if callable(close):
@@ -1715,7 +1848,10 @@ class _DashboardSoothe:
     dashboard's soothe controls. One sound at a time; stop ends it."""
 
     def __init__(
-        self, presets: dict[str, SootheStepConfig], default: str | None = None
+        self,
+        presets: dict[str, SootheStepConfig],
+        default: str | None = None,
+        on_play: Callable[[str, str], None] | None = None,
     ) -> None:
         from .soothe import SubprocessSoothePlayer
 
@@ -1725,6 +1861,7 @@ class _DashboardSoothe:
         self._default = default if default in presets else next(iter(presets), None)
         self._playing: str | None = None
         self._context = ""
+        self._on_play = on_play
         self._lock = threading.Lock()
 
     def presets(self) -> list[dict[str, str]]:
@@ -1775,12 +1912,20 @@ class _DashboardSoothe:
             result = self._player.play(loop_step)
             self._playing = name if result.get("played") else None
             self._context = _normalise_soothe_context(context) if self._playing else ""
-            return {
+            response = {
                 "ok": bool(result.get("played")),
                 "playing": self._playing,
                 "context": self._context,
                 "reason": result.get("reason"),
             }
+        # Record the play outside the lock: play() spawns a subprocess under
+        # it, so the event write must not add DB latency inside.
+        if response["ok"] and self._on_play is not None:
+            try:
+                self._on_play(name, str(response["context"] or ""))
+            except Exception:
+                pass
+        return response
 
     def stop(self) -> dict[str, object]:
         with self._lock:
@@ -2169,10 +2314,14 @@ def _select_best_soothe_preset(
     category: str = "",
     mood: str = "",
     context: str = "",
+    current_preset: str = "",
 ) -> str | None:
     candidates = _candidate_soothe_presets(
         state, config, category=category, mood=mood
     )
+    current = str(current_preset or state.get("playing") or "")
+    if current:
+        candidates = {key: meta for key, meta in candidates.items() if key != current}
     if not candidates:
         return None
     default = _preferred_soothe_default(
@@ -2199,6 +2348,9 @@ def _select_best_soothe_preset(
 def _select_next_soothe_preset(
     state: Mapping[str, object],
     config: AppConfig | None,
+    *,
+    current_preset: str = "",
+    context: str = "",
 ) -> str | None:
     raw_presets = state.get("presets")
     keys: list[str] = []
@@ -2210,7 +2362,7 @@ def _select_next_soothe_preset(
                     keys.append(key)
     if not keys and config is not None:
         keys = sorted(_build_soothe_presets(config))
-    current = str(state.get("playing") or "")
+    current = str(current_preset or state.get("playing") or "")
     candidates = {key: object() for key in keys if key != current}
     if not candidates:
         return None
@@ -2224,7 +2376,7 @@ def _select_next_soothe_preset(
 
     from .soothe_memory import best_preset
 
-    context = _normalise_soothe_context(state.get("context", ""))
+    context = _normalise_soothe_context(context or state.get("context", ""))
     if _soothe_learning_enabled(config):
         outcomes = (
             _load_soothe_outcomes(_DEFAULT_HISTORY_DB, context)
@@ -2341,6 +2493,7 @@ def _soothe_via_dashboard(
     cmd: Mapping[str, object],
     port: int = 8088,
     config: AppConfig | None = None,
+    ducked: Mapping[str, str] | None = None,
 ) -> str:
     """Trigger the live-view soothe player over local HTTP so the voice command
     and the dashboard share ONE player (single source of truth)."""
@@ -2379,11 +2532,20 @@ def _soothe_via_dashboard(
     elif action == "next":
         try:
             state = _live_view_json("/soothe.json", token, port)
-            preset = _select_next_soothe_preset(state, config)
+            current = str(state.get("playing") or "")
+            ducked_preset = str(ducked.get("preset") or "") if ducked else ""
+            state_context = _normalise_soothe_context(state.get("context", ""))
+            if not state_context and ducked:
+                state_context = _normalise_soothe_context(ducked.get("context", ""))
+            preset = _select_next_soothe_preset(
+                state,
+                config,
+                current_preset=current or ducked_preset,
+                context=state_context,
+            )
             if preset is None:
                 return "Sorry, there isn't another soothe sound available."
             params = {"action": "play", "preset": preset}
-            state_context = _normalise_soothe_context(state.get("context", ""))
             if state_context:
                 params["context"] = state_context
             spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(state_context)}."
@@ -2392,19 +2554,26 @@ def _soothe_via_dashboard(
     elif action == "play_best":
         try:
             state = _live_view_json("/soothe.json", token, port)
+            current = str(state.get("playing") or "")
+            ducked_preset = str(ducked.get("preset") or "") if ducked else ""
+            state_context = _normalise_soothe_context(state.get("context", ""))
+            selection_context = context or state_context
+            if not state_context and not selection_context and ducked:
+                selection_context = _normalise_soothe_context(ducked.get("context", ""))
             preset = _select_best_soothe_preset(
                 state,
                 config,
                 category=str(cmd.get("category") or ""),
                 mood=str(cmd.get("mood") or ""),
-                context=context,
+                context=selection_context,
+                current_preset=current or ducked_preset,
             )
             if preset is None:
                 return "Sorry, I don't have a matching soothe sound available."
             params = {"action": "play", "preset": preset}
-            if context:
-                params["context"] = context
-            spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(context)}."
+            if selection_context:
+                params["context"] = selection_context
+            spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(selection_context)}."
         except Exception:
             return "Sorry, I couldn't reach the soothe player."
     elif action == "play":
@@ -2631,19 +2800,176 @@ def _night_digest_command(args: argparse.Namespace, config: AppConfig) -> int:
     return 0
 
 
+def _note_command(args: argparse.Namespace) -> int:
+    """Store a short parent note as a derived event (text only, no audio)."""
+    import os
+
+    from .sensor_store import SensorStore
+
+    text = " ".join(str(args.text).split())
+    if not text:
+        raise SystemExit("The note text is empty.")
+    store = SensorStore(os.path.expanduser(args.history_db))
+    try:
+        now = time.time()
+        store.append_event("manual_note", now, ended_ts=now, detail=text)
+    finally:
+        store.close()
+    print(f"Noted: {text}")
+    return 0
+
+
+def _worker_command(args: argparse.Namespace, config: AppConfig) -> int:
+    import os
+
+    from .worker import PiClient, WorkerLoop, load_analyzer
+
+    url = str(args.url or config.worker.base_url).strip()
+    if not url:
+        raise SystemExit(
+            "worker needs --url or worker.base_url in the config"
+        )
+    token = str(args.token or os.getenv("BEDDINGTON_LIVEVIEW_TOKEN", "")).strip()
+    if not token:
+        raise SystemExit(
+            "worker needs --token or BEDDINGTON_LIVEVIEW_TOKEN"
+        )
+    snapshot_interval = (
+        float(args.snapshot_interval)
+        if args.snapshot_interval is not None
+        else config.worker.snapshot_interval_s
+    )
+    events_interval = (
+        float(args.events_interval)
+        if args.events_interval is not None
+        else config.worker.events_interval_s
+    )
+    timeout = (
+        float(args.timeout)
+        if args.timeout is not None
+        else config.worker.request_timeout_s
+    )
+    analyzer_specs = tuple(args.analyzer or config.worker.analyzers or ("state_change",))
+    try:
+        analyzers = [load_analyzer(spec) for spec in analyzer_specs]
+        loop = WorkerLoop(
+            PiClient(url, token, timeout),
+            analyzers,
+            snapshot_interval,
+            events_interval,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if args.once:
+        posted = loop.run_once()
+        print(f"Posted {posted} annotation(s).")
+        return 0
+    loop.run_forever()
+    return 0
+
+
+def _vision_bench_command(args: argparse.Namespace, config: AppConfig) -> int:
+    mode = str(args.mode)
+    if mode == "collect":
+        import os
+
+        from .vision_bench import collect_frames
+        from .worker import PiClient
+
+        if args.out is None:
+            raise SystemExit("vision-bench collect needs --out")
+        if args.duration is None:
+            raise SystemExit("vision-bench collect needs --duration")
+        url = str(args.url or config.worker.base_url).strip()
+        if not url:
+            raise SystemExit(
+                "vision-bench collect needs --url or worker.base_url in the config"
+            )
+        token = str(args.token or os.getenv("BEDDINGTON_LIVEVIEW_TOKEN", "")).strip()
+        if not token:
+            raise SystemExit(
+                "vision-bench collect needs --token or BEDDINGTON_LIVEVIEW_TOKEN"
+            )
+        summary = collect_frames(
+            PiClient(url, token, config.worker.request_timeout_s),
+            args.out,
+            args.interval,
+            args.duration,
+        )
+        print(
+            f"Saved {summary['frames_saved']} frame(s); "
+            f"missed {summary['misses']} frame request(s)."
+        )
+        return 0
+
+    if mode == "analyze":
+        from .vision_bench import UltralyticsBackend, analyze_dir
+
+        if args.frames is None:
+            raise SystemExit("vision-bench analyze needs --frames")
+        if args.detections is None:
+            raise SystemExit("vision-bench analyze needs --detections")
+        try:
+            summary = analyze_dir(
+                UltralyticsBackend(),
+                args.frames,
+                args.detections,
+                args.annotate,
+            )
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"Analyzed {summary['frames']} frame(s) into {summary['out']}.")
+        return 0
+
+    if mode == "labels-template":
+        from .vision_bench import write_labels_template
+
+        if args.frames is None:
+            raise SystemExit("vision-bench labels-template needs --frames")
+        if args.labels is None:
+            raise SystemExit("vision-bench labels-template needs --labels")
+        summary = write_labels_template(args.frames, args.labels)
+        print(f"Wrote {summary['frames']} label row(s) to {summary['out']}.")
+        return 0
+
+    if mode == "report":
+        from .vision_bench import write_report
+
+        if args.detections is None:
+            raise SystemExit("vision-bench report needs --detections")
+        if args.report_out is None:
+            raise SystemExit("vision-bench report needs --report-out")
+        summary = write_report(args.detections, args.labels, args.report_out)
+        print(f"Wrote report for {summary['frames']} frame(s) to {summary['out']}.")
+        return 0
+
+    raise SystemExit(f"unknown vision-bench mode: {mode}")
+
+
 def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
     from .liveview import RpicamFrameSource, rpicam_vid_command, serve_live_view
+    from .live_snapshot import LiveSnapshotEngine
 
     if args.port <= 0 or args.width <= 0 or args.height <= 0 or args.fps <= 0:
         raise SystemExit("--port, --width, --height and --fps must be positive")
 
     token = _resolve_live_view_token(args.token)
+    worker_token = str(getattr(args, "worker_token", "") or "").strip()
+    if worker_token:
+        if not _LIVE_VIEW_TOKEN_RE.fullmatch(worker_token):
+            raise SystemExit(
+                "--worker-token must be at least 12 URL-safe characters"
+            )
+        if worker_token == token:
+            raise SystemExit("--worker-token must differ from --token")
 
     # Sensors + providers first, so the night-eye switch can read the day/night mode.
     sampler: _SensorSampler | None = None
+    store = None
     readings_provider = None
     history_provider = None
     digest_provider = None
+    events_provider = None
     if not args.no_sensors:
         import os
 
@@ -2651,12 +2977,14 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
 
         readers = build_sensor_readers(config.sensors)
         if readers:
-            store = None
             if not args.no_history:
                 try:
                     from .sensor_store import SensorStore
 
                     store = SensorStore(os.path.expanduser(args.history_db))
+                    # A crash can leave episodes open forever; nothing can
+                    # genuinely be open at startup, so close the orphans now.
+                    store.close_stale_events()
                 except Exception:
                     store = None
             sampler = _SensorSampler(readers, args.sensor_interval, store=store)
@@ -2674,15 +3002,58 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
                 digest_provider = (  # noqa: E731
                     lambda: {"text": _summarise_store_night(store, window)}
                 )
+                events_provider = lambda: {  # noqa: E731
+                    "window_hours": max(0.1, args.history_hours),
+                    "events": store.timeline_since(time.time() - window),
+                }
             else:
                 history_provider = lambda: history_series(sampler.history())  # noqa: E731
 
+    def _record_sound_played(name: str, context: str) -> None:
+        if store is None:
+            return
+        detail = f"{name} · {context}" if context else name
+        try:
+            now = time.time()
+            store.append_event("sound_played", now, ended_ts=now, detail=detail)
+        except Exception:
+            pass
+
+    def _annotation_sink(kind: str, ts: float, detail: str) -> int | None:
+        if store is None:
+            return None
+        # Quick SQLite point insert: it shares SensorStore's lock with timeline
+        # reads but never touches the alert/control path.
+        return store.append_event(kind, ts, ended_ts=ts, detail=detail)
+
     _soothe_presets = _build_soothe_presets(config)
     soothe = (
-        _DashboardSoothe(_soothe_presets, config.soothe.preset)
+        _DashboardSoothe(
+            _soothe_presets, config.soothe.preset, on_play=_record_sound_played
+        )
         if _soothe_presets
         else None
     )
+    snapshot_provider = None
+    if sampler is not None:
+        snapshot_engine = LiveSnapshotEngine(config.liveview.state, process_start_ts=time.time())
+
+        def snapshot_provider(ctx: dict[str, object]) -> dict[str, object]:
+            try:
+                return snapshot_engine.build(
+                    history=sampler.history(),
+                    now=time.time(),
+                    alerts=dict(ctx.get("alerts") or {"active": False}),
+                    mode=sampler.mode(),
+                    mode_auto=sampler.override() is None,
+                    camera_frame_age_s=ctx.get("camera_frame_age_s")
+                    if isinstance(ctx.get("camera_frame_age_s"), (int, float))
+                    else None,
+                    soothe_playing=soothe.playing() if soothe is not None else None,
+                    autosoothe=soothe.autosoothe() if soothe is not None else None,
+                )
+            except Exception:
+                return {"schema_version": 1, "error": "snapshot_unavailable"}
 
     def _make_source(camera: int, night: bool) -> object:
         return RpicamFrameSource(
@@ -2709,6 +3080,21 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         single_source = _make_source(args.camera_num, args.night)
         mode_getter = None
 
+    def _bind_alert_state(alert_state: object) -> None:
+        if sampler is None:
+            return
+        snapshot = getattr(alert_state, "snapshot", None)
+        if not callable(snapshot):
+            return
+
+        def _probe() -> object:
+            alert_snapshot = snapshot()
+            if isinstance(alert_snapshot, dict):
+                return alert_snapshot.get("active")
+            return None
+
+        sampler.set_cry_alert_probe(_probe)
+
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     url = f"http://{shown_ip}:{args.port}/?token={token}"
     overlay = "video + live room readings" if readings_provider else "video only"
@@ -2724,6 +3110,8 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         print(f"  Camera {args.camera_num}{mode}")
     print(f"  {args.width}x{args.height}, ~{args.fps} fps ({overlay})")
     print(f"  Open on your phone (same WiFi):  {url}")
+    if worker_token:
+        print(f"  Worker token (read + annotate only):  {worker_token}")
     print("  The token is required. Keep this on a trusted network; do not")
     print("  port-forward this port. Press Ctrl-C to stop.")
     try:
@@ -2740,6 +3128,16 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
             soothe=soothe,
             mode_setter=(sampler.set_override if sampler is not None else None),
             rotate=args.rotate,
+            snapshot_provider=snapshot_provider,
+            events_provider=events_provider,
+            worker_token=worker_token,
+            annotation_sink=_annotation_sink if store is not None else None,
+            broker_sink=(
+                (lambda broker: sampler.set_frame_age(getattr(broker, "frame_age", None)))
+                if sampler is not None
+                else None
+            ),
+            alert_state_sink=_bind_alert_state if sampler is not None else None,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")

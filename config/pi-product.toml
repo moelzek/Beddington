@@ -18,6 +18,32 @@ notification_cooldown_seconds = 30.0
 [notifications]
 desktop = true
 
+[liveview.state]
+max_reading_age_s = 12.0
+max_camera_frame_age_s = 8.0
+max_radar_age_s = 12.0
+health_bad_checks_to_enter = 2
+health_recovered_checks_to_exit = 3
+state_min_dwell_s = 20.0
+cry_clear_grace_s = 30.0
+presence_false_dwell_s = 10.0
+motion_window_s = 300.0
+motion_active_min_s = 3.0
+wiggling_release_s = 120.0
+still_min_s = 1200.0
+still_exit_motion_s = 3.0
+quiet_window_s = 900.0
+quiet_max_motion_transitions = 2
+room_cold_below_c = 16.0
+room_warm_above_c = 20.0
+room_temp_hysteresis_c = 0.5
+caregiver_min_targets = 2
+caregiver_dwell_s = 5.0
+caregiver_release_s = 30.0
+t2_repeat_cooldown_s = 600.0
+device_restart_notice_s = 120.0
+max_evidence_items = 8
+
 [sounds]
 enabled = true
 threshold = 0.2

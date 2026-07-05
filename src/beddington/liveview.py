@@ -21,9 +21,12 @@ from __future__ import annotations
 import hmac
 import html
 import json
+import math
+import re
 import subprocess
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -46,6 +49,11 @@ _STREAM_WRITE_TIMEOUT = 20.0
 # Header read timeout (seconds) for newly accepted connections, so a client that
 # drips request bytes cannot pin a handler before authentication.
 _HEADER_READ_TIMEOUT = 5.0
+_ANNOTATION_BODY_MAX_BYTES = 8 * 1024
+_ANNOTATION_DETAIL_MAX_CHARS = 2000
+_ANNOTATION_KIND_RE = re.compile(r"^worker_[a-z0-9_]{1,40}$")
+_ANNOTATION_RATE_LIMIT = 30
+_ANNOTATION_RATE_WINDOW_S = 60.0
 
 
 class _DaemonThreadingHTTPServer(ThreadingHTTPServer):
@@ -184,8 +192,8 @@ class _AlertState:
             }
 
 
-# The sensors shown as dashboard tabs/graphs. ``scale`` converts the stored value
-# for display (gas ohms -> kilo-ohms); ``bool`` marks on/off readings (0/1 graph).
+# The sensors shown in the Engineering debug graphs. ``scale`` converts the stored
+# value for display (gas ohms -> kilo-ohms); ``bool`` marks on/off readings.
 DASHBOARD_SENSORS: tuple[dict[str, object], ...] = (
     {"key": "room_temperature_c", "label": "Temp", "unit": "°C"},
     {"key": "room_humidity_pct", "label": "Humidity", "unit": "%"},
@@ -236,106 +244,171 @@ _DASHBOARD_TEMPLATE = """<!doctype html><html><head>
 <title>__TITLE__</title>
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;background:#000;color:#eee;height:100%;
-font:14px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-#tabs{display:flex;overflow-x:auto;background:#111;border-bottom:1px solid #222;
-position:sticky;top:0;-webkit-overflow-scrolling:touch}
-#tabs button{flex:0 0 auto;background:none;border:none;color:#9aa;
-padding:12px 14px;font-size:14px}
-#tabs button.active{color:#fff;border-bottom:2px solid #4ea1ff}
-.panel{display:none}
-.panel.active{display:block}
-#cam.panel.active{display:flex;align-items:center;justify-content:center;position:relative;
-overflow:hidden;height:calc(100vh - 48px);height:calc(100dvh - 48px);background:#000}
-#cam img{max-width:100%;max-height:100%;object-fit:contain;display:block}
-#readings{position:absolute;left:0;right:0;bottom:0;display:flex;gap:14px;flex-wrap:wrap;
-align-items:center;padding:10px 14px;background:rgba(0,0,0,.5);z-index:3}
-#readings span{white-space:nowrap}
-#readings .mode{font-weight:700;background:#2a3358;border:1px solid #4a5a9a;
-border-radius:9px;padding:5px 11px}
-#cam img.rot90,#cam img.rot270{position:absolute;top:50%;left:50%;
-width:calc(100dvh - 48px);height:100vw;max-width:none;max-height:none}
-#cam img.rot90{transform:translate(-50%,-50%) rotate(90deg)}
-#cam img.rot270{transform:translate(-50%,-50%) rotate(270deg)}
-#cam img.rot180{transform:rotate(180deg)}
-.nightnote{position:absolute;left:0;right:0;bottom:0;text-align:center;
-padding:8px 14px;color:#dde;font-size:13px;
-background:rgba(20,24,48,.82);display:none;z-index:4}
-#cam.night #readings{bottom:36px}
-.chartwrap{padding:14px}
-.cur{font-size:24px;font-weight:700;margin:4px 0 12px}
-canvas{width:100%;height:300px;background:#0c0c0c;border:1px solid #222;border-radius:8px}
-.digest{white-space:pre-wrap;font-size:15px;line-height:1.7;color:#ddd;margin:0}
-.sbtns{display:flex;flex-wrap:wrap;gap:10px}
-.sbtn{background:#26304a;color:#fff;border:1px solid #3a4668;border-radius:10px;
-padding:14px 18px;font-size:15px}
-.squick{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;
-align-items:end;border:1px solid #252d44;border-radius:8px;padding:10px;background:#101522}
-.squick label{display:block;color:#bcd;font-size:12px;font-weight:700;margin:0 0 6px}
-.sselect{width:100%;background:#080b12;color:#fff;border:1px solid #3a4668;
-border-radius:8px;padding:12px;font-size:15px}
-.squick .sbtn{min-width:92px;padding:12px 14px}
-.sbtn.on{background:#2F8F5B;border-color:#2F8F5B}
-.sbtn.stop{background:#5a2330;border-color:#7a3340}
-.sbtn.cry{background:#7a3340;border-color:#9a4350;font-weight:700;width:100%}
-.sstatus{width:100%;min-height:20px;color:#9fc;font-size:13px}
-.sgroup{width:100%;display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
-.shead{width:100%;color:#bcd;font-weight:700;margin:8px 0 0}
-.sitem{width:min(100%,260px);border:1px solid #252d44;border-radius:8px;padding:10px;background:#101522;cursor:pointer}
-.sitem.on{border-color:#2F8F5B}
-.sitem .sbtn{width:100%;margin-bottom:8px}
-.smeta{color:#aab;font-size:12px;line-height:1.45}
-.smeta b{color:#dde}
-.note{color:#777;padding:12px 14px;font-size:12px}
-#alertbanner{display:none;position:sticky;top:0;left:0;right:0;z-index:20;
-width:100%;background:#c0182b;color:#fff;font-weight:700;font-size:15px;
+:root{color-scheme:dark;--bg:#050607;--surface:#101312;--surface2:#151917;
+--text:#F4EFE6;--muted:#B8B0A6;--border:#2B302E;--primary:#58C7B0;
+--urgent:#FF6B6B;--attention:#E8B154;--line:#202522}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);
+font:16px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{padding:0 0 22px}
+body.day{--bg:#07100f;--surface:#111815;--surface2:#17201d;--text:#F4EFE6;
+--muted:#B8B0A6;--border:#2B302E;--primary:#58C7B0;--attention:#E8B154}
+button,select{font:inherit}
+button{min-height:44px}
+button:focus-visible,select:focus-visible,details summary:focus-visible,
+[role="button"]:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+main{width:min(100%,960px);margin:0 auto;padding:0 14px 18px}
+#alertbanner{display:none;position:sticky;top:0;left:0;right:0;z-index:30;
+width:100%;background:#B4232C;color:#fff;font-weight:800;font-size:15px;
 padding:12px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.t2-alerts{display:grid;gap:8px;margin:0 0 12px}
+.t2-alert-card{border:1px solid rgba(232,177,84,.78);border-radius:8px;
+background:#1b160d;padding:12px;color:var(--text)}
+.t2-alert-title{font-size:16px;font-weight:850;line-height:1.25;margin:0 0 4px}
+.t2-alert-message,.t2-alert-action{color:var(--muted);font-size:13px;line-height:1.35}
+.t2-alert-action{margin-top:6px;color:var(--attention);font-weight:800}
+.topstrip{position:sticky;top:0;z-index:18;display:flex;gap:8px;align-items:center;
+justify-content:space-between;padding:10px 14px;background:rgba(5,6,7,.92);
+backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.state-chip{min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;
+white-space:nowrap;border:1px solid var(--border);border-radius:999px;padding:7px 10px;
+font-size:12px;font-weight:800;color:var(--text);background:var(--surface)}
+.privacy-badge{color:var(--muted);font-size:12px;line-height:1.3}
+.topstrip .privacy-badge{text-align:center;flex:1 1 auto}
+.health-dots{display:flex;gap:7px;align-items:center;justify-content:flex-end}
+.health-dot{display:inline-flex;align-items:center;gap:5px;color:var(--muted);
+font-size:12px;line-height:1.2;min-height:24px}
+.health-dot::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--attention);
+box-shadow:0 0 0 2px rgba(232,177,84,.12)}
+.health-dot.fresh::before{background:var(--primary);box-shadow:0 0 0 2px rgba(88,199,176,.14)}
+.health-dot.error::before{background:var(--urgent);box-shadow:0 0 0 2px rgba(255,107,107,.14)}
+.camera-stage{margin:14px 0 18px}
+.camera-frame{position:relative;display:flex;align-items:center;justify-content:center;
+overflow:hidden;min-height:58vh;height:calc(100vh - 96px);height:calc(100dvh - 96px);
+max-height:720px;background:#000;border:1px solid var(--border);border-radius:8px}
+.camera-frame img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.camera-frame img.rot90,.camera-frame img.rot270{position:absolute;top:50%;left:50%;
+width:calc(100dvh - 96px);height:100vw;max-width:none;max-height:none}
+.camera-frame img.rot90{transform:translate(-50%,-50%) rotate(90deg)}
+.camera-frame img.rot270{transform:translate(-50%,-50%) rotate(270deg)}
+.camera-frame img.rot180{transform:rotate(180deg)}
+.stream-error{display:none;position:absolute;inset:auto 12px 74px 12px;z-index:5;
+padding:12px;border-radius:8px;background:rgba(16,19,18,.92);color:var(--text);
+text-align:center;border:1px solid var(--border)}
+.readings-overlay{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;
+flex-wrap:wrap;align-items:center;padding:10px;background:rgba(0,0,0,.58);z-index:3}
+.reading-pill,.mode-btn,.rot-btn{display:inline-flex;align-items:center;min-height:44px;
+border:1px solid var(--border);border-radius:999px;padding:9px 12px;background:rgba(16,19,18,.92);
+color:var(--text);font-size:13px;font-weight:700;white-space:nowrap}
+.mode-btn,.rot-btn{cursor:pointer}
+.nightnote{position:absolute;left:0;right:0;bottom:64px;text-align:center;padding:8px 14px;
+color:var(--muted);font-size:13px;background:rgba(16,19,18,.88);display:none;z-index:4}
+.state-grid{display:grid;gap:12px;margin-bottom:14px}
+.state-hero,.action-card,.room-action-card,.card,.soothe-section,.engineering{
+border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:14px}
+.state-label{font-size:28px;line-height:1.15;font-weight:850;letter-spacing:0;margin:0 0 8px}
+body.night .state-label{font-size:30px}
+.meta-line{color:var(--muted);font-size:13px;line-height:1.35}
+.action-panel{display:grid;gap:10px}
+.action-card{display:block;width:100%;text-align:left;color:var(--text);text-decoration:none}
+.action-card.actionable{cursor:pointer;border-color:rgba(88,199,176,.65)}
+.action-label{font-size:20px;line-height:1.25;font-weight:850;margin:0 0 6px}
+.action-detail{margin:0;color:var(--muted)}
+.room-action-card{border-color:rgba(232,177,84,.75);background:#1b160d}
+.sensor-area{display:grid;gap:12px;margin-bottom:14px}
+.sensor-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.sensor-card{min-width:0;border:1px solid var(--border);border-radius:8px;background:var(--surface);
+padding:11px;display:grid;gap:4px}
+.sensor-name{color:var(--muted);font-size:12px;font-weight:800}
+.sensor-value{font-size:17px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
+.sensor-age,.sensor-extra{color:var(--muted);font-size:12px;line-height:1.3}
+.timeline-card canvas{width:100%;height:76px;background:#080a09;border:1px solid var(--border);
+border-radius:8px;display:block}
+.section-title{font-size:20px;line-height:1.25;margin:0 0 10px;font-weight:850}
+.digest{white-space:pre-wrap;font-size:16px;line-height:1.6;color:var(--text);margin:0}
+.soothe-section{margin-bottom:14px}
+.cur{font-size:20px;line-height:1.25;font-weight:850;margin:0 0 10px}
+.sbtns{display:flex;flex-wrap:wrap;gap:10px}
+.sbtn{background:#17201d;color:var(--text);border:1px solid var(--border);border-radius:8px;
+padding:11px 14px;font-size:15px;font-weight:800}
+.squick{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;
+align-items:end;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface2)}
+.squick label{display:block;color:var(--muted);font-size:12px;font-weight:800;margin:0 0 6px}
+.sselect{width:100%;min-height:44px;background:#080a09;color:var(--text);border:1px solid var(--border);
+border-radius:8px;padding:10px;font-size:15px}
+.squick .sbtn{min-width:92px}
+.sbtn.on{background:#0e4d43;border-color:#58C7B0}
+.sbtn.stop{background:#4c1d24;border-color:#7a3340}
+.sbtn.cry{background:#5c2630;border-color:#9a4350;font-weight:850;width:100%}
+.sstatus{width:100%;min-height:20px;color:var(--primary);font-size:13px}
+.sgroup{width:100%;display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.shead{width:100%;color:var(--muted);font-weight:850;margin:8px 0 0}
+.sitem{width:min(100%,260px);border:1px solid var(--border);border-radius:8px;
+padding:10px;background:var(--surface2);cursor:pointer}
+.sitem.on{border-color:#58C7B0}
+.sitem .sbtn{width:100%;margin-bottom:8px}
+.smeta{color:var(--muted);font-size:12px;line-height:1.45}
+.smeta b{color:var(--text)}
+.engineering{margin-bottom:14px}
+.engineering summary{min-height:44px;display:flex;align-items:center;cursor:pointer;
+font-size:20px;font-weight:850}
+.sensor-picks{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:touch}
+.sensor-chip{flex:0 0 auto;min-height:44px;background:#111815;color:var(--muted);
+border:1px solid var(--border);border-radius:999px;padding:8px 13px;font-size:13px;font-weight:800}
+.sensor-chip.active{color:var(--text);border-color:#58C7B0;background:#0e302b}
+.chart-panel[hidden]{display:none}
+.chartwrap{padding:0}
+.chart-panel canvas{width:100%;height:300px;background:#080a09;border:1px solid var(--border);
+border-radius:8px;display:block}
+.note{color:var(--muted);padding:10px 0;font-size:12px;text-align:center}
+@media (min-width:720px){
+main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-items:stretch}
+.sensor-area{grid-template-columns:1fr 1fr}.sensor-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+.camera-frame{min-height:520px}.topstrip{padding-inline:20px}
+}
+@media (max-width:420px){
+.health-dot span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.state-chip{max-width:38%}.camera-frame{height:64vh;height:64dvh}.sensor-cards{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
 </style></head><body>
-<div id="alertbanner"></div>
-<div id="tabs"></div>
-<div id="cam" class="panel active">
-  <img src="__STREAM__" alt="Live camera view">
-  <div id="nightnote" class="nightnote">🌙 Night eye — long-exposure low-light view. Radar &amp; motion are watching too.</div>
-  <div id="readings"></div>
-</div>
-<div id="charts"></div>
-<div class="note">LAN only · no recording · no audio</div>
+<div id="alertbanner" role="alert" aria-live="assertive"></div>
+<header class="topstrip">
+  __STATE_TOP__
+  <div class="privacy-badge">LAN only · no cloud · no recording · no audio streaming</div>
+</header>
+<main>
+<section id="camera-stage" class="camera-stage" aria-label="Live camera">
+  <div id="cam" class="camera-frame">
+    <img id="live-img" src="__STREAM__" alt="Live camera view">
+    <div id="stream-error" class="stream-error" role="status">Camera stream is full. Try another viewer in a moment.</div>
+    <div id="nightnote" class="nightnote">Night eye - low-light camera view. Radar and motion readings remain available.</div>
+    <div id="readings" class="readings-overlay"></div>
+  </div>
+</section>
+__STATE_SECTIONS__
+__DIGEST_SECTION__
+__SOOTHE_SECTION__
+__ENGINEERING_SECTION__
+<div class="note privacy-badge">LAN only · no cloud · no recording · no audio streaming</div>
+</main>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
-let active="cam",HIST={};
-const tabs=document.getElementById("tabs"),charts=document.getElementById("charts");
-function tab(id,label){const b=document.createElement("button");b.textContent=label;
-b.dataset.tab=id;b.onclick=function(){show(id)};tabs.appendChild(b);}
-tab("cam","Camera");
-if(DIGEST){tab("night","Night");
-const np=document.createElement("div");np.className="panel";np.id="p-night";
-np.innerHTML='<div class="chartwrap"><pre id="digest-text" class="digest">Loading…</pre></div>';
-charts.appendChild(np);}
-if(SOOTHE){tab("soothe","Soothe");
-const sp=document.createElement("div");sp.className="panel";sp.id="p-soothe";
-sp.innerHTML='<div class="chartwrap"><div class="cur" id="soothe-now">—</div>'
-+'<div id="soothe-status" class="sstatus"></div><div id="soothe-btns" class="sbtns"></div></div>';charts.appendChild(sp);}
-SENSORS.forEach(function(s){tab(s.key,s.label);
-const p=document.createElement("div");p.className="panel";p.id="p-"+s.key;
-p.innerHTML='<div class="chartwrap"><div class="cur" id="cur-'+s.key+'">collecting…</div>'
-+'<canvas id="cv-'+s.key+'"></canvas></div>';charts.appendChild(p);});
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",SNAPSHOT="__SNAPSHOT__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
+let HIST={},STATE=null,LASTDIGEST=0,LASTHISTORY=0,activeSensor=SENSORS.length?SENSORS[0].key:"";
+let snapshotFailures=0;
+const SEENT2SEQ={};
+const HAS_STATE=!!SNAPSHOT,MODEURL=READINGS?READINGS.replace("/readings.json","/mode"):"";
 async function loadDigest(){const e=document.getElementById("digest-text");if(!e)return;
+const now=Date.now();if(now-LASTDIGEST<60000 && e.dataset.loaded==="1")return;LASTDIGEST=now;
 try{const r=await fetch(DIGEST,{cache:"no-store"});if(r.ok){const d=await r.json();
-e.textContent=d.text||"No summary yet.";}else{e.textContent="No summary yet.";}}
-catch(x){e.textContent="No summary yet.";}}
-function show(id){active=id;
-document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("active")});
-document.getElementById(id==="cam"?"cam":"p-"+id).classList.add("active");
-document.querySelectorAll("#tabs button").forEach(function(b){
-b.classList.toggle("active",b.dataset.tab===id)});
-if(id==="night")loadDigest();else if(id==="soothe")loadSoothe();else if(id!=="cam")draw();}
+e.textContent=d.text||"I don't have enough history yet for a night summary.";}else{e.textContent="I don't have enough history yet for a night summary.";}}
+catch(x){e.textContent="I don't have enough history yet for a night summary.";}e.dataset.loaded="1";}
 function renderSoothe(d){const now=document.getElementById("soothe-now");
-if(now)now.textContent=d.playing?("▶ playing "+String(d.playing).replace(/_/g," ")):"Nothing playing";
+if(now)now.textContent=d.playing?("playing "+String(d.playing).replace(/_/g," ")):"Nothing playing";
 const box=document.getElementById("soothe-btns");if(!box)return;box.innerHTML="";
 const presets=d.presets||[];
 addCurrentSootheControl(box,presets,d.playing);
 if(d.default){const cb=document.createElement("button");cb.className="sbtn cry";
-cb.textContent="👶 Baby crying — comfort now";
+cb.textContent="Baby crying - comfort now";
 cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default),"Playing "+String(d.default).replace(/_/g," "))};
 box.appendChild(cb);}
 const as=d.autosoothe||{enabled:false,preset:""};
@@ -356,17 +429,17 @@ function addCurrentSootheControl(box,presets,playing){
 const row=document.createElement("div");row.className="squick";
 const wrap=document.createElement("div");const label=document.createElement("label");
 label.textContent="Current sound";wrap.appendChild(label);
-const sel=presetSelect(presets,playing||"","Choose sound…");
+const sel=presetSelect(presets,playing||"","Choose sound...");
 sel.onchange=function(){if(sel.value)soothePost("action=play&preset="+encodeURIComponent(sel.value),"Playing "+sel.options[sel.selectedIndex].textContent);};
 wrap.appendChild(sel);row.appendChild(wrap);
-const st=document.createElement("button");st.className="sbtn stop";st.textContent="⏹ Stop";
+const st=document.createElement("button");st.className="sbtn stop";st.textContent="Stop";
 st.onclick=function(){soothePost("action=stop","Stopping sound")};row.appendChild(st);box.appendChild(row);}
 function addAutoSootheControl(box,presets,as,defaultPreset){
 const row=document.createElement("div");row.className="squick";
 const wrap=document.createElement("div");const label=document.createElement("label");
 label.textContent="Cry trigger sound";wrap.appendChild(label);
 const selected=as.preset||defaultPreset||"";
-const sel=presetSelect(presets,selected,"Choose sound…");
+const sel=presetSelect(presets,selected,"Choose sound...");
 sel.onchange=function(){if(sel.value)autoPost(1,sel.value);};wrap.appendChild(sel);row.appendChild(wrap);
 const tg=document.createElement("button");tg.className="sbtn"+(as.enabled?" on":"");
 tg.textContent=as.enabled?"On":"Off";
@@ -409,56 +482,149 @@ catch(e){setSootheStatus("Could not reach player");}}
 async function loadSoothe(){try{const r=await fetch(SOOTHE.replace("/soothe?","/soothe.json?"),{cache:"no-store"});
 if(r.ok)renderSoothe(await r.json());}catch(e){}}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
-const MODEURL=READINGS.replace("/readings.json","/mode");let LASTMODE={};
+let LASTMODE={};
+function el(id){return document.getElementById(id);}
+function text(id,value){const n=el(id);if(n)n.textContent=value;}
+function formatAge(v){return typeof v==="number"?Math.max(0,Math.round(v))+"s ago":"age unknown";}
+function formatNum(v,d){return typeof v==="number"?v.toFixed(d).replace(/\\.0$/,""):null;}
+function tsTime(ts){if(!ts)return "";const ms=ts<1000000000000?ts*1000:ts;
+try{return new Date(ms).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});}catch(e){return "";}}
+function setHidden(id,hidden){const n=el(id);if(n)n.hidden=hidden;}
+function makePill(txt,cls){const s=document.createElement("span");s.className=cls||"reading-pill";s.textContent=txt;return s;}
+function makeOverlayButton(txt,cls,handler,label){const b=document.createElement("button");b.type="button";b.className=cls;
+b.textContent=txt;if(label)b.setAttribute("aria-label",label);b.onclick=handler;return b;}
+function applyMode(mode){document.body.classList.toggle("night",mode==="night");
+document.body.classList.toggle("day",mode!=="night");const nn=el("nightnote");
+if(nn)nn.style.display=(mode==="night")?"block":"none";const cam=el("cam");
+if(cam)cam.classList.toggle("night",mode==="night");}
+function renderOverlay(items,mode,modeAuto){const r=el("readings");if(!r)return;r.innerHTML="";
+if(mode && MODEURL){r.appendChild(makeOverlayButton((mode==="night"?"Night":"Day")+(modeAuto?" · auto":" · manual"),"mode-btn",cycleMode,"Camera mode"));
+LASTMODE={mode:mode,mode_auto:!!modeAuto};}
+r.appendChild(makeOverlayButton("Rotate "+curRot+"°","rot-btn",cycleRot,"Rotate video"));
+items.forEach(function(item){if(item)r.appendChild(makePill(item));});applyMode(mode);}
 function renderReadings(d){const el=document.getElementById("readings");el.innerHTML="";
-if(d.mode){const m=document.createElement("span");m.className="mode";m.style.cursor="pointer";
-m.textContent=(d.mode==="night"?"🌙 Night":"☀️ Day")+(d.mode_auto?" ·auto":" ·manual");
-m.title="tap: auto → day → night";m.onclick=cycleMode;el.appendChild(m);
-LASTMODE={mode:d.mode,mode_auto:d.mode_auto};}
-const rb=document.createElement("span");rb.className="mode";rb.id="rotbtn";
-rb.style.cursor="pointer";rb.textContent="⟳ "+curRot+"°";rb.title="rotate video";
-rb.onclick=cycleRot;el.appendChild(rb);
-ORDER.forEach(function(k){if(d[k]){const s=document.createElement("span");
-s.textContent=d[k];el.appendChild(s);}});
-const nn=document.getElementById("nightnote");
-if(nn)nn.style.display=(d.mode==="night")?"block":"none";
-const cam=document.getElementById("cam");
-if(cam)cam.classList.toggle("night",d.mode==="night");}
+const items=[];ORDER.forEach(function(k){if(d[k])items.push(d[k]);});renderOverlay(items,d.mode,d.mode_auto);}
+function overlayFromSnapshot(d){const items=[],room=d.room||{},presence=d.presence||{},vitals=d.vitals||{};
+if(room.temperature_c && room.temperature_c.value!==null)items.push(formatNum(room.temperature_c.value,1)+" °C");
+if(room.humidity_pct && room.humidity_pct.value!==null)items.push(formatNum(room.humidity_pct.value,0)+"% humidity");
+if(presence.value===null||presence.value===undefined)items.push("No presence reading");
+else items.push(presence.value?"Presence detected":"No one detected");
+if(vitals.respiratory_rate!==null&&vitals.respiratory_rate!==undefined)items.push("breathing "+formatNum(vitals.respiratory_rate,0)+"/min");
+const vision=d.vision||{};renderOverlay(items,vision.mode,vision.mode_auto);}
 async function cycleMode(){const set=LASTMODE.mode_auto?"day":(LASTMODE.mode==="day"?"night":"");
-try{await fetch(MODEURL+"&set="+set,{method:"POST",cache:"no-store"});}catch(e){}
+if(!MODEURL)return;try{await fetch(MODEURL+"&set="+set,{method:"POST",cache:"no-store"});}catch(e){}
+if(SNAPSHOT){loadSnapshot(true);return;}
 try{const r=await fetch(READINGS,{cache:"no-store"});if(r.ok)renderReadings(await r.json());}catch(e){}}
-async function poll(){try{const r=await fetch(READINGS,{cache:"no-store"});
-if(r.ok)renderReadings(await r.json());}catch(e){}setTimeout(poll,3000);}
-async function load(){if(!HISTORY){draw();return;}try{const r=await fetch(HISTORY,{cache:"no-store"});
+async function pollReadings(){if(!READINGS||SNAPSHOT)return;try{const r=await fetch(READINGS,{cache:"no-store"});
+if(r.ok)renderReadings(await r.json());}catch(e){}setTimeout(pollReadings,3000);}
+function renderStateUnavailable(){text("state-chip","State unavailable");text("state-label","Monitor unreachable — it may be offline. Live camera may still work.");
+text("confidence-line","");text("since-line","");text("action-label","Check the camera");text("action-detail","Use the live view for a direct look.");
+setHidden("room-action",true);renderT2Alerts([]);
+const r=el("readings");if(r&&!r.childElementCount)renderOverlay([],LASTMODE.mode,LASTMODE.mode_auto);}
+function renderHealth(h){["camera","readings","radar","history"].forEach(function(k){const item=h&&h[k]?h[k]:{status:"missing"};
+const n=el("health-"+k);if(!n)return;const status=String(item.status||"missing");
+n.className="health-dot "+status;n.setAttribute("aria-label",k+" "+status);const s=n.querySelector("span");if(s)s.textContent=k;});}
+function setCard(id,value,age,extra,hide){const card=el("card-"+id);if(!card)return;card.hidden=!!hide;
+text("val-"+id,value);text("age-"+id,age||"");text("extra-"+id,extra||"");}
+function renderSensorCards(d){const room=d.room||{},presence=d.presence||{},motion=d.motion||{},vitals=d.vitals||{};
+function rv(key,unit,dec){const o=room[key]||{};return o.value===null||o.value===undefined?["no reading",formatAge(o.age_s)]:
+[formatNum(o.value,dec)+(unit?(" "+unit):""),formatAge(o.age_s)];}
+let v=rv("temperature_c","°C",1);setCard("temp",v[0],v[1],"",false);
+v=rv("humidity_pct","%",0);setCard("humidity",v[0],v[1],"",false);
+v=rv("pressure_hpa","hPa",0);setCard("pressure",v[0],v[1],"",false);
+v=rv("gas_kohm","kΩ",1);setCard("air",v[0],v[1],"",false);
+v=rv("illuminance_lx","lux",0);setCard("light",v[0],v[1],"",false);
+let pv="No presence reading";if(presence.value===true)pv="Presence detected";else if(presence.value===false)pv="No one detected";
+let pextra="";if(typeof presence.target_distance_cm==="number")pextra=Math.round(presence.target_distance_cm)+" cm";
+setCard("presence",pv,formatAge(presence.age_s),pextra,false);
+let mv=motion.value===null||motion.value===undefined?"no reading":(motion.value?"Movement detected":"No movement detected");
+let mextra=typeof motion.transitions_window==="number"?motion.transitions_window+" changes in history window":"";
+setCard("motion",mv,formatAge(motion.age_s),mextra,false);
+const rr=vitals.respiratory_rate;if(rr===null||rr===undefined){setCard("vitals","","","",true);}
+else{let vv="breathing "+formatNum(rr,0)+"/min";if(vitals.heart_rate_bpm!==null&&vitals.heart_rate_bpm!==undefined)vv+=" · heart "+formatNum(vitals.heart_rate_bpm,0)+" bpm";
+setCard("vitals",vv,formatAge(vitals.age_s),"rough radar estimate",false);}}
+function renderAction(d){const a=d.recommended_action||{},card=el("action-card");
+text("action-label",a.label||"No suggested action");text("action-detail",a.detail||"Based on the current readings.");
+if(card){const canGo=a.key==="comfort_now"&&!!SOOTHE;card.classList.toggle("actionable",canGo);
+card.setAttribute("role",canGo?"button":"group");card.tabIndex=canGo?0:-1;card.onclick=canGo?function(){const s=el("soothe");if(s)s.scrollIntoView({behavior:"smooth",block:"start"});}:null;
+card.onkeydown=canGo?function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();card.click();}}:null;}
+const room=d.room_action,rc=el("room-action");if(!rc)return;if(room){setHidden("room-action",false);
+text("room-action-label",room.label||"Check the room");text("room-action-detail",room.detail||"The readings need a direct look.");}
+else setHidden("room-action",true);}
+function notifyT2(item){const seq=item&&typeof item.seq==="number"?item.seq:null;
+if(seq===null||SEENT2SEQ[seq])return;SEENT2SEQ[seq]=true;
+try{if(item.notification&&item.notification.browser&&"Notification" in window&&Notification.permission==="granted")
+new Notification(item.title||"Attention",{body:item.message||""});}catch(e){}}
+function renderT2Alerts(alerts){const box=el("t2-alerts");if(!box)return;box.innerHTML="";
+(alerts||[]).filter(function(a){return a&&a.tier==="T2"&&a.active;}).forEach(function(a){
+notifyT2(a);const card=document.createElement("div");card.className="t2-alert-card";
+const title=document.createElement("div");title.className="t2-alert-title";title.textContent=a.title||"Attention";card.appendChild(title);
+const msg=document.createElement("div");msg.className="t2-alert-message";msg.textContent=a.message||"";card.appendChild(msg);
+const action=a.action||{};if(action.label){const act=document.createElement("div");act.className="t2-alert-action";act.textContent=action.label;card.appendChild(act);}
+box.appendChild(card);});box.hidden=!box.childElementCount;}
+function renderSnapshot(d){STATE=d;snapshotFailures=0;renderHealth(d.health||{});overlayFromSnapshot(d);
+text("state-chip",d.label||"Reading the room...");text("state-label",d.label||"Reading the room...");
+const c=d.confidence||{};text("confidence-line",c.band?("confidence: "+c.band+(c.basis?" · "+c.basis:"")):"");
+const since=tsTime(d.since_ts);text("since-line",since?"since "+since:"");renderAction(d);renderT2Alerts(d.alerts||[]);renderSensorCards(d);}
+let SNAPTIMER=null;
+async function loadSnapshot(force){if(!SNAPSHOT)return;
+if(SNAPTIMER){clearTimeout(SNAPTIMER);SNAPTIMER=null;}
+try{const r=await fetch(SNAPSHOT,{cache:"no-store"});
+if(!r.ok)throw new Error("snapshot");const d=await r.json();
+if(d&&d.error==="snapshot_unavailable"){renderStateUnavailable();}else{renderSnapshot(d);}}
+catch(e){snapshotFailures++;if(force||snapshotFailures>=2||!STATE)renderStateUnavailable();}
+SNAPTIMER=setTimeout(loadSnapshot,3000);}
+function historyNeeded(){const tl=el("motion-timeline");let timeline=false;if(tl){const b=tl.getBoundingClientRect();
+timeline=b.bottom>0&&b.top<(window.innerHeight||document.documentElement.clientHeight);}
+const eng=el("engineering");return timeline||(eng&&eng.open);}
+async function loadHistory(force){if(!HISTORY)return;if(!force&&!historyNeeded())return;const now=Date.now();
+if(!force&&now-LASTHISTORY<5000)return;LASTHISTORY=now;try{const r=await fetch(HISTORY,{cache:"no-store"});
 if(r.ok)HIST=await r.json();}catch(e){}
 SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
 const c=document.getElementById("cur-"+s.key);const n=h.points.length;
 if(c)c.textContent=n?(s.bool?(h.points[n-1][1]?"yes":"no")
-:(h.points[n-1][1]+(h.unit?" "+h.unit:""))):"no reading yet";});
-draw();}
-function draw(){const s=SENSORS.find(function(x){return x.key===active});if(!s)return;
+:(h.points[n-1][1]+(h.unit?" "+h.unit:""))):"no reading";});
+drawTimeline();draw();}
+function historyTick(){loadHistory(false);setTimeout(historyTick,5000);}
+function selectSensor(key){activeSensor=key;document.querySelectorAll(".sensor-chip").forEach(function(b){b.classList.toggle("active",b.dataset.sensor===key);});
+document.querySelectorAll(".chart-panel").forEach(function(p){p.hidden=p.id!=="p-"+key;});loadHistory(true);}
+function drawTimeline(){const cv=el("motion-timeline");if(!cv)return;const h=HIST.motion_detected;if(!h)return;
+const ctx=cv.getContext("2d"),W=cv.width=cv.clientWidth*2,H=cv.height=152,p=h.points||[];
+ctx.clearRect(0,0,W,H);ctx.fillStyle="#080a09";ctx.fillRect(0,0,W,H);
+if(p.length<2){ctx.fillStyle="#B8B0A6";ctx.font="24px sans-serif";ctx.fillText("Collecting readings...",24,48);return;}
+const x0=p[0][0],x1=p[p.length-1][0]||x0+1,pad=14;ctx.strokeStyle="#2B302E";ctx.lineWidth=2;
+ctx.beginPath();ctx.moveTo(pad,H-32);ctx.lineTo(W-pad,H-32);ctx.stroke();
+p.forEach(function(q,i){if(!q[1])return;const x=pad+(q[0]-x0)/((x1-x0)||1)*(W-2*pad);
+const next=p[i+1]?pad+(p[i+1][0]-x0)/((x1-x0)||1)*(W-2*pad):x+5;
+ctx.fillStyle="#58C7B0";ctx.fillRect(x,26,Math.max(3,next-x),H-58);});}
+function draw(){const eng=el("engineering");if(eng&&!eng.open)return;
+const s=SENSORS.find(function(x){return x.key===activeSensor});if(!s)return;
 const h=HIST[s.key];const cv=document.getElementById("cv-"+s.key);if(!cv||!h)return;
 const ctx=cv.getContext("2d"),W=cv.width=cv.clientWidth*2,H=cv.height=600;
 ctx.clearRect(0,0,W,H);const p=h.points||[];
-if(p.length<2){ctx.fillStyle="#777";ctx.font="30px sans-serif";
-ctx.fillText("collecting data…",30,60);return;}
+if(p.length<2){ctx.fillStyle="#B8B0A6";ctx.font="30px sans-serif";
+ctx.fillText("Collecting readings...",30,60);return;}
 const ys=p.map(function(q){return q[1]});let mn=Math.min.apply(0,ys),mx=Math.max.apply(0,ys);
 if(h.bool){mn=0;mx=1;}if(mn===mx){mn-=1;mx+=1;}
 const x0=p[0][0],x1=p[p.length-1][0]||x0+1,pad=70;
 function X(t){return pad+(t-x0)/((x1-x0)||1)*(W-1.3*pad);}
 function Y(v){return H-pad-(v-mn)/((mx-mn)||1)*(H-2*pad);}
-ctx.strokeStyle="#333";ctx.lineWidth=2;ctx.beginPath();
+ctx.strokeStyle="#2B302E";ctx.lineWidth=2;ctx.beginPath();
 ctx.moveTo(pad,pad);ctx.lineTo(pad,H-pad);ctx.lineTo(W-10,H-pad);ctx.stroke();
-ctx.fillStyle="#999";ctx.font="26px sans-serif";
+ctx.fillStyle="#B8B0A6";ctx.font="26px sans-serif";
 ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1),8,H-pad);
-ctx.strokeStyle="#4ea1ff";ctx.lineWidth=4;ctx.beginPath();
+ctx.strokeStyle="#58C7B0";ctx.lineWidth=4;ctx.beginPath();
 p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
 ctx.stroke();}
 let curRot=parseInt(localStorage.getItem("beddingtonRotate"));if(isNaN(curRot))curRot=ROTATE;
 function applyRot(){var ci=document.querySelector("#cam img");if(ci)ci.className=curRot?("rot"+curRot):"";}
 function cycleRot(){curRot=(curRot+90)%360;try{localStorage.setItem("beddingtonRotate",curRot);}catch(e){}
-applyRot();var rb=document.getElementById("rotbtn");if(rb)rb.textContent="⟳ "+curRot+"°";}
+applyRot();var rb=document.querySelector(".rot-btn");if(rb)rb.textContent="Rotate "+curRot+"°";}
 applyRot();
+const liveImg=document.getElementById("live-img");if(liveImg)liveImg.onerror=function(){const e=el("stream-error");if(e)e.style.display="block";};
+document.querySelectorAll(".sensor-chip").forEach(function(b){b.onclick=function(){selectSensor(b.dataset.sensor);};});
+const engineering=el("engineering");if(engineering)engineering.addEventListener("toggle",function(){if(engineering.open)selectSensor(activeSensor);});
+window.addEventListener("scroll",function(){loadHistory(false);},{passive:true});
 // --- LAN cry-alert: poll /alerts.json, show banner, beep + notify on new alert ---
 let ALERTCTX=null,ALERTGESTURE=false,LASTALERTSEQ=-1;
 function alertUnlock(){if(ALERTGESTURE)return;ALERTGESTURE=true;
@@ -488,7 +654,10 @@ else{hideAlert();}}catch(e){}}
 document.addEventListener("click",alertUnlock,{once:false});
 document.addEventListener("touchstart",alertUnlock,{once:false});
 if(ALERTS){pollAlerts();setInterval(pollAlerts,2500);}
-show("cam");poll();load();setInterval(load,5000);
+if(DIGEST){loadDigest();setInterval(loadDigest,60000);}
+if(SOOTHE)loadSoothe();
+if(SNAPSHOT)loadSnapshot(true);else pollReadings();
+if(HISTORY){selectSensor(activeSensor);historyTick();}
 </script></body></html>"""
 
 
@@ -517,6 +686,7 @@ def _dashboard_page(
     title: str,
     rotate: int = 0,
     alerts_path: str = "",
+    snapshot_path: str = "",
 ) -> str:
     spec = json.dumps(
         [
@@ -529,14 +699,124 @@ def _dashboard_page(
             for s in sensors
         ]
     )
+    state_top = ""
+    state_sections = ""
+    if snapshot_path:
+        state_top = (
+            '<div id="state-chip" class="state-chip" aria-live="polite">'
+            "Reading the room...</div>"
+            '<div id="health-dots" class="health-dots" aria-label="Device health">'
+            '<span id="health-camera" class="health-dot" aria-label="camera missing"><span>camera</span></span>'
+            '<span id="health-readings" class="health-dot" aria-label="readings missing"><span>readings</span></span>'
+            '<span id="health-radar" class="health-dot" aria-label="radar missing"><span>radar</span></span>'
+            '<span id="health-history" class="health-dot" aria-label="history missing"><span>history</span></span>'
+            "</div>"
+        )
+        timeline = (
+            '<div class="card timeline-card" id="motion-timeline-card">'
+            '<h2 class="section-title">Motion timeline</h2>'
+            '<canvas id="motion-timeline" aria-label="Motion over the history window"></canvas>'
+            "</div>"
+            if history_path
+            else ""
+        )
+        state_sections = (
+            '<section id="t2-alerts" class="t2-alerts" aria-live="polite" hidden></section>'
+            '<section id="state-home" class="state-grid">'
+            '<section id="state-hero" class="BabyStateHero state-hero" aria-live="polite" aria-label="Baby state">'
+            '<div id="state-label" class="state-label">Reading the room...</div>'
+            '<div id="confidence-line" class="meta-line"></div>'
+            '<div id="since-line" class="meta-line"></div>'
+            "</section>"
+            '<section id="action-panel" class="action-panel" aria-label="Suggested action">'
+            '<div id="action-card" class="action-card" role="group">'
+            '<div id="action-label" class="action-label">Reading the room...</div>'
+            '<p id="action-detail" class="action-detail">Current readings will appear here.</p>'
+            "</div>"
+            '<div id="room-action" class="room-action-card" hidden>'
+            '<div id="room-action-label" class="action-label">Check the room</div>'
+            '<p id="room-action-detail" class="action-detail">The readings need a direct look.</p>'
+            "</div>"
+            "</section>"
+            "</section>"
+            '<section id="sensor-area" class="sensor-area">'
+            '<div id="sensor-cards" class="sensor-cards" aria-label="Current readings">'
+            '<div id="card-temp" class="sensor-card"><div class="sensor-name">Temp</div><div id="val-temp" class="sensor-value">no reading</div><div id="age-temp" class="sensor-age"></div><div id="extra-temp" class="sensor-extra"></div></div>'
+            '<div id="card-humidity" class="sensor-card"><div class="sensor-name">Humidity</div><div id="val-humidity" class="sensor-value">no reading</div><div id="age-humidity" class="sensor-age"></div><div id="extra-humidity" class="sensor-extra"></div></div>'
+            '<div id="card-pressure" class="sensor-card"><div class="sensor-name">Pressure</div><div id="val-pressure" class="sensor-value">no reading</div><div id="age-pressure" class="sensor-age"></div><div id="extra-pressure" class="sensor-extra"></div></div>'
+            '<div id="card-air" class="sensor-card"><div class="sensor-name">Air</div><div id="val-air" class="sensor-value">no reading</div><div id="age-air" class="sensor-age"></div><div id="extra-air" class="sensor-extra"></div></div>'
+            '<div id="card-light" class="sensor-card"><div class="sensor-name">Light</div><div id="val-light" class="sensor-value">no reading</div><div id="age-light" class="sensor-age"></div><div id="extra-light" class="sensor-extra"></div></div>'
+            '<div id="card-presence" class="sensor-card"><div class="sensor-name">Presence</div><div id="val-presence" class="sensor-value">No presence reading</div><div id="age-presence" class="sensor-age"></div><div id="extra-presence" class="sensor-extra"></div></div>'
+            '<div id="card-motion" class="sensor-card"><div class="sensor-name">Motion</div><div id="val-motion" class="sensor-value">no reading</div><div id="age-motion" class="sensor-age"></div><div id="extra-motion" class="sensor-extra"></div></div>'
+            '<div id="card-vitals" class="sensor-card" hidden><div class="sensor-name">Vitals</div><div id="val-vitals" class="sensor-value"></div><div id="age-vitals" class="sensor-age"></div><div id="extra-vitals" class="sensor-extra">rough radar estimate</div></div>'
+            "</div>"
+            f"{timeline}"
+            "</section>"
+        )
+    digest_section = (
+        '<section id="tonight" class="card tonight-card">'
+        '<h2 class="section-title">Tonight</h2>'
+        '<div id="digest-text" class="digest">I don\'t have enough history yet for a night summary.</div>'
+        "</section>"
+        if digest_path
+        else ""
+    )
+    soothe_section = (
+        '<section id="soothe" class="soothe-section">'
+        '<h2 class="section-title">Soothe</h2>'
+        '<div class="cur" id="soothe-now">Loading...</div>'
+        '<div id="soothe-status" class="sstatus"></div>'
+        '<div id="soothe-btns" class="sbtns"></div>'
+        "</section>"
+        if soothe_path
+        else ""
+    )
+    sensor_buttons = ""
+    sensor_charts = ""
+    if history_path:
+        for index, sensor in enumerate(sensors):
+            key = _html_attr(sensor["key"])
+            label = _html_attr(sensor["label"])
+            active = " active" if index == 0 else ""
+            hidden = "" if index == 0 else " hidden"
+            sensor_buttons += (
+                f'<button type="button" class="sensor-chip{active}" '
+                f'data-sensor="{key}">{label}</button>'
+            )
+            sensor_charts += (
+                f'<div class="chart-panel" id="p-{key}"{hidden}>'
+                '<div class="chartwrap">'
+                f'<div class="cur" id="cur-{key}">Collecting readings...</div>'
+                f'<canvas id="cv-{key}"></canvas>'
+                "</div></div>"
+            )
+    engineering_section = (
+        '<details id="engineering" class="engineering">'
+        "<summary>Engineering</summary>"
+        '<div id="sensor-picks" class="sensor-picks" aria-label="Sensor charts">'
+        f"{sensor_buttons}"
+        "</div>"
+        '<div id="charts" class="debug-charts">'
+        f"{sensor_charts}"
+        "</div>"
+        "</details>"
+        if history_path
+        else ""
+    )
     return (
         _DASHBOARD_TEMPLATE.replace("__TITLE__", _html_attr(title))
         .replace("__STREAM__", _html_attr(stream_path))
+        .replace("__STATE_TOP__", state_top)
+        .replace("__STATE_SECTIONS__", state_sections)
+        .replace("__DIGEST_SECTION__", digest_section)
+        .replace("__SOOTHE_SECTION__", soothe_section)
+        .replace("__ENGINEERING_SECTION__", engineering_section)
         .replace("__READINGS__", _js_string_content(readings_path))
         .replace("__HISTORY__", _js_string_content(history_path))
         .replace("__DIGEST__", _js_string_content(digest_path))
         .replace("__SOOTHE__", _js_string_content(soothe_path))
         .replace("__ALERTS__", _js_string_content(alerts_path))
+        .replace("__SNAPSHOT__", _js_string_content(snapshot_path))
         .replace("__ROTATE__", str(int(rotate)))
         .replace("__SENSORS__", spec)
     )
@@ -552,16 +832,17 @@ def build_viewer_html(
     sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
     rotate: int = 0,
     alerts_path: str | None = None,
+    snapshot_path: str | None = None,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
-    With dashboard data or controls it renders the full tabbed dashboard (a
-    Camera tab plus one graph tab per sensor, a Night tab when ``digest_path`` is
-    given, and a Soothe tab when ``soothe_path`` is given). With only
+    With dashboard data or controls it renders the live camera, optional
+    state-first dashboard sections, optional Soothe and Tonight sections, and
+    Engineering graphs behind a collapsed disclosure. With only
     ``readings_path`` it renders the simple bottom-overlay. With neither it is
     video only.
     """
-    if history_path or digest_path or soothe_path or alerts_path:
+    if history_path or digest_path or soothe_path or alerts_path or snapshot_path:
         return _dashboard_page(
             stream_path,
             readings_path or "",
@@ -572,6 +853,7 @@ def build_viewer_html(
             title,
             rotate,
             alerts_path or "",
+            snapshot_path or "",
         )
     overlay = ""
     script = ""
@@ -657,6 +939,7 @@ class FrameBroker:
 
     def __init__(self) -> None:
         self._frame: bytes | None = None
+        self._published_at: float | None = None
         self._seq = 0
         self._cond = threading.Condition()
         self._closed = False
@@ -664,6 +947,7 @@ class FrameBroker:
     def publish(self, frame: bytes) -> None:
         with self._cond:
             self._frame = frame
+            self._published_at = time.monotonic()
             self._seq += 1
             self._cond.notify_all()
 
@@ -676,6 +960,12 @@ class FrameBroker:
     def closed(self) -> bool:
         with self._cond:
             return self._closed
+
+    def frame_age(self) -> float | None:
+        with self._cond:
+            if self._published_at is None:
+                return None
+            return max(0.0, time.monotonic() - self._published_at)
 
     def wait_for_frame(
         self, last_seq: int, timeout: float = 5.0
@@ -744,7 +1034,14 @@ def _make_handler(
     mode_setter: Callable[[str | None], str] | None = None,
     rotate: int = 0,
     alert_state: _AlertState | None = None,
+    snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
+    events_provider: Callable[[], dict[str, object]] | None = None,
+    worker_token: str = "",
+    annotation_sink: Callable[[str, float, str], int | None] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
+    annotation_attempts: deque[float] = deque()
+    annotation_lock = threading.Lock()
+
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
 
@@ -759,6 +1056,11 @@ def _make_handler(
             query = parse_qs(urlparse(self.path).query)
             return (query.get("token") or [""])[0]
 
+        def _auth_tiers(self, provided: str) -> tuple[bool, bool]:
+            full = is_authorised(provided, token)
+            worker = bool(worker_token) and is_authorised(provided, worker_token)
+            return full, worker
+
         def _deny(self) -> None:
             self.send_response(401)
             self.send_header("Content-Type", "text/plain")
@@ -767,25 +1069,33 @@ def _make_handler(
 
         def do_GET(self) -> None:  # noqa: N802 (stdlib naming)
             path = urlparse(self.path).path
-            if not is_authorised(self._provided_token(), token):
+            provided = self._provided_token()
+            full, worker = self._auth_tiers(provided)
+            if not (full or worker):
                 self._deny()
                 return
             if path == "/":
+                link_token = token if full else provided
                 readings_path = (
-                    f"/readings.json?token={token}" if readings_provider else None
+                    f"/readings.json?token={link_token}" if readings_provider else None
                 )
                 history_path = (
-                    f"/history.json?token={token}" if history_provider else None
+                    f"/history.json?token={link_token}" if history_provider else None
                 )
                 digest_path = (
-                    f"/digest.json?token={token}" if digest_provider else None
+                    f"/digest.json?token={link_token}" if digest_provider else None
                 )
-                soothe_path = f"/soothe?token={token}" if soothe is not None else None
+                soothe_path = f"/soothe?token={link_token}" if soothe is not None else None
                 alerts_path = (
-                    f"/alerts.json?token={token}" if alert_state is not None else None
+                    f"/alerts.json?token={link_token}" if alert_state is not None else None
+                )
+                snapshot_path = (
+                    f"/snapshot.json?token={link_token}"
+                    if snapshot_provider is not None
+                    else None
                 )
                 body = build_viewer_html(
-                    f"/stream.mjpg?token={token}",
+                    f"/stream.mjpg?token={link_token}",
                     title,
                     readings_path,
                     history_path,
@@ -793,6 +1103,7 @@ def _make_handler(
                     soothe_path=soothe_path,
                     rotate=rotate,
                     alerts_path=alerts_path,
+                    snapshot_path=snapshot_path,
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -800,11 +1111,17 @@ def _make_handler(
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
-            elif path in ("/readings.json", "/history.json", "/digest.json"):
+            elif path in (
+                "/readings.json",
+                "/history.json",
+                "/digest.json",
+                "/events.json",
+            ):
                 provider = {
                     "/readings.json": readings_provider,
                     "/history.json": history_provider,
                     "/digest.json": digest_provider,
+                    "/events.json": events_provider,
                 }[path]
                 payload = provider() if provider else {}
                 self._send_json(payload)
@@ -825,6 +1142,35 @@ def _make_handler(
                 self._send_json(
                     alert_state.snapshot() if alert_state is not None else {"active": False}
                 )
+            elif path == "/snapshot.json":
+                if snapshot_provider is None:
+                    self.send_error(404)
+                    return
+                frame_age = broker.frame_age() if hasattr(broker, "frame_age") else None
+                ctx = {
+                    "alerts": (
+                        alert_state.snapshot()
+                        if alert_state is not None
+                        else {"active": False}
+                    ),
+                    "camera_frame_age_s": frame_age,
+                }
+                self._send_json(snapshot_provider(ctx))
+            elif path == "/frame.jpg":
+                if not hasattr(broker, "wait_for_frame"):
+                    self.send_error(404)
+                    return
+                seq, frame = broker.wait_for_frame(0, timeout=2.0)  # type: ignore[attr-defined]
+                if frame is None:
+                    self._send_json({"ok": False, "error": "no frame"}, status=503)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(frame)))
+                self.send_header("X-Frame-Seq", str(seq))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(frame)
             elif path == "/stream.mjpg":
                 # Cap concurrent viewers: a full house of slow/malicious readers
                 # must not exhaust threads/FDs. Over the cap -> 503, don't open
@@ -883,18 +1229,118 @@ def _make_handler(
             else:
                 self.send_error(404)
 
-        def _send_json(self, payload: object) -> None:
+        def _send_json(self, payload: object, status: int = 200) -> None:
             body = json.dumps(payload).encode()
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
+        def _annotation_rate_limited(self) -> bool:
+            now = time.monotonic()
+            cutoff = now - _ANNOTATION_RATE_WINDOW_S
+            with annotation_lock:
+                while annotation_attempts and annotation_attempts[0] < cutoff:
+                    annotation_attempts.popleft()
+                if len(annotation_attempts) >= _ANNOTATION_RATE_LIMIT:
+                    return True
+                annotation_attempts.append(now)
+                return False
+
+        def _handle_annotate(self) -> None:
+            if self._annotation_rate_limited():
+                self._send_json({"ok": False, "error": "rate limited"}, status=429)
+                return
+            if annotation_sink is None:
+                self.send_error(404)
+                return
+            raw_length = self.headers.get("Content-Length")
+            if raw_length is None:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            try:
+                length = int(raw_length)
+            except ValueError:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            if length < 0:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            if length > _ANNOTATION_BODY_MAX_BYTES:
+                self._send_json({"ok": False, "error": "body too large"}, status=413)
+                return
+            try:
+                payload = json.loads(self.rfile.read(length))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._send_json({"ok": False, "error": "invalid json"}, status=400)
+                return
+            if not isinstance(payload, dict):
+                self._send_json(
+                    {"ok": False, "error": "body must be an object"},
+                    status=400,
+                )
+                return
+
+            kind = payload.get("kind")
+            if not isinstance(kind, str) or not _ANNOTATION_KIND_RE.fullmatch(kind):
+                self._send_json({"ok": False, "error": "bad kind"}, status=400)
+                return
+            raw_detail = payload.get("detail")
+            if not isinstance(raw_detail, str):
+                self._send_json({"ok": False, "error": "detail required"}, status=400)
+                return
+            detail = raw_detail.strip()
+            if not detail:
+                self._send_json({"ok": False, "error": "detail required"}, status=400)
+                return
+            if len(detail) > _ANNOTATION_DETAIL_MAX_CHARS:
+                self._send_json({"ok": False, "error": "detail too long"}, status=400)
+                return
+            now_wall = time.time()
+            if "ts" in payload:
+                try:
+                    ts = float(payload["ts"])
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "bad ts"}, status=400)
+                    return
+                if (
+                    not math.isfinite(ts)
+                    or ts < now_wall - 24 * 3600
+                    or ts > now_wall + 60
+                ):
+                    self._send_json({"ok": False, "error": "bad ts"}, status=400)
+                    return
+            else:
+                ts = now_wall
+            try:
+                row_id = annotation_sink(kind, ts, detail)
+            except Exception:
+                self._send_json({"ok": False}, status=500)
+                return
+            self._send_json({"ok": True, "id": row_id})
+
         def do_POST(self) -> None:  # noqa: N802 (stdlib naming)
             path = urlparse(self.path).path
-            if not is_authorised(self._provided_token(), token):
+            provided = self._provided_token()
+            full, worker = self._auth_tiers(provided)
+            if not (full or worker):
+                self._deny()
+                return
+            if path == "/annotate":
+                self._handle_annotate()
+                return
+            if not full:
                 self._deny()
                 return
             if path == "/soothe" and soothe is not None:
@@ -1021,6 +1467,9 @@ class _ModeBroker:
         )
         return active.closed
 
+    def frame_age(self) -> float | None:
+        return self._active().frame_age()
+
     def close(self) -> None:
         for broker in self._brokers.values():
             broker.close()
@@ -1052,14 +1501,23 @@ def serve_live_view(
     soothe: object | None = None,
     mode_setter: Callable[[str | None], str] | None = None,
     rotate: int = 0,
+    snapshot_provider: Callable[[dict[str, object]], dict[str, object]] | None = None,
+    events_provider: Callable[[], dict[str, object]] | None = None,
+    worker_token: str = "",
+    annotation_sink: Callable[[str, float, str], int | None] | None = None,
+    broker_sink: Callable[[object], None] | None = None,
+    alert_state_sink: Callable[[object], None] | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
     Pass a single ``source`` (``frames()`` + ``close()``), or ``sources`` — a
     {mode: source} map plus a ``mode_getter`` — to follow the day-eye / night-eye
-    switch. ``*_provider`` callables back ``/readings.json``, ``/history.json`` and
-    ``/digest.json``; ``soothe`` (presets()/playing()/play()/stop()) backs the
-    Soothe tab.
+    switch. ``*_provider`` callables back ``/readings.json``, ``/history.json``,
+    ``/digest.json`` and ``/events.json``; ``soothe``
+    (presets()/playing()/play()/stop()) backs the Soothe section.
+    ``broker_sink`` receives the frame broker before serving starts, so the
+    caller can late-bind ``broker.frame_age`` (the broker only exists here).
+    ``alert_state_sink`` receives the alert state used by ``/alerts.json``.
     """
     if sources:
         brokers: dict[str, FrameBroker] = {}
@@ -1085,9 +1543,16 @@ def serve_live_view(
     else:
         raise ValueError("serve_live_view needs a source or sources")
 
+    if broker_sink is not None:
+        broker_sink(broker)
+    alert_state = _AlertState()
+    if alert_state_sink is not None:
+        alert_state_sink(alert_state)
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider,
-        soothe, mode_setter, rotate, alert_state=_AlertState(),
+        soothe, mode_setter, rotate, alert_state=alert_state,
+        snapshot_provider=snapshot_provider, events_provider=events_provider,
+        worker_token=worker_token, annotation_sink=annotation_sink,
     )
     httpd = _DaemonThreadingHTTPServer((host, port), handler)
     try:

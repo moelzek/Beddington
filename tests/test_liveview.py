@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import http.client
 import json
 import re
 import shutil
@@ -10,9 +11,13 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from types import SimpleNamespace
+
+import pytest
 
 from beddington.liveview import (
     _SOI,
+    _AlertState,
     _HEADER_READ_TIMEOUT,
     FrameBroker,
     _DaemonThreadingHTTPServer,
@@ -168,16 +173,125 @@ def test_build_viewer_html_dashboard_overlay() -> None:
     assert "poll()" in html  # polling script present
 
 
-def test_build_viewer_html_tabbed_dashboard() -> None:
+def test_build_viewer_html_state_first_dashboard() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
         history_path="/history.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
     )
     assert "/history.json?token=t" in html
-    assert "canvas" in html  # graph tabs
+    assert "/snapshot.json?token=t" in html
+    assert 'id="state-hero"' in html
+    assert 'id="t2-alerts"' in html
+    assert "renderT2Alerts" in html
+    assert "BabyStateHero" in html
+    assert 'id="action-panel"' in html
+    assert 'id="sensor-cards"' in html
+    assert 'id="motion-timeline"' in html
+    assert 'id="engineering" class="engineering"' in html
     assert "room_temperature_c" in html  # sensor spec embedded
-    assert "Camera" in html
+    assert 'id="tabs"' not in html
+
+
+def test_build_viewer_html_has_monitor_unreachable_copy() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+
+    assert "Monitor unreachable — it may be offline. Live camera may still work." in html
+
+
+def test_live_view_command_passes_liveview_state_thresholds_to_snapshot_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import beddington.cli as cli
+    from beddington.config import AppConfig, LiveviewConfig
+    from beddington.live_snapshot import SnapshotThresholds
+
+    captured: dict[str, object] = {}
+    thresholds = SnapshotThresholds(caregiver_dwell_s=1.25)
+
+    class FakeEngine:
+        def __init__(self, received_thresholds, process_start_ts=None):
+            captured["thresholds"] = received_thresholds
+            captured["process_start_ts"] = process_start_ts
+
+        def build(self, **_kwargs):
+            return {"schema_version": 1, "caregiver_dwell_s": captured["thresholds"].caregiver_dwell_s}
+
+    class FakeSampler:
+        def __init__(self, _readers, _interval, store=None):
+            self.store = store
+
+        def start(self) -> None:
+            captured["sampler_started"] = True
+
+        def stop(self) -> None:
+            captured["sampler_stopped"] = True
+
+        def latest(self) -> dict[str, object]:
+            return {}
+
+        def history(self) -> list[tuple[float, dict[str, object]]]:
+            return []
+
+        def mode(self) -> str:
+            return "night"
+
+        def override(self) -> None:
+            return None
+
+        def set_override(self, _mode: str | None) -> None:
+            pass
+
+        def set_frame_age(self, _age: float | None) -> None:
+            pass
+
+    def fake_serve_live_view(**kwargs):
+        captured["snapshot"] = kwargs["snapshot_provider"]({"alerts": {"active": False}})
+
+    monkeypatch.setattr("beddington.cli.build_sensor_readers", lambda _config: [object()])
+    monkeypatch.setattr("beddington.cli._SensorSampler", FakeSampler)
+    monkeypatch.setattr("beddington.cli._resolve_live_view_token", lambda _token: "token")
+    monkeypatch.setattr("beddington.cli._lan_ip", lambda _bind: "127.0.0.1")
+    monkeypatch.setattr("beddington.cli._build_soothe_presets", lambda _config: {})
+    monkeypatch.setattr("beddington.cli.time.time", lambda: 1234.0)
+    monkeypatch.setattr("beddington.live_snapshot.LiveSnapshotEngine", FakeEngine)
+    monkeypatch.setattr("beddington.liveview.RpicamFrameSource", lambda _cmd: object())
+    monkeypatch.setattr("beddington.liveview.serve_live_view", fake_serve_live_view)
+
+    args = SimpleNamespace(
+        port=8080,
+        width=640,
+        height=480,
+        fps=15,
+        token=None,
+        no_sensors=False,
+        no_history=True,
+        sensor_interval=3.0,
+        history_db=":memory:",
+        history_hours=1.0,
+        night_camera_num=None,
+        camera_num=0,
+        night=False,
+        bind="127.0.0.1",
+        rotate=0,
+    )
+
+    result = cli._live_view_command(
+        args,
+        AppConfig(liveview=LiveviewConfig(state=thresholds)),
+    )
+
+    assert result == 0
+    assert captured["thresholds"] is thresholds
+    assert captured["process_start_ts"] == 1234.0
+    assert captured["snapshot"] == {"schema_version": 1, "caregiver_dwell_s": 1.25}
+    assert captured["sampler_started"] is True
+    assert captured["sampler_stopped"] is True
 
 
 def test_build_viewer_html_rotate() -> None:
@@ -196,7 +310,7 @@ def test_build_viewer_html_rotate() -> None:
     ).count("ROTATE=0")  # default no rotation
 
 
-def test_build_viewer_html_has_night_tab_when_digest() -> None:
+def test_build_viewer_html_has_tonight_card_when_digest() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
@@ -204,8 +318,76 @@ def test_build_viewer_html_has_night_tab_when_digest() -> None:
         digest_path="/digest.json?token=t",
     )
     assert "/digest.json?token=t" in html
-    assert "Night" in html
+    assert 'id="tonight"' in html
+    assert "I don't have enough history yet for a night summary." in html
     assert "loadDigest" in html
+
+
+def test_build_viewer_html_has_exact_privacy_badge() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+
+    assert "LAN only · no cloud · no recording · no audio streaming" in html
+    assert "LAN only · no recording · no audio" not in html
+
+
+def test_build_viewer_html_embeds_snapshot_path() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+
+    assert "/snapshot.json?token=t" in html
+    assert 'SNAPSHOT="/snapshot.json?token=t"' in html
+    assert 'id="state-hero"' in html
+
+
+def test_build_viewer_html_without_snapshot_omits_state_sections() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+
+    assert 'id="state-hero"' not in html
+    assert "BabyStateHero" not in html
+    assert 'id="state-chip"' not in html
+    assert 'id="health-dots"' not in html
+    assert 'alt="Live camera view"' in html
+    assert "/alerts.json?token=t" in html
+
+
+def test_build_viewer_html_debug_section_collapsed_with_sensor_charts() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+    )
+
+    assert '<details id="engineering" class="engineering">' in html
+    assert "<summary>Engineering</summary>" in html
+    assert '<canvas id="cv-room_temperature_c"></canvas>' in html
+    assert '<button type="button" class="sensor-chip active"' in html
+    assert '<details id="engineering" class="engineering" open>' not in html
+
+
+def test_build_viewer_html_old_top_level_tabs_are_gone() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        digest_path="/digest.json?token=t",
+        soothe_path="/soothe?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+
+    assert 'id="tabs"' not in html
+    assert "dataset.tab" not in html
+    assert 'data-sensor="room_temperature_c"' in html
 
 
 def test_history_series_converts_bool_and_scale() -> None:
@@ -425,6 +607,26 @@ def _free_port() -> int:
     return port
 
 
+def _start_handler_server(
+    handler: type,
+) -> tuple[_DaemonThreadingHTTPServer, str]:
+    httpd = _DaemonThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    host, port = httpd.server_address
+    return httpd, f"http://{host}:{port}"
+
+
+def _post_json(url: str, payload: object, token: str = "tk"):
+    request = urllib.request.Request(
+        f"{url}?token={token}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    return urllib.request.urlopen(request, timeout=2)
+
+
 def test_serve_live_view_requires_token_and_streams() -> None:
     source = _FakeFrameSource([JPEG_A, JPEG_B])
     token = "secret-token"
@@ -575,7 +777,7 @@ def test_serve_live_view_dual_camera_switches_on_mode() -> None:
         night.close()
 
 
-def test_build_viewer_html_has_soothe_tab() -> None:
+def test_build_viewer_html_has_soothe_section() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
@@ -583,6 +785,7 @@ def test_build_viewer_html_has_soothe_tab() -> None:
         soothe_path="/soothe?token=t",
     )
     assert "Soothe" in html
+    assert 'id="soothe" class="soothe-section"' in html
     assert "soothePost" in html
     assert "soothe-status" in html
     assert "setSootheStatus" in html
@@ -603,7 +806,8 @@ def test_build_viewer_html_keeps_soothe_without_history() -> None:
 
     assert "Soothe" in html
     assert "soothe-status" in html
-    assert "async function load(){if(!HISTORY)" in html
+    assert 'id="engineering"' not in html
+    assert "historyTick" in html
     assert "/soothe?token=t" in html
 
 
@@ -614,6 +818,7 @@ def test_dashboard_script_is_valid_javascript(tmp_path) -> None:
         history_path="/history.json?token=t",
         digest_path="/digest.json?token=t",
         soothe_path="/soothe?token=t",
+        snapshot_path="/snapshot.json?token=t",
     )
     match = re.search(r"<script>(.*)</script>", html, re.S)
     assert match is not None
@@ -761,6 +966,86 @@ def test_alert_state_expires_after_ttl(monkeypatch) -> None:
     assert a.snapshot()["active"] is False
 
 
+def test_snapshot_json_requires_token() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        snapshot_provider=lambda _ctx: {"schema_version": 1},
+    )
+    request = io.BytesIO(b"GET /snapshot.json HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    assert b" 401 " in sock.output.getvalue()
+
+
+def test_snapshot_json_serves_provider_with_alerts_and_frame_age() -> None:
+    from beddington.liveview import _AlertState
+
+    broker = FrameBroker()
+    broker.publish(JPEG_A)
+    alerts = _AlertState()
+    alerts.raise_alert("Cry detected", "cry score 0.9", 0.9)
+    seen: dict[str, object] = {}
+
+    def provider(ctx: dict[str, object]) -> dict[str, object]:
+        seen.update(ctx)
+        return {
+            "schema_version": 1,
+            "alert_active": ctx["alerts"]["active"],
+            "has_frame_age": isinstance(ctx["camera_frame_age_s"], float),
+        }
+
+    handler = _make_handler(
+        broker,
+        "tk",
+        "Cot cam",
+        alert_state=alerts,
+        snapshot_provider=provider,
+    )
+    request = io.BytesIO(b"GET /snapshot.json?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    raw = sock.output.getvalue()
+    body = raw.split(b"\r\n\r\n", 1)[1]
+    payload = json.loads(body)
+    assert b" 200 " in raw
+    assert payload == {"schema_version": 1, "alert_active": True, "has_frame_age": True}
+    assert seen["alerts"]["active"] is True
+    assert isinstance(seen["camera_frame_age_s"], float)
+
+
+def test_snapshot_json_404_without_provider() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+    request = io.BytesIO(b"GET /snapshot.json?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    assert b" 404 " in sock.output.getvalue()
+
+
+def test_handler_root_wires_snapshot_path_when_provider_configured() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        snapshot_provider=lambda _ctx: {"schema_version": 1},
+    )
+    request = io.BytesIO(b"GET /?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    raw = sock.output.getvalue()
+    assert b" 200 " in raw
+    assert b"/snapshot.json?token=tk" in raw
+
+
 def test_dashboard_wires_alert_banner_and_poll_path() -> None:
     from beddington.liveview import build_viewer_html
 
@@ -772,6 +1057,7 @@ def test_dashboard_wires_alert_banner_and_poll_path() -> None:
     )
     assert "/alerts.json?token=t" in html  # dashboard polls it
     assert "alertbanner" in html  # the banner element exists
+    assert 'aria-live="assertive"' in html
 
 
 def test_stream_server_uses_daemon_threads() -> None:
@@ -841,3 +1127,495 @@ def test_iter_jpeg_frames_resyncs_on_cap_crossed_chunk_with_recovered_frame() ->
         b"\x00" * 4096 + JPEG_A,     # this chunk crosses the cap AND holds a real frame
     ]
     assert list(iter_jpeg_frames(chunks)) == [JPEG_A]
+
+
+def test_serve_live_view_serves_events_json_and_broker_sink() -> None:
+    source = _FakeFrameSource([JPEG_A])
+    token = "tk"
+    port = _free_port()
+    timeline = [
+        {"kind": "crying", "started_ts": 1.0, "ended_ts": 61.0, "detail": ""}
+    ]
+    sunk: list[object] = []
+    alert_states: list[object] = []
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "source": source,
+            "events_provider": lambda: {"window_hours": 12, "events": timeline},
+            "broker_sink": sunk.append,
+            "alert_state_sink": alert_states.append,
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        body = urllib.request.urlopen(
+            f"{base}/events.json?token={token}", timeout=2
+        ).read()
+        payload = json.loads(body)
+        assert payload["events"] == timeline
+        # The broker was handed to the sink before serving started, and it
+        # exposes frame_age for the episode tracker.
+        assert len(sunk) == 1 and hasattr(sunk[0], "frame_age")
+        assert (
+            len(alert_states) == 1
+            and alert_states[0].snapshot()["active"] is False
+        )
+        try:
+            urllib.request.urlopen(f"{base}/events.json?token=wrong", timeout=2)
+            raise AssertionError("expected 401")
+        except urllib.error.HTTPError as denied:
+            assert denied.code == 401
+    finally:
+        source.close()
+
+
+def test_annotate_requires_token_and_validates_payload() -> None:
+    rows: list[tuple[str, float, str]] = []
+
+    def sink(kind: str, ts: float, detail: str) -> int:
+        rows.append((kind, ts, detail))
+        return 7
+
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam", annotation_sink=sink)
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"}, token="")
+        assert denied.value.code == 401
+
+        bad_cases = [
+            ({"kind": "manual_note", "detail": "x"}, "bad kind"),
+            ({"kind": "worker_note", "detail": "   "}, "detail required"),
+            ({"kind": "worker_note", "detail": "x" * 2001}, "detail too long"),
+            ({"kind": "worker_note", "detail": "x", "ts": time.time() + 120}, "bad ts"),
+        ]
+        for payload, error in bad_cases:
+            with pytest.raises(urllib.error.HTTPError) as rejected:
+                _post_json(f"{base}/annotate", payload)
+            assert rejected.value.code == 400
+            body = json.loads(rejected.value.read())
+            assert body["error"] == error
+
+        with pytest.raises(urllib.error.HTTPError) as too_large:
+            _post_json(
+                f"{base}/annotate",
+                {"kind": "worker_note", "detail": "x" * (9 * 1024)},
+            )
+        assert too_large.value.code == 413
+        assert rows == []
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_rejects_negative_content_length_without_reading() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        annotation_sink=lambda _kind, _ts, _detail: 1,
+    )
+    httpd, _base = _start_handler_server(handler)
+    conn = http.client.HTTPConnection(
+        "127.0.0.1",
+        httpd.server_address[1],
+        timeout=2,
+    )
+    try:
+        conn.putrequest("POST", "/annotate?token=tk")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", "-1")
+        conn.endheaders()
+        response = conn.getresponse()
+        body = json.loads(response.read())
+        assert response.status == 411
+        assert body == {"ok": False, "error": "content length required"}
+    finally:
+        conn.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_invalid_utf8_returns_invalid_json() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        annotation_sink=lambda _kind, _ts, _detail: 1,
+    )
+    httpd, base = _start_handler_server(handler)
+    request = urllib.request.Request(
+        f"{base}/annotate?token=tk",
+        data=b"\xff\xfe{",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as rejected:
+            urllib.request.urlopen(request, timeout=2)
+        assert rejected.value.code == 400
+        assert json.loads(rejected.value.read()) == {
+            "ok": False,
+            "error": "invalid json",
+        }
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_rate_limit_counts_invalid_attempts() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        annotation_sink=lambda _kind, _ts, _detail: 1,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        for _ in range(30):
+            with pytest.raises(urllib.error.HTTPError) as rejected:
+                _post_json(f"{base}/annotate", {"kind": "manual_note", "detail": "x"})
+            assert rejected.value.code == 400
+
+        with pytest.raises(urllib.error.HTTPError) as limited:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"})
+        assert limited.value.code == 429
+        assert json.loads(limited.value.read())["error"] == "rate limited"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_404_without_sink() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"})
+        assert missing.value.code == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_sink_exception_returns_500_and_server_continues() -> None:
+    def sink(_kind: str, _ts: float, _detail: str) -> int:
+        raise RuntimeError("boom")
+
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        events_provider=lambda: {"events": []},
+        annotation_sink=sink,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as failed:
+            _post_json(f"{base}/annotate", {"kind": "worker_note", "detail": "x"})
+        assert failed.value.code == 500
+        assert json.loads(failed.value.read()) == {"ok": False}
+
+        body = urllib.request.urlopen(f"{base}/events.json?token=tk", timeout=2).read()
+        assert json.loads(body) == {"events": []}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_success_writes_fake_sink_and_does_not_raise_alert() -> None:
+    alert_state = _AlertState()
+    before = alert_state.snapshot()
+    rows: list[tuple[str, float, str]] = []
+
+    def sink(kind: str, ts: float, detail: str) -> int:
+        rows.append((kind, ts, detail))
+        return 123
+
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        alert_state=alert_state,
+        annotation_sink=sink,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        response = _post_json(
+            f"{base}/annotate",
+            {"kind": "worker_observation", "detail": "  movement changed  "},
+        )
+        assert json.loads(response.read()) == {"ok": True, "id": 123}
+        assert rows and rows[0][0] == "worker_observation"
+        assert rows[0][2] == "movement changed"
+        assert alert_state.snapshot() == before
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_annotate_real_sensor_store_surfaces_in_timeline(tmp_path) -> None:
+    from beddington.sensor_store import SensorStore
+
+    store = SensorStore(str(tmp_path / "events.db"))
+
+    def sink(kind: str, ts: float, detail: str) -> int | None:
+        return store.append_event(kind, ts, ended_ts=ts, detail=detail)
+
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam", annotation_sink=sink)
+    httpd, base = _start_handler_server(handler)
+    try:
+        ts = time.time()
+        response = _post_json(
+            f"{base}/annotate",
+            {"kind": "worker_observation", "detail": "state changed", "ts": ts},
+        )
+        assert json.loads(response.read())["ok"] is True
+        timeline = store.timeline_since(ts - 1)
+        assert timeline == [
+            {
+                "kind": "worker_observation",
+                "started_ts": ts,
+                "ended_ts": ts,
+                "detail": "state changed",
+            }
+        ]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        store.close()
+
+
+def test_frame_jpg_requires_token_and_serves_latest_frame() -> None:
+    broker = FrameBroker()
+    broker.publish(JPEG_A)
+    handler = _make_handler(broker, "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(f"{base}/frame.jpg", timeout=2)
+        assert denied.value.code == 401
+
+        response = urllib.request.urlopen(f"{base}/frame.jpg?token=tk", timeout=2)
+        assert response.read() == JPEG_A
+        assert response.headers["Content-Type"] == "image/jpeg"
+        assert response.headers["X-Frame-Seq"] == "1"
+        assert response.headers["Cache-Control"] == "no-store"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_frame_jpg_503_when_no_frame_published() -> None:
+    handler = _make_handler(FrameBroker(), "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as unavailable:
+            urllib.request.urlopen(f"{base}/frame.jpg?token=tk", timeout=3)
+        assert unavailable.value.code == 503
+        assert json.loads(unavailable.value.read()) == {
+            "ok": False,
+            "error": "no frame",
+        }
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_frame_jpg_404_without_broker() -> None:
+    handler = _make_handler(object(), "tk", "Cot cam")
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(f"{base}/frame.jpg?token=tk", timeout=2)
+        assert missing.value.code == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_frame_jpg_works_with_dual_camera_serve_live_view_wiring() -> None:
+    day = _FakeFrameSource([JPEG_A])
+    night = _FakeFrameSource([JPEG_B])
+    token = "tk"
+    port = _free_port()
+    mode = {"v": "day"}
+    thread = threading.Thread(
+        target=serve_live_view,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "token": token,
+            "sources": {"day": day, "night": night},
+            "mode_getter": lambda: mode["v"],
+        },
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.4)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        assert urllib.request.urlopen(f"{base}/frame.jpg?token={token}", timeout=2).read() == JPEG_A
+        mode["v"] = "night"
+        time.sleep(0.1)
+        assert urllib.request.urlopen(f"{base}/frame.jpg?token={token}", timeout=2).read() == JPEG_B
+    finally:
+        day.close()
+        night.close()
+
+
+def test_worker_token_gets_and_annotates_but_cannot_control() -> None:
+    broker = FrameBroker()
+    broker.publish(JPEG_A)
+    alert_state = _AlertState()
+    soothe = _FakeSoothe()
+    annotations: list[tuple[str, str]] = []
+    mode = {"value": "night"}
+
+    def set_mode(value: str | None) -> str:
+        mode["value"] = value or "night"
+        return mode["value"]
+
+    def annotation_sink(kind: str, _ts: float, detail: str) -> int:
+        annotations.append((kind, detail))
+        return len(annotations)
+
+    handler = _make_handler(
+        broker,
+        "full-token",
+        "Cot cam",
+        soothe=soothe,
+        mode_setter=set_mode,
+        alert_state=alert_state,
+        snapshot_provider=lambda _ctx: {
+            "label": "Still for 1 min",
+            "confidence": {"band": "low"},
+        },
+        events_provider=lambda: {"events": []},
+        worker_token="worker-token",
+        annotation_sink=annotation_sink,
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        snapshot = json.loads(
+            urllib.request.urlopen(
+                f"{base}/snapshot.json?token=worker-token", timeout=2
+            ).read()
+        )
+        assert snapshot["label"] == "Still for 1 min"
+        events = json.loads(
+            urllib.request.urlopen(
+                f"{base}/events.json?token=worker-token", timeout=2
+            ).read()
+        )
+        assert events == {"events": []}
+        assert (
+            urllib.request.urlopen(
+                f"{base}/frame.jpg?token=worker-token", timeout=2
+            ).read()
+            == JPEG_A
+        )
+        assert json.loads(
+            _post_json(
+                f"{base}/annotate",
+                {"kind": "worker_observation", "detail": "state changed"},
+                token="worker-token",
+            ).read()
+        ) == {"ok": True, "id": 1}
+
+        before = alert_state.snapshot()
+        for path in (
+            "/alert?token=worker-token",
+            "/soothe?token=worker-token&action=play&preset=white_noise",
+            "/mode?token=worker-token&set=day",
+            "/autosoothe?token=worker-token&enabled=1&preset=white_noise",
+        ):
+            with pytest.raises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(
+                    urllib.request.Request(f"{base}{path}", method="POST"),
+                    timeout=2,
+                )
+            assert denied.value.code == 401
+        assert alert_state.snapshot() == before
+
+        alert = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/alert?token=full-token&title=Cry&message=x",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert alert["ok"] is True
+        played = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/soothe?token=full-token&action=play&preset=white_noise",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert played["playing"] == "white_noise"
+        forced = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/mode?token=full-token&set=day",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert forced == {"mode": "day", "mode_auto": False}
+        autosoothe = json.loads(
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"{base}/autosoothe?token=full-token&enabled=1&preset=white_noise",
+                    method="POST",
+                ),
+                timeout=2,
+            ).read()
+        )
+        assert autosoothe["enabled"] is True
+        assert json.loads(
+            _post_json(
+                f"{base}/annotate",
+                {"kind": "worker_observation", "detail": "full token note"},
+                token="full-token",
+            ).read()
+        ) == {"ok": True, "id": 2}
+        assert annotations == [
+            ("worker_observation", "state changed"),
+            ("worker_observation", "full token note"),
+        ]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_worker_token_unset_does_not_authenticate_worker_tier() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "full-token",
+        "Cot cam",
+        snapshot_provider=lambda _ctx: {"label": "Still for 1 min"},
+    )
+    httpd, base = _start_handler_server(handler)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(
+                f"{base}/snapshot.json?token=worker-token",
+                timeout=2,
+            )
+        assert denied.value.code == 401
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
