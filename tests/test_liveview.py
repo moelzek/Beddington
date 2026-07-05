@@ -168,16 +168,23 @@ def test_build_viewer_html_dashboard_overlay() -> None:
     assert "poll()" in html  # polling script present
 
 
-def test_build_viewer_html_tabbed_dashboard() -> None:
+def test_build_viewer_html_state_first_dashboard() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
         history_path="/history.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
     )
     assert "/history.json?token=t" in html
-    assert "canvas" in html  # graph tabs
+    assert "/snapshot.json?token=t" in html
+    assert 'id="state-hero"' in html
+    assert "BabyStateHero" in html
+    assert 'id="action-panel"' in html
+    assert 'id="sensor-cards"' in html
+    assert 'id="motion-timeline"' in html
+    assert 'id="engineering" class="engineering"' in html
     assert "room_temperature_c" in html  # sensor spec embedded
-    assert "Camera" in html
+    assert 'id="tabs"' not in html
 
 
 def test_build_viewer_html_rotate() -> None:
@@ -196,7 +203,7 @@ def test_build_viewer_html_rotate() -> None:
     ).count("ROTATE=0")  # default no rotation
 
 
-def test_build_viewer_html_has_night_tab_when_digest() -> None:
+def test_build_viewer_html_has_tonight_card_when_digest() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
@@ -204,8 +211,76 @@ def test_build_viewer_html_has_night_tab_when_digest() -> None:
         digest_path="/digest.json?token=t",
     )
     assert "/digest.json?token=t" in html
-    assert "Night" in html
+    assert 'id="tonight"' in html
+    assert "I don't have enough history yet for a night summary." in html
     assert "loadDigest" in html
+
+
+def test_build_viewer_html_has_exact_privacy_badge() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+
+    assert "LAN only · no cloud · no recording · no audio streaming" in html
+    assert "LAN only · no recording · no audio" not in html
+
+
+def test_build_viewer_html_embeds_snapshot_path() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+
+    assert "/snapshot.json?token=t" in html
+    assert 'SNAPSHOT="/snapshot.json?token=t"' in html
+    assert 'id="state-hero"' in html
+
+
+def test_build_viewer_html_without_snapshot_omits_state_sections() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+
+    assert 'id="state-hero"' not in html
+    assert "BabyStateHero" not in html
+    assert 'id="state-chip"' not in html
+    assert 'id="health-dots"' not in html
+    assert 'alt="Live camera view"' in html
+    assert "/alerts.json?token=t" in html
+
+
+def test_build_viewer_html_debug_section_collapsed_with_sensor_charts() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+    )
+
+    assert '<details id="engineering" class="engineering">' in html
+    assert "<summary>Engineering</summary>" in html
+    assert '<canvas id="cv-room_temperature_c"></canvas>' in html
+    assert '<button type="button" class="sensor-chip active"' in html
+    assert '<details id="engineering" class="engineering" open>' not in html
+
+
+def test_build_viewer_html_old_top_level_tabs_are_gone() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        digest_path="/digest.json?token=t",
+        soothe_path="/soothe?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+
+    assert 'id="tabs"' not in html
+    assert "dataset.tab" not in html
+    assert 'data-sensor="room_temperature_c"' in html
 
 
 def test_history_series_converts_bool_and_scale() -> None:
@@ -575,7 +650,7 @@ def test_serve_live_view_dual_camera_switches_on_mode() -> None:
         night.close()
 
 
-def test_build_viewer_html_has_soothe_tab() -> None:
+def test_build_viewer_html_has_soothe_section() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
@@ -583,6 +658,7 @@ def test_build_viewer_html_has_soothe_tab() -> None:
         soothe_path="/soothe?token=t",
     )
     assert "Soothe" in html
+    assert 'id="soothe" class="soothe-section"' in html
     assert "soothePost" in html
     assert "soothe-status" in html
     assert "setSootheStatus" in html
@@ -603,7 +679,8 @@ def test_build_viewer_html_keeps_soothe_without_history() -> None:
 
     assert "Soothe" in html
     assert "soothe-status" in html
-    assert "async function load(){if(!HISTORY)" in html
+    assert 'id="engineering"' not in html
+    assert "historyTick" in html
     assert "/soothe?token=t" in html
 
 
@@ -614,6 +691,7 @@ def test_dashboard_script_is_valid_javascript(tmp_path) -> None:
         history_path="/history.json?token=t",
         digest_path="/digest.json?token=t",
         soothe_path="/soothe?token=t",
+        snapshot_path="/snapshot.json?token=t",
     )
     match = re.search(r"<script>(.*)</script>", html, re.S)
     assert match is not None
@@ -824,6 +902,23 @@ def test_snapshot_json_404_without_provider() -> None:
     assert b" 404 " in sock.output.getvalue()
 
 
+def test_handler_root_wires_snapshot_path_when_provider_configured() -> None:
+    handler = _make_handler(
+        FrameBroker(),
+        "tk",
+        "Cot cam",
+        snapshot_provider=lambda _ctx: {"schema_version": 1},
+    )
+    request = io.BytesIO(b"GET /?token=tk HTTP/1.1\r\nHost: test\r\n\r\n")
+    sock = _FakeSocket(request)
+
+    handler(sock, ("127.0.0.1", 12345), object())
+
+    raw = sock.output.getvalue()
+    assert b" 200 " in raw
+    assert b"/snapshot.json?token=tk" in raw
+
+
 def test_dashboard_wires_alert_banner_and_poll_path() -> None:
     from beddington.liveview import build_viewer_html
 
@@ -835,6 +930,7 @@ def test_dashboard_wires_alert_banner_and_poll_path() -> None:
     )
     assert "/alerts.json?token=t" in html  # dashboard polls it
     assert "alertbanner" in html  # the banner element exists
+    assert 'aria-live="assertive"' in html
 
 
 def test_stream_server_uses_daemon_threads() -> None:
