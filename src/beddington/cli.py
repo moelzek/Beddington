@@ -350,6 +350,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run one poll/analyze/annotate iteration and exit",
     )
+
+    vision = subparsers.add_parser(
+        "vision-bench",
+        help="Collect and score stock COCO person detections on live-view frames",
+    )
+    vision.add_argument(
+        "--mode",
+        choices=("collect", "analyze", "labels-template", "report"),
+        required=True,
+    )
+    vision.add_argument("--url", help="Live-view base URL, e.g. http://pi:8088")
+    vision.add_argument("--token", help="Live-view or scoped worker token")
+    vision.add_argument("--out", type=Path, help="Output directory for collect mode")
+    vision.add_argument("--interval", type=float, default=5.0)
+    vision.add_argument("--duration", type=float)
+    vision.add_argument("--frames", type=Path, help="Directory of collected JPG frames")
+    vision.add_argument("--detections", type=Path, help="JSONL detections path")
+    vision.add_argument("--labels", type=Path, help="CSV labels path")
+    vision.add_argument("--annotate", type=Path, help="Directory for annotated frames")
+    vision.add_argument("--report-out", type=Path, help="Markdown report path")
     return parser
 
 
@@ -415,6 +435,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _note_command(args)
     if args.command == "worker":
         return _worker_command(args, config)
+    if args.command == "vision-bench":
+        return _vision_bench_command(args, config)
 
     detector = _build_alarm_detector(args.model)
     if args.soothe:
@@ -2844,6 +2866,84 @@ def _worker_command(args: argparse.Namespace, config: AppConfig) -> int:
         return 0
     loop.run_forever()
     return 0
+
+
+def _vision_bench_command(args: argparse.Namespace, config: AppConfig) -> int:
+    mode = str(args.mode)
+    if mode == "collect":
+        import os
+
+        from .vision_bench import collect_frames
+        from .worker import PiClient
+
+        if args.out is None:
+            raise SystemExit("vision-bench collect needs --out")
+        if args.duration is None:
+            raise SystemExit("vision-bench collect needs --duration")
+        url = str(args.url or config.worker.base_url).strip()
+        if not url:
+            raise SystemExit(
+                "vision-bench collect needs --url or worker.base_url in the config"
+            )
+        token = str(args.token or os.getenv("BEDDINGTON_LIVEVIEW_TOKEN", "")).strip()
+        if not token:
+            raise SystemExit(
+                "vision-bench collect needs --token or BEDDINGTON_LIVEVIEW_TOKEN"
+            )
+        summary = collect_frames(
+            PiClient(url, token, config.worker.request_timeout_s),
+            args.out,
+            args.interval,
+            args.duration,
+        )
+        print(
+            f"Saved {summary['frames_saved']} frame(s); "
+            f"missed {summary['misses']} frame request(s)."
+        )
+        return 0
+
+    if mode == "analyze":
+        from .vision_bench import UltralyticsBackend, analyze_dir
+
+        if args.frames is None:
+            raise SystemExit("vision-bench analyze needs --frames")
+        if args.detections is None:
+            raise SystemExit("vision-bench analyze needs --detections")
+        try:
+            summary = analyze_dir(
+                UltralyticsBackend(),
+                args.frames,
+                args.detections,
+                args.annotate,
+            )
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"Analyzed {summary['frames']} frame(s) into {summary['out']}.")
+        return 0
+
+    if mode == "labels-template":
+        from .vision_bench import write_labels_template
+
+        if args.frames is None:
+            raise SystemExit("vision-bench labels-template needs --frames")
+        if args.labels is None:
+            raise SystemExit("vision-bench labels-template needs --labels")
+        summary = write_labels_template(args.frames, args.labels)
+        print(f"Wrote {summary['frames']} label row(s) to {summary['out']}.")
+        return 0
+
+    if mode == "report":
+        from .vision_bench import write_report
+
+        if args.detections is None:
+            raise SystemExit("vision-bench report needs --detections")
+        if args.report_out is None:
+            raise SystemExit("vision-bench report needs --report-out")
+        summary = write_report(args.detections, args.labels, args.report_out)
+        print(f"Wrote report for {summary['frames']} frame(s) to {summary['out']}.")
+        return 0
+
+    raise SystemExit(f"unknown vision-bench mode: {mode}")
 
 
 def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:

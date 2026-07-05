@@ -8,9 +8,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TYPE_CHECKING
 
 LOGGER = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from .vision_bench import VisionBackend
 
 
 @dataclass(frozen=True)
@@ -145,8 +148,77 @@ class StateChangeAnalyzer:
         ]
 
 
+class VisionProbeAnalyzer:
+    name = "vision_probe"
+
+    def __init__(
+        self,
+        backend: VisionBackend | None = None,
+        min_interval_s: float = 30.0,
+        clock=time.monotonic,
+    ) -> None:
+        self._backend = backend
+        self._min_interval_s = float(min_interval_s)
+        self._clock = clock
+        self._last_frame_at = float("-inf")
+        self._last_requested = False
+        self._last_observation: int | None = None
+
+    def wants_frame(self, snapshot: dict) -> bool:
+        del snapshot
+        self._last_requested = self._clock() - self._last_frame_at >= self._min_interval_s
+        return self._last_requested
+
+    def analyze(
+        self,
+        snapshot: dict,
+        events: list[dict],
+        frame: bytes | None,
+    ) -> list[Annotation]:
+        del snapshot, events
+        if not self._last_requested:
+            return []
+        self._last_requested = False
+        self._last_frame_at = self._clock()
+        if frame is None:
+            return []
+        if self._backend is None:
+            from .vision_bench import UltralyticsBackend
+
+            self._backend = UltralyticsBackend()
+
+        result = self._backend.analyze_jpeg(frame)
+        people = [
+            detection
+            for detection in result.detections
+            if detection.label.strip().lower() == "person"
+        ]
+        count = len(people)
+        observation = min(count, 3)
+        if observation == self._last_observation:
+            return []
+        self._last_observation = observation
+
+        if count == 0:
+            detail = "no person detected"
+        else:
+            max_conf = max(detection.confidence for detection in people)
+            max_height = 0.0
+            if result.image_h > 0:
+                max_height = max(
+                    max(0.0, detection.box[3] - detection.box[1]) / result.image_h
+                    for detection in people
+                )
+            detail = (
+                f"person x{count} "
+                f"(max conf {max_conf:.2f}, max box height {max_height:.2f})"
+            )
+        return [Annotation(kind="worker_person_seen", detail=detail)]
+
+
 BUILTIN_ANALYZERS: dict[str, type[Analyzer]] = {
     "state_change": StateChangeAnalyzer,
+    "vision_probe": VisionProbeAnalyzer,
 }
 
 
