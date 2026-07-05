@@ -36,6 +36,14 @@ t2_repeat_cooldown_s = 600.0
 device_restart_notice_s = 120.0
 max_evidence_items = 8
 
+# [liveview.audio]
+# # Optional two-way LAN audio for the parent dashboard. Off by default.
+# enabled = false
+# # Leave empty for sounddevice's default input; set to a device name/id if needed.
+# device = ""
+# max_listeners = 3
+# talk_max_seconds = 20.0
+
 # [worker]
 # base_url = "http://127.0.0.1:8088"
 # snapshot_interval_s = 3.0

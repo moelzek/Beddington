@@ -23,6 +23,7 @@ import html
 import json
 import math
 import re
+import ssl
 import subprocess
 import threading
 import time
@@ -30,6 +31,17 @@ from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+from .liveaudio import (
+    TALK_MAX_BYTES,
+    AudioBroker,
+    AudioClientTooSlow,
+    AudioUnavailable,
+    TalkBusy,
+    TalkPlaybackError,
+    TalkPlayer,
+    TalkRejected,
+)
 
 _SOI = b"\xff\xd8"  # JPEG start-of-image
 _EOI = b"\xff\xd9"  # JPEG end-of-image
@@ -54,6 +66,7 @@ _ANNOTATION_DETAIL_MAX_CHARS = 2000
 _ANNOTATION_KIND_RE = re.compile(r"^worker_[a-z0-9_]{1,40}$")
 _ANNOTATION_RATE_LIMIT = 30
 _ANNOTATION_RATE_WINDOW_S = 60.0
+_TALK_CONTENT_TYPES = ("audio/webm", "audio/mp4", "audio/ogg")
 
 
 class _DaemonThreadingHTTPServer(ThreadingHTTPServer):
@@ -348,6 +361,15 @@ padding:10px;background:var(--surface2);cursor:pointer}
 .sitem .sbtn{width:100%;margin-bottom:8px}
 .smeta{color:var(--muted);font-size:12px;line-height:1.45}
 .smeta b{color:var(--text)}
+.audio-section{margin-bottom:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);
+padding:12px;display:grid;gap:10px}
+.audio-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.audio-btn{background:#17201d;color:var(--text);border:1px solid var(--border);border-radius:8px;
+padding:11px 14px;font-size:15px;font-weight:850;min-width:108px}
+.audio-btn.on{background:#0e4d43;border-color:#58C7B0}
+.audio-btn.talking{background:#5c2630;border-color:#9a4350}
+.audio-btn:disabled{opacity:.5}
+.audio-status{color:var(--muted);font-size:13px;line-height:1.35;min-height:18px}
 .engineering{margin-bottom:14px}
 .engineering summary{min-height:44px;display:flex;align-items:center;cursor:pointer;
 font-size:20px;font-weight:850}
@@ -374,7 +396,7 @@ main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-item
 <div id="alertbanner" role="alert" aria-live="assertive"></div>
 <header class="topstrip">
   __STATE_TOP__
-  <div class="privacy-badge">LAN only · no cloud · no recording · no audio streaming</div>
+  <div class="privacy-badge">__PRIVACY_BADGE__</div>
 </header>
 <main>
 <section id="camera-stage" class="camera-stage" aria-label="Live camera">
@@ -385,14 +407,15 @@ main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-item
     <div id="readings" class="readings-overlay"></div>
   </div>
 </section>
+__AUDIO_SECTION__
 __STATE_SECTIONS__
 __DIGEST_SECTION__
 __SOOTHE_SECTION__
 __ENGINEERING_SECTION__
-<div class="note privacy-badge">LAN only · no cloud · no recording · no audio streaming</div>
+<div class="note privacy-badge">__PRIVACY_BADGE__</div>
 </main>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",SNAPSHOT="__SNAPSHOT__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",SNAPSHOT="__SNAPSHOT__",AUDIO="__AUDIO__",TALK="__TALK__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
 let HIST={},STATE=null,LASTDIGEST=0,LASTHISTORY=0,activeSensor=SENSORS.length?SENSORS[0].key:"";
 let snapshotFailures=0;
 const SEENT2SEQ={};
@@ -402,11 +425,11 @@ const now=Date.now();if(now-LASTDIGEST<60000 && e.dataset.loaded==="1")return;LA
 try{const r=await fetch(DIGEST,{cache:"no-store"});if(r.ok){const d=await r.json();
 e.textContent=d.text||"I don't have enough history yet for a night summary.";}else{e.textContent="I don't have enough history yet for a night summary.";}}
 catch(x){e.textContent="I don't have enough history yet for a night summary.";}e.dataset.loaded="1";}
-function renderSoothe(d){const now=document.getElementById("soothe-now");
-if(now)now.textContent=d.playing?("playing "+String(d.playing).replace(/_/g," ")):"Nothing playing";
+function renderSoothe(d){const now=document.getElementById("soothe-now"),soothePlaying=d.playing==="talk"?null:d.playing;
+if(now)now.textContent=d.talk?"playing your voice":(soothePlaying?("playing "+String(soothePlaying).replace(/_/g," ")):"Nothing playing");
 const box=document.getElementById("soothe-btns");if(!box)return;box.innerHTML="";
 const presets=d.presets||[];
-addCurrentSootheControl(box,presets,d.playing);
+addCurrentSootheControl(box,presets,soothePlaying);
 if(d.default){const cb=document.createElement("button");cb.className="sbtn cry";
 cb.textContent="Baby crying - comfort now";
 cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default),"Playing "+String(d.default).replace(/_/g," "))};
@@ -416,7 +439,7 @@ addAutoSootheControl(box,presets,as,d.default||"");
 const hr=document.createElement("div");hr.style.cssText="width:100%;border-top:1px solid #333;margin:14px 0 4px";box.appendChild(hr);
 const lbl=document.createElement("div");lbl.style.cssText="width:100%;color:#bcd;font-size:13px;margin-bottom:2px";
 lbl.textContent="Manual sounds";box.appendChild(lbl);
-addPresetGroups(box,presets,d.playing,function(p){
+addPresetGroups(box,presets,soothePlaying,function(p){
 soothePost("action=play&preset="+encodeURIComponent(p.key),"Playing "+presetText(p))},"");}
 function presetText(p){return String(p.label||p.key).replace(/_/g," ");}
 function presetSelect(presets,selected,placeholder){
@@ -481,6 +504,57 @@ else{setSootheStatus("Stopped");}}else{setSootheStatus("Dashboard request failed
 catch(e){setSootheStatus("Could not reach player");}}
 async function loadSoothe(){try{const r=await fetch(SOOTHE.replace("/soothe?","/soothe.json?"),{cache:"no-store"});
 if(r.ok)renderSoothe(await r.json());}catch(e){}}
+let LISTENCTX=null,LISTENABORT=null,LISTENNEXT=0,LISTENCARRY=new Uint8Array(0),LISTENON=false,LISTENPAUSED=false;
+let TALKREC=null,TALKSTREAM=null,TALKCHUNKS=[],TALKTIMER=null,TALKING=false,TALKHELD=false;
+function audioStatus(t){const s=el("audio-status");if(s)s.textContent=t||"";}
+function setListenButton(){const b=el("listen-btn");if(!b)return;b.classList.toggle("on",LISTENON);b.textContent=LISTENON?"Listening":"Listen";}
+function stopListen(msg){LISTENON=false;if(LISTENABORT)LISTENABORT.abort();LISTENABORT=null;
+if(LISTENCTX){try{LISTENCTX.close();}catch(e){}}LISTENCTX=null;LISTENCARRY=new Uint8Array(0);setListenButton();if(msg)audioStatus(msg);}
+function schedulePcm(chunk){if(!LISTENCTX||LISTENPAUSED||!chunk||!chunk.length)return;
+let data=chunk;if(LISTENCARRY.length){data=new Uint8Array(LISTENCARRY.length+chunk.length);data.set(LISTENCARRY,0);data.set(chunk,LISTENCARRY.length);}
+const even=data.length-(data.length%2);LISTENCARRY=data.slice(even);if(even<=0)return;
+const view=new DataView(data.buffer,data.byteOffset,even),samples=even/2;
+const buf=LISTENCTX.createBuffer(1,samples,16000),out=buf.getChannelData(0);
+for(let i=0;i<samples;i++)out[i]=Math.max(-1,view.getInt16(i*2,true)/32768);
+const src=LISTENCTX.createBufferSource();src.buffer=buf;src.connect(LISTENCTX.destination);
+LISTENNEXT=Math.max(LISTENNEXT,LISTENCTX.currentTime+0.3);src.start(LISTENNEXT);LISTENNEXT+=buf.duration;}
+async function startListen(){if(LISTENON||!AUDIO)return;try{const AC=window.AudioContext||window.webkitAudioContext;
+if(!AC){audioStatus("Listen is not available in this browser.");return;}LISTENCTX=new AC();if(LISTENCTX.resume)await LISTENCTX.resume();
+LISTENABORT=new AbortController();LISTENNEXT=LISTENCTX.currentTime+0.3;LISTENON=true;setListenButton();audioStatus("Listening");
+const r=await fetch(AUDIO,{cache:"no-store",signal:LISTENABORT.signal});if(!r.ok||!r.body)throw new Error("audio");
+const reader=r.body.getReader();while(LISTENON){const part=await reader.read();if(part.done)break;schedulePcm(part.value);}
+if(LISTENON)stopListen("Listen stopped");}catch(e){if(LISTENON)stopListen("Could not start listen");}}
+function chooseTalkMime(){const opts=["audio/webm;codecs=opus","audio/mp4","audio/ogg;codecs=opus"];
+if(!window.MediaRecorder||!MediaRecorder.isTypeSupported)return "";
+for(let i=0;i<opts.length;i++)if(MediaRecorder.isTypeSupported(opts[i]))return opts[i];return "";}
+function restoreListenAfterTalk(){LISTENPAUSED=false;if(LISTENCTX&&LISTENON&&LISTENCTX.resume){try{LISTENCTX.resume();}catch(e){}}}
+async function sendTalkBlob(blob){try{audioStatus("Sending talk");
+const r=await fetch(TALK,{method:"POST",cache:"no-store",headers:{"Content-Type":blob.type||"audio/webm"},body:blob});
+if(r.ok){const d=await r.json();audioStatus("Played "+Number(d.seconds||0).toFixed(1)+"s");}
+else if(r.status===409)audioStatus("Talk is busy");
+else if(r.status===413)audioStatus("Talk clip was too long");
+else audioStatus("Talk failed");}catch(e){audioStatus("Could not send talk");}finally{restoreListenAfterTalk();}}
+async function beginTalk(ev){if(TALKING||!TALK)return;ev.preventDefault();TALKHELD=true;
+if(!window.isSecureContext){TALKHELD=false;audioStatus("Talk needs the https:// URL.");return;}
+if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.MediaRecorder){TALKHELD=false;audioStatus("Talk is not available in this browser.");return;}
+try{LISTENPAUSED=true;if(LISTENCTX&&LISTENCTX.suspend){await LISTENCTX.suspend();
+if(!TALKHELD){restoreListenAfterTalk();return;}}
+const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+if(!TALKHELD){stream.getTracks().forEach(function(t){t.stop();});restoreListenAfterTalk();return;}
+TALKSTREAM=stream;TALKCHUNKS=[];
+const mime=chooseTalkMime(),opts=mime?{mimeType:mime}:{};TALKREC=new MediaRecorder(TALKSTREAM,opts);
+TALKREC.ondataavailable=function(e){if(e.data&&e.data.size)TALKCHUNKS.push(e.data);};
+TALKREC.onstop=function(){const type=TALKREC&&TALKREC.mimeType?TALKREC.mimeType:(TALKCHUNKS[0]&&TALKCHUNKS[0].type)||"audio/webm";
+const blob=new Blob(TALKCHUNKS,{type:type});if(TALKSTREAM)TALKSTREAM.getTracks().forEach(function(t){t.stop();});
+TALKSTREAM=null;TALKING=false;TALKHELD=false;const b=el("talk-btn");if(b)b.classList.remove("talking");if(blob.size)sendTalkBlob(blob);else restoreListenAfterTalk();};
+TALKREC.start();TALKING=true;const b=el("talk-btn");if(b){b.classList.add("talking");try{b.setPointerCapture(ev.pointerId);}catch(e){}}
+audioStatus("Talking");TALKTIMER=setTimeout(endTalk,20000);}catch(e){TALKING=false;TALKHELD=false;audioStatus("Could not start talk");restoreListenAfterTalk();}}
+function endTalk(ev){if(ev&&ev.preventDefault)ev.preventDefault();TALKHELD=false;if(TALKTIMER){clearTimeout(TALKTIMER);TALKTIMER=null;}
+if(TALKREC&&TALKREC.state!=="inactive")TALKREC.stop();}
+function setupAudioControls(){const lb=el("listen-btn"),tb=el("talk-btn");if(!lb||!tb)return;
+lb.onclick=function(){LISTENON?stopListen("Listen off"):startListen();};
+if(!window.isSecureContext){tb.disabled=true;audioStatus("Talk needs the https:// URL.");return;}
+tb.addEventListener("pointerdown",beginTalk);tb.addEventListener("pointerup",endTalk);tb.addEventListener("pointercancel",endTalk);}
 const ORDER=["temperature","humidity","pressure","air","light","presence","vitals"];
 let LASTMODE={};
 function el(id){return document.getElementById(id);}
@@ -654,6 +728,7 @@ else{hideAlert();}}catch(e){}}
 document.addEventListener("click",alertUnlock,{once:false});
 document.addEventListener("touchstart",alertUnlock,{once:false});
 if(ALERTS){pollAlerts();setInterval(pollAlerts,2500);}
+if(AUDIO&&TALK){setupAudioControls();window.addEventListener("pagehide",function(){stopListen();});}
 if(DIGEST){loadDigest();setInterval(loadDigest,60000);}
 if(SOOTHE)loadSoothe();
 if(SNAPSHOT)loadSnapshot(true);else pollReadings();
@@ -682,6 +757,8 @@ def _dashboard_page(
     history_path: str,
     digest_path: str,
     soothe_path: str,
+    audio_path: str,
+    talk_path: str,
     sensors: tuple[dict[str, object], ...],
     title: str,
     rotate: int = 0,
@@ -771,6 +848,23 @@ def _dashboard_page(
         if soothe_path
         else ""
     )
+    audio_enabled = bool(audio_path and talk_path)
+    privacy_badge = (
+        "LAN only · no cloud · live audio available · nothing recorded"
+        if audio_enabled
+        else "LAN only · no cloud · no recording · no audio streaming"
+    )
+    audio_section = (
+        '<section id="audio" class="audio-section" aria-label="Live audio">'
+        '<div class="audio-controls">'
+        '<button id="listen-btn" type="button" class="audio-btn">Listen</button>'
+        '<button id="talk-btn" type="button" class="audio-btn">Hold to talk</button>'
+        "</div>"
+        '<div id="audio-status" class="audio-status" role="status"></div>'
+        "</section>"
+        if audio_enabled
+        else ""
+    )
     sensor_buttons = ""
     sensor_charts = ""
     if history_path:
@@ -808,15 +902,19 @@ def _dashboard_page(
         .replace("__STREAM__", _html_attr(stream_path))
         .replace("__STATE_TOP__", state_top)
         .replace("__STATE_SECTIONS__", state_sections)
+        .replace("__AUDIO_SECTION__", audio_section)
         .replace("__DIGEST_SECTION__", digest_section)
         .replace("__SOOTHE_SECTION__", soothe_section)
         .replace("__ENGINEERING_SECTION__", engineering_section)
+        .replace("__PRIVACY_BADGE__", privacy_badge)
         .replace("__READINGS__", _js_string_content(readings_path))
         .replace("__HISTORY__", _js_string_content(history_path))
         .replace("__DIGEST__", _js_string_content(digest_path))
         .replace("__SOOTHE__", _js_string_content(soothe_path))
         .replace("__ALERTS__", _js_string_content(alerts_path))
         .replace("__SNAPSHOT__", _js_string_content(snapshot_path))
+        .replace("__AUDIO__", _js_string_content(audio_path))
+        .replace("__TALK__", _js_string_content(talk_path))
         .replace("__ROTATE__", str(int(rotate)))
         .replace("__SENSORS__", spec)
     )
@@ -829,6 +927,8 @@ def build_viewer_html(
     history_path: str | None = None,
     digest_path: str | None = None,
     soothe_path: str | None = None,
+    audio_path: str | None = None,
+    talk_path: str | None = None,
     sensors: tuple[dict[str, object], ...] = DASHBOARD_SENSORS,
     rotate: int = 0,
     alerts_path: str | None = None,
@@ -842,13 +942,22 @@ def build_viewer_html(
     ``readings_path`` it renders the simple bottom-overlay. With neither it is
     video only.
     """
-    if history_path or digest_path or soothe_path or alerts_path or snapshot_path:
+    if (
+        history_path
+        or digest_path
+        or soothe_path
+        or alerts_path
+        or snapshot_path
+        or audio_path
+    ):
         return _dashboard_page(
             stream_path,
             readings_path or "",
             history_path or "",
             digest_path or "",
             soothe_path or "",
+            audio_path or "",
+            talk_path or "",
             sensors,
             title,
             rotate,
@@ -1038,9 +1147,15 @@ def _make_handler(
     events_provider: Callable[[], dict[str, object]] | None = None,
     worker_token: str = "",
     annotation_sink: Callable[[str, float, str], int | None] | None = None,
+    audio_broker: AudioBroker | None = None,
+    talk_player: TalkPlayer | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     annotation_attempts: deque[float] = deque()
     annotation_lock = threading.Lock()
+    audio_enabled = audio_broker is not None and talk_player is not None
+    audio_viewers = (
+        threading.Semaphore(audio_broker.max_listeners) if audio_broker is not None else None
+    )
 
     class _LiveViewHandler(BaseHTTPRequestHandler):
         server_version = "BeddingtonLiveView/1"
@@ -1067,8 +1182,26 @@ def _make_handler(
             self.end_headers()
             self.wfile.write(b"unauthorised")
 
+        def _forbid(self) -> None:
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"forbidden")
+
+        def _require_full_audio_token(self, full: bool, worker: bool) -> bool:
+            if full:
+                return True
+            if worker:
+                self._forbid()
+            else:
+                self._deny()
+            return False
+
         def do_GET(self) -> None:  # noqa: N802 (stdlib naming)
             path = urlparse(self.path).path
+            if path == "/audio.pcm" and not audio_enabled:
+                self.send_error(404)
+                return
             provided = self._provided_token()
             full, worker = self._auth_tiers(provided)
             if not (full or worker):
@@ -1104,6 +1237,16 @@ def _make_handler(
                     rotate=rotate,
                     alerts_path=alerts_path,
                     snapshot_path=snapshot_path,
+                    audio_path=(
+                        f"/audio.pcm?token={link_token}"
+                        if audio_enabled and full
+                        else None
+                    ),
+                    talk_path=(
+                        f"/talk?token={link_token}"
+                        if audio_enabled and full
+                        else None
+                    ),
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1126,16 +1269,20 @@ def _make_handler(
                 payload = provider() if provider else {}
                 self._send_json(payload)
             elif path == "/soothe.json":
+                talk_playing = talk_player.playing() if talk_player is not None else False
+                soothe_playing = soothe.playing() if soothe is not None else None
+                combined_playing = soothe_playing or ("talk" if talk_playing else None)
                 payload = (
                     {
                         "presets": soothe.presets(),
-                        "playing": soothe.playing(),
+                        "playing": combined_playing,
+                        "talk": talk_playing,
                         "context": soothe.context(),
                         "default": soothe.default(),
                         "autosoothe": soothe.autosoothe(),
                     }
                     if soothe is not None
-                    else {"presets": [], "playing": None}
+                    else {"presets": [], "playing": combined_playing, "talk": talk_playing}
                 )
                 self._send_json(payload)
             elif path == "/alerts.json":
@@ -1226,8 +1373,67 @@ def _make_handler(
                         pass
                 finally:
                     _STREAM_VIEWERS.release()
+            elif path == "/audio.pcm":
+                if not self._require_full_audio_token(full, worker):
+                    return
+                self._handle_audio_stream()
             else:
                 self.send_error(404)
+
+        def _handle_audio_stream(self) -> None:
+            if audio_broker is None or audio_viewers is None:
+                self.send_error(404)
+                return
+            if not audio_viewers.acquire(blocking=False):
+                self.send_error(503, "Too many audio listeners")
+                return
+            listener_added = False
+            try:
+                try:
+                    audio_broker.add_listener()
+                    listener_added = True
+                    seq, first = audio_broker.wait_for_block(0, timeout=2.0)
+                except AudioUnavailable:
+                    self._send_json(
+                        {"ok": False, "error": "audio unavailable"},
+                        status=503,
+                    )
+                    return
+                except AudioClientTooSlow:
+                    self._send_json(
+                        {"ok": False, "error": "audio listener too slow"},
+                        status=503,
+                    )
+                    return
+                if first is None:
+                    self._send_json(
+                        {"ok": False, "error": "audio unavailable"},
+                        status=503,
+                    )
+                    return
+                try:
+                    self.connection.settimeout(_STREAM_WRITE_TIMEOUT)
+                except OSError:
+                    pass
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(first)
+                while True:
+                    try:
+                        seq, block = audio_broker.wait_for_block(seq, timeout=2.0)
+                    except (AudioUnavailable, AudioClientTooSlow):
+                        break
+                    if block is None:
+                        continue
+                    self.wfile.write(block)
+            except OSError:
+                pass
+            finally:
+                if listener_added:
+                    audio_broker.remove_listener()
+                audio_viewers.release()
 
         def _send_json(self, payload: object, status: int = 200) -> None:
             body = json.dumps(payload).encode()
@@ -1332,6 +1538,9 @@ def _make_handler(
 
         def do_POST(self) -> None:  # noqa: N802 (stdlib naming)
             path = urlparse(self.path).path
+            if path == "/talk" and not audio_enabled:
+                self.send_error(404)
+                return
             provided = self._provided_token()
             full, worker = self._auth_tiers(provided)
             if not (full or worker):
@@ -1339,6 +1548,11 @@ def _make_handler(
                 return
             if path == "/annotate":
                 self._handle_annotate()
+                return
+            if path == "/talk":
+                if not self._require_full_audio_token(full, worker):
+                    return
+                self._handle_talk()
                 return
             if not full:
                 self._deny()
@@ -1390,6 +1604,46 @@ def _make_handler(
                 )
             else:
                 self.send_error(404)
+
+        def _handle_talk(self) -> None:
+            if talk_player is None:
+                self.send_error(404)
+                return
+            content_type = self.headers.get("Content-Type", "")
+            content_base = content_type.split(";", 1)[0].strip().lower()
+            if content_base not in _TALK_CONTENT_TYPES:
+                self._send_json(
+                    {"ok": False, "error": "unsupported content type"},
+                    status=415,
+                )
+                return
+            raw_length = self.headers.get("Content-Length")
+            try:
+                length = int(raw_length) if raw_length is not None else -1
+            except ValueError:
+                length = -1
+            if length < 0:
+                self._send_json(
+                    {"ok": False, "error": "content length required"},
+                    status=411,
+                )
+                return
+            if length > TALK_MAX_BYTES:
+                self._send_json({"ok": False, "error": "body too large"}, status=413)
+                return
+            data = self.rfile.read(length)
+            try:
+                result = talk_player.play(data, content_type)
+            except TalkBusy:
+                self._send_json({"ok": False, "error": "talk busy"}, status=409)
+                return
+            except TalkRejected as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=413)
+                return
+            except TalkPlaybackError:
+                self._send_json({"ok": False, "error": "talk playback failed"}, status=500)
+                return
+            self._send_json({"ok": True, "seconds": result.seconds})
 
         def log_message(self, *_args: object) -> None:  # keep the console quiet
             return
@@ -1507,6 +1761,10 @@ def serve_live_view(
     annotation_sink: Callable[[str, float, str], int | None] | None = None,
     broker_sink: Callable[[object], None] | None = None,
     alert_state_sink: Callable[[object], None] | None = None,
+    audio_broker: AudioBroker | None = None,
+    talk_player: TalkPlayer | None = None,
+    tls_cert: str | None = None,
+    tls_key: str | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
@@ -1553,11 +1811,18 @@ def serve_live_view(
         soothe, mode_setter, rotate, alert_state=alert_state,
         snapshot_provider=snapshot_provider, events_provider=events_provider,
         worker_token=worker_token, annotation_sink=annotation_sink,
+        audio_broker=audio_broker, talk_player=talk_player,
     )
     httpd = _DaemonThreadingHTTPServer((host, port), handler)
+    if tls_cert and tls_key:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(tls_cert), str(tls_key))
+        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
     try:
         httpd.serve_forever()
     finally:
         httpd.server_close()
         _close_sources()
         broker.close()
+        if audio_broker is not None:
+            audio_broker.close()
