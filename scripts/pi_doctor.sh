@@ -289,10 +289,21 @@ check_service() {
   fi
 }
 
+liveview_scheme() {
+  # live-view records http/https here on startup; the TLS cert is self-signed
+  # for the LAN IP, so loopback callers use https with -k (token still gates).
+  local scheme_file="$HOME/.config/beddington/liveview.scheme"
+  if [[ -r "$scheme_file" ]] && [[ "$(<"$scheme_file")" == "https" ]]; then
+    echo "https"
+  else
+    echo "http"
+  fi
+}
+
 http_get_text() {
   local url="$1"
   local response code body
-  response=$(curl -sS --max-time 5 -w $'\n%{http_code}' "$url" 2>/dev/null || true)
+  response=$(curl -sSk --max-time 5 -w $'\n%{http_code}' "$url" 2>/dev/null || true)
   code=${response##*$'\n'}
   body=${response%$'\n'*}
   HTTP_CODE="$code"
@@ -345,7 +356,7 @@ check_dashboard() {
     return
   fi
 
-  local base="http://127.0.0.1:${PORT}"
+  local base="$(liveview_scheme)://127.0.0.1:${PORT}"
   HTTP_CODE=""
   HTTP_BODY=""
   http_get_text "${base}/alerts.json"
