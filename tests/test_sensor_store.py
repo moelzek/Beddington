@@ -229,6 +229,20 @@ def test_store_timeline_merges_cry_episodes_chronologically(tmp_path: Path) -> N
     store.close()
 
 
+def test_cry_episode_count_since_includes_tracker_events(tmp_path: Path) -> None:
+    store = SensorStore(str(tmp_path / "s.db"))
+    store.append_cry_episode(100.0)
+    store.append_cry_episode(300.0)
+    store.append_event("crying", 150.0, ended_ts=170.0)
+    store.append_event("crying", 180.0, ended_ts=220.0)
+    store.append_event("crying", 400.0, ended_ts=430.0)
+    store.append_event("stirring", 500.0, ended_ts=520.0)
+
+    assert store.cry_episode_count_since(200.0) == 3
+    assert store.cry_episode_count_since(0.0) == 5
+    store.close()
+
+
 def test_store_timeline_window_keeps_open_and_overlapping(tmp_path: Path) -> None:
     store = SensorStore(str(tmp_path / "s.db"))
     store.append_event("room_warm", 10.0, ended_ts=20.0)  # fully before window

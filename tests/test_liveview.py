@@ -1137,6 +1137,7 @@ def test_serve_live_view_serves_events_json_and_broker_sink() -> None:
         {"kind": "crying", "started_ts": 1.0, "ended_ts": 61.0, "detail": ""}
     ]
     sunk: list[object] = []
+    alert_states: list[object] = []
     thread = threading.Thread(
         target=serve_live_view,
         kwargs={
@@ -1146,6 +1147,7 @@ def test_serve_live_view_serves_events_json_and_broker_sink() -> None:
             "source": source,
             "events_provider": lambda: {"window_hours": 12, "events": timeline},
             "broker_sink": sunk.append,
+            "alert_state_sink": alert_states.append,
         },
         daemon=True,
     )
@@ -1161,6 +1163,10 @@ def test_serve_live_view_serves_events_json_and_broker_sink() -> None:
         # The broker was handed to the sink before serving started, and it
         # exposes frame_age for the episode tracker.
         assert len(sunk) == 1 and hasattr(sunk[0], "frame_age")
+        assert (
+            len(alert_states) == 1
+            and alert_states[0].snapshot()["active"] is False
+        )
         try:
             urllib.request.urlopen(f"{base}/events.json?token=wrong", timeout=2)
             raise AssertionError("expected 401")

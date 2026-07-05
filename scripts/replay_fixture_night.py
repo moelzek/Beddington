@@ -73,12 +73,16 @@ def _baseline(
     }
 
 
-def _tick(t: float, readings: dict[str, object]) -> Tick:
+def _tick(
+    t: float,
+    readings: dict[str, object],
+    alert: dict[str, object] | None = None,
+) -> Tick:
     return {
         "t": float(t),
         "readings": readings,
         "camera_frame_age_s": 0.5,
-        "alert": {"active": False, "score": None, "age_seconds": None},
+        "alert": alert or {"active": False, "score": None, "age_seconds": None},
     }
 
 
@@ -95,6 +99,20 @@ def built_in_fixture() -> Fixture:
             readings = _baseline(temperature_c=24.5)
         elif 3000 <= offset <= 3090:
             readings = {}
+        elif 3600 <= offset <= 3630:
+            readings = _baseline()
+            ticks.append(
+                _tick(
+                    float(offset),
+                    readings,
+                    {
+                        "active": True,
+                        "score": 0.9,
+                        "age_seconds": float(offset - 3600),
+                    },
+                )
+            )
+            continue
         elif offset == 6200:
             readings = _baseline(motion=True)
         else:
@@ -111,9 +129,10 @@ def built_in_fixture() -> Fixture:
                 "caregiver_present",
                 "room_warm",
                 "sensor_unavailable",
+                "crying",
             ],
             "final_state": "calm",
-            "states_seen": ["calm", "wiggling", "caregiver_present"],
+            "states_seen": ["calm", "wiggling", "caregiver_present", "crying"],
         },
     }
 
@@ -200,25 +219,31 @@ def run_replay(fixture: Fixture, config_path: Path) -> tuple[dict[str, object], 
         if not isinstance(raw_readings, dict):
             raise ValueError("tick readings must be an object")
         readings = dict(raw_readings)
+        raw_alert = raw_tick.get("alert")
+        alert = _alert(raw_alert)
         camera_frame_age_s = raw_tick.get("camera_frame_age_s")
         if not isinstance(camera_frame_age_s, (int, float)) or isinstance(camera_frame_age_s, bool):
             camera_frame_age_s = None
 
-        for change in tracker.update(ts, readings, camera_frame_age_s):
-            episodes.append(_episode(change))
         if readings:
             history.append((ts, readings))
 
         snapshot = engine.build(
             history=history,
             now=ts,
-            alerts=_alert(raw_tick.get("alert")),
+            alerts=alert,
             mode="night",
             mode_auto=False,
             camera_frame_age_s=camera_frame_age_s,
             soothe_playing=None,
             autosoothe={"enabled": False, "preset": ""},
         )
+        tracker_snapshot = dict(readings)
+        active = raw_alert.get("active") if isinstance(raw_alert, dict) else None
+        if isinstance(active, bool):
+            tracker_snapshot["cry_alert_active"] = active
+        for change in tracker.update(ts, tracker_snapshot, camera_frame_age_s):
+            episodes.append(_episode(change))
         state = str(snapshot.get("baby_state", ""))
         states_seen.add(state)
         if state != previous_state:

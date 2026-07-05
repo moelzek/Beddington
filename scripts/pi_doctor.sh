@@ -367,7 +367,8 @@ check_dashboard() {
   check_token_file || return
 
   local liveview_secret
-  IFS= read -r liveview_secret <"$TOKEN_FILE" || liveview_secret=""
+  liveview_secret=$(<"$TOKEN_FILE")
+  liveview_secret="${liveview_secret%"${liveview_secret##*[![:space:]]}"}"
   if [[ -z "$liveview_secret" ]]; then
     fail "dashboard token" "token file is empty"
     return

@@ -1115,6 +1115,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 soothe_cmd,
                                 port=dashboard_port,
                                 config=config,
+                                ducked=resume_after_answer,
                             )
                             _action = str(soothe_cmd.get("action") or "")
                             if _action in {"play", "play_best", "next"}:
@@ -1585,6 +1586,7 @@ class _SensorSampler:
         self._thread: threading.Thread | None = None
         self._closed_store = False
         self._frame_age: object | None = None  # callable () -> float | None
+        self._cry_alert_probe: object | None = None  # callable () -> bool | None
         self._episode_tracker = None
         self._open_event_rows: dict[tuple[str, str], int] = {}
         if store is not None:
@@ -1597,6 +1599,9 @@ class _SensorSampler:
         exists once ``serve_live_view`` runs)."""
         self._frame_age = frame_age if callable(frame_age) else None
 
+    def set_cry_alert_probe(self, probe: object | None) -> None:
+        self._cry_alert_probe = probe if callable(probe) else None
+
     def _record_episodes(self, now: float, snapshot: dict[str, object]) -> None:
         """Feed the episode tracker every tick — including empty snapshots, so
         a total sensor outage still opens sensor_unavailable episodes."""
@@ -1606,7 +1611,16 @@ class _SensorSampler:
             age = self._frame_age() if self._frame_age is not None else None
             if not isinstance(age, (int, float)) or isinstance(age, bool):
                 age = None
-            changes = self._episode_tracker.update(now, snapshot, age)
+            tracker_snapshot = snapshot
+            if self._cry_alert_probe is not None:
+                try:
+                    cry_alert_active = self._cry_alert_probe()
+                except Exception:
+                    cry_alert_active = None
+                if isinstance(cry_alert_active, bool):
+                    tracker_snapshot = dict(snapshot)
+                    tracker_snapshot["cry_alert_active"] = cry_alert_active
+            changes = self._episode_tracker.update(now, tracker_snapshot, age)
             self._apply_episode_changes(changes)
         except Exception:
             pass
@@ -2278,10 +2292,14 @@ def _select_best_soothe_preset(
     category: str = "",
     mood: str = "",
     context: str = "",
+    current_preset: str = "",
 ) -> str | None:
     candidates = _candidate_soothe_presets(
         state, config, category=category, mood=mood
     )
+    current = str(current_preset or state.get("playing") or "")
+    if current:
+        candidates = {key: meta for key, meta in candidates.items() if key != current}
     if not candidates:
         return None
     default = _preferred_soothe_default(
@@ -2308,6 +2326,9 @@ def _select_best_soothe_preset(
 def _select_next_soothe_preset(
     state: Mapping[str, object],
     config: AppConfig | None,
+    *,
+    current_preset: str = "",
+    context: str = "",
 ) -> str | None:
     raw_presets = state.get("presets")
     keys: list[str] = []
@@ -2319,7 +2340,7 @@ def _select_next_soothe_preset(
                     keys.append(key)
     if not keys and config is not None:
         keys = sorted(_build_soothe_presets(config))
-    current = str(state.get("playing") or "")
+    current = str(current_preset or state.get("playing") or "")
     candidates = {key: object() for key in keys if key != current}
     if not candidates:
         return None
@@ -2333,7 +2354,7 @@ def _select_next_soothe_preset(
 
     from .soothe_memory import best_preset
 
-    context = _normalise_soothe_context(state.get("context", ""))
+    context = _normalise_soothe_context(context or state.get("context", ""))
     if _soothe_learning_enabled(config):
         outcomes = (
             _load_soothe_outcomes(_DEFAULT_HISTORY_DB, context)
@@ -2450,6 +2471,7 @@ def _soothe_via_dashboard(
     cmd: Mapping[str, object],
     port: int = 8088,
     config: AppConfig | None = None,
+    ducked: Mapping[str, str] | None = None,
 ) -> str:
     """Trigger the live-view soothe player over local HTTP so the voice command
     and the dashboard share ONE player (single source of truth)."""
@@ -2488,11 +2510,20 @@ def _soothe_via_dashboard(
     elif action == "next":
         try:
             state = _live_view_json("/soothe.json", token, port)
-            preset = _select_next_soothe_preset(state, config)
+            current = str(state.get("playing") or "")
+            ducked_preset = str(ducked.get("preset") or "") if ducked else ""
+            state_context = _normalise_soothe_context(state.get("context", ""))
+            if not state_context and ducked:
+                state_context = _normalise_soothe_context(ducked.get("context", ""))
+            preset = _select_next_soothe_preset(
+                state,
+                config,
+                current_preset=current or ducked_preset,
+                context=state_context,
+            )
             if preset is None:
                 return "Sorry, there isn't another soothe sound available."
             params = {"action": "play", "preset": preset}
-            state_context = _normalise_soothe_context(state.get("context", ""))
             if state_context:
                 params["context"] = state_context
             spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(state_context)}."
@@ -2501,19 +2532,26 @@ def _soothe_via_dashboard(
     elif action == "play_best":
         try:
             state = _live_view_json("/soothe.json", token, port)
+            current = str(state.get("playing") or "")
+            ducked_preset = str(ducked.get("preset") or "") if ducked else ""
+            state_context = _normalise_soothe_context(state.get("context", ""))
+            selection_context = context or state_context
+            if not state_context and not selection_context and ducked:
+                selection_context = _normalise_soothe_context(ducked.get("context", ""))
             preset = _select_best_soothe_preset(
                 state,
                 config,
                 category=str(cmd.get("category") or ""),
                 mood=str(cmd.get("mood") or ""),
-                context=context,
+                context=selection_context,
+                current_preset=current or ducked_preset,
             )
             if preset is None:
                 return "Sorry, I don't have a matching soothe sound available."
             params = {"action": "play", "preset": preset}
-            if context:
-                params["context"] = context
-            spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(context)}."
+            if selection_context:
+                params["context"] = selection_context
+            spoken = f"Playing {_soothe_spoken_name(preset)}{_soothe_context_suffix(selection_context)}."
         except Exception:
             return "Sorry, I couldn't reach the soothe player."
     elif action == "play":
@@ -2942,6 +2980,21 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
         single_source = _make_source(args.camera_num, args.night)
         mode_getter = None
 
+    def _bind_alert_state(alert_state: object) -> None:
+        if sampler is None:
+            return
+        snapshot = getattr(alert_state, "snapshot", None)
+        if not callable(snapshot):
+            return
+
+        def _probe() -> object:
+            alert_snapshot = snapshot()
+            if isinstance(alert_snapshot, dict):
+                return alert_snapshot.get("active")
+            return None
+
+        sampler.set_cry_alert_probe(_probe)
+
     shown_ip = _lan_ip(args.bind if args.bind != "0.0.0.0" else "<pi-ip>")
     url = f"http://{shown_ip}:{args.port}/?token={token}"
     overlay = "video + live room readings" if readings_provider else "video only"
@@ -2984,6 +3037,7 @@ def _live_view_command(args: argparse.Namespace, config: AppConfig) -> int:
                 if sampler is not None
                 else None
             ),
+            alert_state_sink=_bind_alert_state if sampler is not None else None,
         )
     except KeyboardInterrupt:
         print("\nLive view stopped.")
