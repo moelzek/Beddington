@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from beddington.config import NarratorConfig, load_config
+from beddington.live_snapshot import SnapshotThresholds
 
 
 EXPECTED_SOOTHE_PRESETS = [
@@ -41,6 +42,11 @@ notification_cooldown_seconds = 20
 
 [notifications]
 desktop = false
+
+[liveview.state]
+caregiver_min_targets = 3
+caregiver_dwell_s = 7.5
+t2_repeat_cooldown_s = 42.0
 
 [sounds]
 enabled = true
@@ -117,6 +123,9 @@ gpio_pin = 4
     assert config.detection.threshold == 0.4
     assert config.detection.sustained_seconds == 2.0
     assert config.notifications.desktop is False
+    assert config.liveview.state.caregiver_min_targets == 3
+    assert config.liveview.state.caregiver_dwell_s == 7.5
+    assert config.liveview.state.t2_repeat_cooldown_s == 42.0
     assert config.soothe.enabled is True
     assert config.soothe.preset == "white_noise"
     assert config.soothe.min_play_seconds == 42.5
@@ -201,6 +210,41 @@ def test_pi_product_config_points_at_generated_soothe_assets() -> None:
         assert preset.sound_path is not None
         assert preset.sound_path.exists()
     assert config.assistant.chime_enabled is True
+
+
+def test_liveview_state_defaults_when_section_absent(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[notifications]\ndesktop = true\n", encoding="utf-8")
+
+    config = load_config(path)
+
+    assert config.liveview.state == SnapshotThresholds()
+
+
+def test_liveview_state_partial_section_merges_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[liveview.state]
+caregiver_dwell_s = 2.5
+max_evidence_items = 4
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.liveview.state.caregiver_dwell_s == 2.5
+    assert config.liveview.state.max_evidence_items == 4
+    assert config.liveview.state.max_radar_age_s == SnapshotThresholds().max_radar_age_s
+
+
+def test_liveview_state_bad_value_uses_config_error_style(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[liveview.state]\ncaregiver_min_targets = 0\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="liveview.state.caregiver_min_targets"):
+        load_config(path)
 
 
 def test_narrator_config_defaults_enabled() -> None:
