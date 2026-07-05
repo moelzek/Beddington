@@ -247,7 +247,15 @@ class SensorStore:
                 "WHERE started_ts>=? OR (ended_ts IS NOT NULL AND ended_ts>=?)",
                 (float(since_ts), float(since_ts)),
             )
-            return int(cursor.fetchone()[0])
+            legacy_count = int(cursor.fetchone()[0])
+            cursor = self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='crying' "
+                "AND (started_ts>=? OR (ended_ts IS NOT NULL AND ended_ts>=?))",
+                (float(since_ts), float(since_ts)),
+            )
+            # The cry monitor and assistant are mutually exclusive on one mic,
+            # so the two writers cannot duplicate the same live episode.
+            return legacy_count + int(cursor.fetchone()[0])
 
     def night_aggregates(
         self,

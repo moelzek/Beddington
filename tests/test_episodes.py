@@ -21,6 +21,19 @@ def test_stirring_opens_on_motion_and_closes_after_gap() -> None:
     assert ended == [EpisodeChange("end", "stirring", 40.0)]
 
 
+def test_crying_opens_and_missing_state_does_not_close() -> None:
+    tracker = EpisodeTracker()
+    assert _changes(tracker, 0.0, {"cry_alert_active": False}) == []
+    assert _changes(tracker, 10.0, {"cry_alert_active": True}) == [
+        EpisodeChange("start", "crying", 10.0)
+    ]
+    assert _changes(tracker, 20.0, {}) == []
+    assert _changes(tracker, 30.0, {"cry_alert_active": None}) == []
+    assert _changes(tracker, 40.0, {"cry_alert_active": False}) == [
+        EpisodeChange("end", "crying", 40.0)
+    ]
+
+
 def test_presence_needs_dwell_both_ways() -> None:
     tracker = EpisodeTracker(EpisodeThresholds(presence_open_s=10, presence_close_s=30))
     assert _changes(tracker, 0.0, {"person_present": True}) == []

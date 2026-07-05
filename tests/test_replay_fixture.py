@@ -25,6 +25,9 @@ def test_builtin_replay_fixture_is_deterministic(tmp_path: Path) -> None:
     out_two = tmp_path / "two"
 
     replay.generate_fixture(fixture)
+    generated = json.loads(fixture.read_text(encoding="utf-8"))
+    assert "crying" in generated["expect"]["episode_kinds"]
+    assert "crying" in generated["expect"]["states_seen"]
 
     assert replay.replay_fixture(
         fixture,
@@ -51,5 +54,7 @@ def test_builtin_replay_fixture_is_deterministic(tmp_path: Path) -> None:
         "caregiver_present",
         "room_warm",
         "sensor_unavailable",
+        "crying",
     } <= episode_kinds
+    assert "crying" in {event["state"] for event in first["transitions"]}
     assert first["transitions"]

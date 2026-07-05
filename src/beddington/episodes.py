@@ -127,6 +127,7 @@ class EpisodeTracker:
     ) -> list[EpisodeChange]:
         changes: list[EpisodeChange] = []
         self._update_stirring(ts, snapshot, changes)
+        self._update_crying(ts, snapshot, changes)
         self._update_presence(ts, snapshot, changes)
         self._update_temperature(ts, snapshot, changes)
         self._update_sensor_availability(ts, snapshot, changes)
@@ -179,6 +180,20 @@ class EpisodeTracker:
             if ts - self._last_motion_true >= self.thresholds.stir_gap_s:
                 # Close at the last movement actually seen, not at the gap end.
                 self._end(changes, "stirring", self._last_motion_true)
+
+    def _update_crying(
+        self,
+        ts: float,
+        snapshot: dict[str, object],
+        changes: list[EpisodeChange],
+    ) -> None:
+        active = snapshot.get("cry_alert_active")
+        if "cry_alert_active" not in snapshot or active is None:
+            return
+        if active is True:
+            self._start(changes, "crying", ts)
+        elif active is False:
+            self._end(changes, "crying", ts)
 
     def _update_presence(
         self,

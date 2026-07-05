@@ -1506,6 +1506,7 @@ def serve_live_view(
     worker_token: str = "",
     annotation_sink: Callable[[str, float, str], int | None] | None = None,
     broker_sink: Callable[[object], None] | None = None,
+    alert_state_sink: Callable[[object], None] | None = None,
 ) -> None:
     """Serve the live view until interrupted.
 
@@ -1516,6 +1517,7 @@ def serve_live_view(
     (presets()/playing()/play()/stop()) backs the Soothe section.
     ``broker_sink`` receives the frame broker before serving starts, so the
     caller can late-bind ``broker.frame_age`` (the broker only exists here).
+    ``alert_state_sink`` receives the alert state used by ``/alerts.json``.
     """
     if sources:
         brokers: dict[str, FrameBroker] = {}
@@ -1543,9 +1545,12 @@ def serve_live_view(
 
     if broker_sink is not None:
         broker_sink(broker)
+    alert_state = _AlertState()
+    if alert_state_sink is not None:
+        alert_state_sink(alert_state)
     handler = _make_handler(
         broker, token, title, readings_provider, history_provider, digest_provider,
-        soothe, mode_setter, rotate, alert_state=_AlertState(),
+        soothe, mode_setter, rotate, alert_state=alert_state,
         snapshot_provider=snapshot_provider, events_provider=events_provider,
         worker_token=worker_token, annotation_sink=annotation_sink,
     )
