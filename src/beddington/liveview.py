@@ -1098,15 +1098,13 @@ def rpicam_vid_command(
 ) -> list[str]:
     """Build the rpicam-vid argv that streams MJPEG to stdout.
 
-    ``night`` enables a low-light mode that gathers as much light as possible: a
-    long exposure plus high gain, with the frame rate dropped so the long shutter
-    fits (a still nursery doesn't need a high frame rate, and each frame collects
-    far more light). It helps when a dim night-light is on; a fully dark room still
-    needs a NoIR camera and an IR lamp — both cameras here are IR-filtered.
+    ``night`` enables a low-light mode: the longest exposure that still fits the
+    frame period, plus high gain. It helps when a dim night-light is on; a fully
+    dark room still needs an IR lamp for the NoIR night camera.
     """
-    # Night: 0.4s exposure at gain 16, denoise off so faint detail survives. The
-    # frame rate must allow the shutter (2 fps → 0.5s period ≥ the 0.4s exposure).
-    NIGHT_FPS, NIGHT_SHUTTER_US, NIGHT_GAIN = 2, 400000, 16.0
+    # Night: 12 fps like the day eye, with the longest shutter that fits the
+    # 83ms frame period (80ms), gain 16, denoise off so faint detail survives.
+    NIGHT_FPS, NIGHT_SHUTTER_US, NIGHT_GAIN = 12, 80000, 16.0
     cmd = [
         binary,
         "--camera", str(camera),

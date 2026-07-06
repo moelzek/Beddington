@@ -516,8 +516,11 @@ def test_rpicam_vid_command_night_adds_low_light() -> None:
     cmd = rpicam_vid_command(night=True, fps=12)
     assert "--shutter" in cmd  # longer exposure
     assert "--gain" in cmd  # higher gain
-    # Night drops the frame rate so the long exposure fits (more light per frame).
-    assert int(cmd[cmd.index("--framerate") + 1]) < 12
+    # Night runs at full frame rate; the shutter must fit the frame period.
+    fps = int(cmd[cmd.index("--framerate") + 1])
+    shutter_us = int(cmd[cmd.index("--shutter") + 1])
+    assert fps == 12
+    assert shutter_us <= 1_000_000 // fps
 
 
 def test_frame_broker_delivers_and_closes() -> None:

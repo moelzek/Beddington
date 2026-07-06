@@ -266,25 +266,35 @@ check_models() {
 }
 
 check_service() {
-  local unit="$1"
-  local out active state_var="$2"
+  # check_service ROLE STATE_VAR UNIT_CANDIDATE... — uses the first candidate
+  # whose user unit file exists (deployed Pis may run legacy-named units).
+  local role="$1"
+  local state_var="$2"
+  shift 2
+  local out active candidate unit=""
   if ! have systemctl; then
-    skip "service $unit" "systemctl not found"
+    skip "service $role" "systemctl not found"
     printf -v "$state_var" '%s' "skip"
     return
   fi
-  out=$(systemctl --user list-unit-files "${unit}.service" --no-legend 2>/dev/null || true)
-  if [[ "$out" != *"${unit}.service"* ]]; then
-    skip "service $unit" "user unit not installed"
+  for candidate in "$@"; do
+    out=$(systemctl --user list-unit-files "${candidate}.service" --no-legend 2>/dev/null || true)
+    if [[ "$out" == *"${candidate}.service"* ]]; then
+      unit="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$unit" ]]; then
+    skip "service $role" "user unit not installed (tried: $*)"
     printf -v "$state_var" '%s' "skip"
     return
   fi
   active=$(systemctl --user is-active "$unit" 2>/dev/null || true)
   if [[ "$active" == "active" ]]; then
-    ok "service $unit" "active"
+    ok "service $role" "$unit active"
     printf -v "$state_var" '%s' "active"
   else
-    warn "service $unit" "is-active returned ${active:-unknown}"
+    warn "service $role" "$unit is-active returned ${active:-unknown}"
     printf -v "$state_var" '%s' "inactive"
   fi
 }
@@ -457,9 +467,19 @@ mtime_epoch() {
 }
 
 check_log_recent() {
+  # check_log_recent LABEL SERVICE_STATE PATH_CANDIDATE... — uses the first
+  # log path that exists (legacy deployments use legacy log names).
   local label="$1"
-  local path="$2"
-  local service_state="$3"
+  local service_state="$2"
+  shift 2
+  local path="$1"
+  local candidate
+  for candidate in "$@"; do
+    if [[ -f "$candidate" ]]; then
+      path="$candidate"
+      break
+    fi
+  done
   if [[ "$service_state" == "skip" || "$service_state" == "unknown" ]]; then
     skip "log $label" "service state unavailable"
     return
@@ -495,12 +515,12 @@ check_system
 check_python_env
 check_config
 check_models
-check_service "beddington-liveview" LIVEVIEW_STATE
-check_service "beddington-assistant" ASSISTANT_STATE
+check_service "liveview" LIVEVIEW_STATE beddington-liveview lullaby-liveview
+check_service "assistant" ASSISTANT_STATE beddington-assistant paddington
 check_dashboard
 check_hardware
-check_log_recent "liveview" "${HOME}/liveview.log" "$LIVEVIEW_STATE"
-check_log_recent "assistant" "${HOME}/beddington-assistant.log" "$ASSISTANT_STATE"
+check_log_recent "liveview" "$LIVEVIEW_STATE" "${HOME}/liveview.log"
+check_log_recent "assistant" "$ASSISTANT_STATE" "${HOME}/beddington-assistant.log" "${HOME}/paddington.log"
 
 printf 'SUMMARY OK=%d WARN=%d FAIL=%d SKIP=%d\n' "$OK_COUNT" "$WARN_COUNT" "$FAIL_COUNT" "$SKIP_COUNT"
 if (( FAIL_COUNT > 0 )); then
