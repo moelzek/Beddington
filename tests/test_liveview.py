@@ -475,7 +475,7 @@ def test_build_viewer_html_debug_section_collapsed_with_sensor_charts() -> None:
     )
 
     assert '<details id="engineering" class="engineering">' in html
-    assert "<summary>Engineering</summary>" in html
+    assert "<summary>Charts</summary>" in html
     assert '<canvas id="cv-room_temperature_c"></canvas>' in html
     assert '<button type="button" class="sensor-chip active"' in html
     assert '<details id="engineering" class="engineering" open>' not in html
@@ -496,7 +496,7 @@ def test_build_viewer_html_video_first_tab_bar() -> None:
     assert 'id="view-eng"' in html
     assert 'data-view="monitor">Monitor</button>' in html
     assert 'data-view="tonight">Tonight</button>' in html
-    assert 'data-view="eng">Engineering</button>' in html
+    assert 'data-view="eng">More data</button>' in html
     assert 'id="sound-btn"' in html  # soothe lives behind the Sound sheet
     assert 'id="sound-sheet"' in html
     assert 'data-sensor="room_temperature_c"' in html

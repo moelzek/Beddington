@@ -342,7 +342,7 @@ font-weight:750;letter-spacing:.02em;min-height:0;cursor:pointer}
 #sound-sheet{position:fixed;inset:0;z-index:40;display:none}
 #sound-sheet.open{display:block}
 .sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
-.sheet-panel{position:absolute;left:0;right:0;bottom:0;max-height:80dvh;overflow:auto;
+.sheet-panel{position:absolute;left:50%;transform:translateX(-50%);width:min(100%,560px);bottom:0;max-height:80dvh;overflow:auto;
 background:var(--surface);border-top:1px solid var(--border);
 border-radius:18px 18px 0 0;padding:6px 16px 30px}
 .sheet-handle{width:44px;height:5px;border-radius:999px;background:var(--border);margin:8px auto 10px}
@@ -378,11 +378,11 @@ box-shadow:0 0 0 2px rgba(88,199,176,.36);transition:left .45s ease,opacity .2s 
 .action-detail{margin:0;color:var(--muted)}
 .room-action-card{border-color:rgba(232,177,84,.75);background:#1b160d}
 .sensor-area{display:grid;gap:12px;margin-bottom:14px}
-.sensor-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.sensor-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
 .sensor-card{min-width:0;border:1px solid var(--border);border-radius:8px;background:var(--surface);
 padding:11px;display:grid;gap:4px}
 .sensor-name{color:var(--muted);font-size:12px;font-weight:800}
-.sensor-value{font-size:16px;font-weight:750;line-height:1.25;overflow-wrap:anywhere}
+.sensor-value{font-size:15px;font-weight:750;line-height:1.25;overflow-wrap:break-word}
 .sensor-age,.sensor-extra{color:var(--muted);font-size:12px;line-height:1.3}
 .section-title{font-size:22px;line-height:1.25;margin:6px 0 14px;font-weight:800}
 .digest{white-space:pre-wrap;font-size:15.5px;line-height:1.6;color:var(--text);margin:0}
@@ -437,12 +437,11 @@ border:1px solid var(--border);border-radius:999px;padding:8px 13px;font-size:13
 border-radius:8px;display:block}
 .note{color:var(--muted);padding:14px 0 0;font-size:12px;text-align:center}
 @media (min-width:720px){
-.state-grid{grid-template-columns:1.1fr .9fr;align-items:stretch}
-.sensor-area{grid-template-columns:1fr 1fr}.sensor-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+.state-grid{grid-template-columns:1.1fr .9fr;align-items:start}
+.sensor-area{grid-template-columns:1fr 1fr}
 }
 @media (max-width:420px){
 .health-dot span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.sensor-cards{grid-template-columns:1fr 1fr}
 .cam-actions{gap:10px}.audio-btn{min-width:0;padding:12px 16px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
@@ -1046,7 +1045,7 @@ def _dashboard_page(
             )
     engineering_section = (
         '<details id="engineering" class="engineering">'
-        "<summary>Engineering</summary>"
+        "<summary>Charts</summary>"
         '<div id="sensor-picks" class="sensor-picks" aria-label="Sensor charts">'
         f"{sensor_buttons}"
         "</div>"
@@ -1085,7 +1084,7 @@ def _dashboard_page(
     eng_inner = health_dots + eng_state + engineering_section
     engineering_view = (
         '<section id="view-eng" class="view" hidden aria-label="Engineering">'
-        '<div class="page"><h1 class="section-title">Engineering</h1>'
+        '<div class="page"><h1 class="section-title">More data</h1>'
         f'{eng_inner}<div class="note">{privacy_badge}</div></div></section>'
         if eng_inner
         else ""
@@ -1099,7 +1098,7 @@ def _dashboard_page(
         )
     if engineering_view:
         tab_buttons += (
-            '<button type="button" class="tab-btn" data-view="eng">Engineering</button>'
+            '<button type="button" class="tab-btn" data-view="eng">More data</button>'
         )
     tabs = (
         f'<nav id="tabs" aria-label="Dashboard views">{tab_buttons}</nav>'
