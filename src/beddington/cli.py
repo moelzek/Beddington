@@ -807,10 +807,13 @@ def _transcribe(model: object, audio: object) -> str:
         temperature=0.0,
         # Bias decoding toward the wake word + topics so marginal audio mangles
         # them less ("Beddington"/"Paddington", "temperature" not "up virtual").
+        # No wake-word+command sentences and no "Switch sound.": Whisper replays
+        # prompt shapes on marginal audio, and those hallucinated "Beddington
+        # sound." transcripts pass the wake gate and trigger the fallback reply.
         initial_prompt=(
             "Hey Beddington. Hi Paddington. What is the temperature, humidity, "
             "air pressure, brightness, or air quality? How was the night? "
-            "Hi Beddington stop. Stop the music. Play rain. Switch sound."
+            "Stop the music. Play rain."
         ),
     )
     text = " ".join(segment.text for segment in segments).strip()
@@ -911,6 +914,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     pre_roll: deque = deque(maxlen=start_speech_frames + 2)
     buffer: list = []
     in_utterance = False
+    utterance_started = 0.0
     speech_run = 0
     silence_run = 0
     ducked_soothe: dict[str, str] | None = None
@@ -1023,7 +1027,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     max_rms = max(max_rms, rms)
                     if time.monotonic() - last_beat >= 5.0:
                         print(
-                            f"  [debug] frames={frames_seen} max_rms={max_rms:.4f} "
+                            f"  [debug] {time.strftime('%H:%M:%S')} "
+                            f"frames={frames_seen} max_rms={max_rms:.4f} "
                             f"(bar {speech_bar:.4f}, self-audio {self_audio_floor:.4f}, "
                             f"soothe={'on' if soothe_playing else 'off'})"
                         )
@@ -1042,6 +1047,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                     f"{ducked_soothe['preset']}"
                                 )
                             in_utterance = True
+                            utterance_started = time.monotonic()
                             buffer = list(pre_roll)
                             silence_run = 0
                     else:
@@ -1069,7 +1075,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 np.arange(len(audio)),
                                 audio,
                             ).astype(np.float32)
+                        transcribe_started = time.monotonic()
                         text = _transcribe(model, audio)
+                        transcribe_secs = time.monotonic() - transcribe_started
                         wake = match_wake(text, wake_words)
                         question = None if wake is None else wake.question
                         if question == "" and not wake.confident:
@@ -1083,12 +1091,15 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 )
                             question = None
                         resume_after_answer = resume_soothe
-                        now = time.monotonic()
                         from_pending_wake = False
+                        # Anchor the follow-up window on when the utterance
+                        # STARTED: transcription can take seconds on the Pi, so
+                        # checking the clock here (after it) silently dropped
+                        # follow-ups the parent spoke well inside the window.
                         if (
                             question is None
                             and pending_wake_until
-                            and now < pending_wake_until
+                            and utterance_started < pending_wake_until
                         ):
                             pending_text = normalize_transcript(text)
                             if pending_text:
@@ -1103,7 +1114,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                         f"{question!r}"
                                     )
                         if args.debug:
-                            print(f'  [debug] transcript="{text}" -> question={question!r}')
+                            print(
+                                f"  [debug] {time.strftime('%H:%M:%S')} "
+                                f'transcript="{text}" -> question={question!r} '
+                                f"(stt {transcribe_secs:.1f}s)"
+                            )
                         if question is None:
                             resumed = _resume_dashboard_soothe(
                                 resume_soothe,
@@ -1123,7 +1138,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             print(f"  [debug] chime: {chime}")
                         drain_captured_frames()
                         if question == "":
-                            pending_wake_until = time.monotonic() + 6.0
+                            pending_wake_until = time.monotonic() + 8.0
                             pending_wake_soothe = resume_after_answer or pending_wake_soothe
                             if args.debug:
                                 print("  [debug] wake heard; waiting for follow-up")
