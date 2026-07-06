@@ -1103,8 +1103,10 @@ def rpicam_vid_command(
     dark room still needs an IR lamp for the NoIR night camera.
     """
     # Night: 12 fps like the day eye, with the longest shutter that fits the
-    # 83ms frame period (80ms), gain 16, denoise off so faint detail survives.
-    NIGHT_FPS, NIGHT_SHUTTER_US, NIGHT_GAIN = 12, 80000, 16.0
+    # 83ms frame period (80ms), gain 1.6, denoise off so faint detail survives.
+    # ~10x light boost, tuned for an IR torch lighting the room; higher gain
+    # blows out under IR illumination.
+    NIGHT_FPS, NIGHT_SHUTTER_US, NIGHT_GAIN = 12, 80000, 1.6
     cmd = [
         binary,
         "--camera", str(camera),
