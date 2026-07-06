@@ -259,6 +259,12 @@ def paddingtonise(plain_answer: str, config: NarratorConfig) -> str:
         return plain_answer
     if is_medically_sensitive(plain):
         return plain_answer
+    if getattr(config, "persona_upgrade_only", False):
+        # Persona is desktop-brain-only: skip (fast, deterministic answer) when
+        # the resolved target is still the Pi baseline.
+        target = resolve_ollama_target(config)
+        if target.host.rstrip("/") == str(config.host).rstrip("/"):
+            return plain_answer
     candidate = _call_ollama(plain, config)
     if candidate is None:
         return plain_answer

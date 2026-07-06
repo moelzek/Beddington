@@ -66,6 +66,10 @@ class NarratorConfig:
     # in character, grounded + validated so it can never change a fact (see
     # persona.py). Reuses model/host above. Fails closed to the plain answer.
     persona_enabled: bool = True
+    # Only restyle via the desktop upgrade endpoint: when the upgrade host is
+    # absent/unreachable the persona step is skipped entirely, so Pi-only
+    # answers keep their snappy deterministic latency.
+    persona_upgrade_only: bool = False
     persona_temperature: float = 0.4
     persona_num_predict: int = 80
     persona_timeout: float = 8.0
@@ -583,6 +587,10 @@ def _load_narrator(
         persona_enabled=_coerce_bool(
             raw_narrator.get("persona_enabled"),
             default.persona_enabled,
+        ),
+        persona_upgrade_only=_coerce_bool(
+            raw_narrator.get("persona_upgrade_only"),
+            default.persona_upgrade_only,
         ),
         persona_temperature=float(
             raw_narrator.get("persona_temperature", default.persona_temperature)

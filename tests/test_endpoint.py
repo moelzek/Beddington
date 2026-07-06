@@ -65,6 +65,52 @@ def test_probe_result_is_cached(monkeypatch):
     assert calls["n"] == 1
 
 
+def test_persona_upgrade_only_skips_restyle_when_on_pi_baseline(monkeypatch):
+    from beddington.config import NarratorConfig
+    from beddington import persona
+
+    monkeypatch.setattr(endpoint, "_probe", lambda host, timeout: False)
+    called = {"n": 0}
+
+    def counting_call(plain, config):
+        called["n"] += 1
+        return "If I may, the room is lovely."
+
+    monkeypatch.setattr(persona, "_call_ollama", counting_call)
+    cfg = NarratorConfig(
+        persona_enabled=True,
+        persona_upgrade_only=True,
+        upgrade_host="http://desktop.local:11434",
+        upgrade_model="gemma3:12b",
+    )
+    plain = "The room is about 21 degrees Celsius."
+    assert persona.paddingtonise(plain, cfg) == plain
+    assert called["n"] == 0
+
+
+def test_persona_upgrade_only_restyles_when_upgrade_reachable(monkeypatch):
+    from beddington.config import NarratorConfig
+    from beddington import persona
+
+    monkeypatch.setattr(endpoint, "_probe", lambda host, timeout: True)
+    monkeypatch.setattr(
+        persona,
+        "_call_ollama",
+        lambda plain, config: "The room is about 21 degrees Celsius, if I may.",
+    )
+    cfg = NarratorConfig(
+        persona_enabled=True,
+        persona_upgrade_only=True,
+        upgrade_host="http://desktop.local:11434",
+        upgrade_model="gemma3:12b",
+    )
+    plain = "The room is about 21 degrees Celsius."
+    assert (
+        persona.paddingtonise(plain, cfg)
+        == "The room is about 21 degrees Celsius, if I may."
+    )
+
+
 def test_config_loads_upgrade_fields():
     from beddington.config import NarratorConfig, _load_narrator
 
