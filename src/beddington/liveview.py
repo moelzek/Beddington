@@ -334,8 +334,6 @@ padding:11px;display:grid;gap:4px}
 .sensor-name{color:var(--muted);font-size:12px;font-weight:800}
 .sensor-value{font-size:17px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
 .sensor-age,.sensor-extra{color:var(--muted);font-size:12px;line-height:1.3}
-.timeline-card canvas{width:100%;height:76px;background:#080a09;border:1px solid var(--border);
-border-radius:8px;display:block}
 .section-title{font-size:20px;line-height:1.25;margin:0 0 10px;font-weight:850}
 .digest{white-space:pre-wrap;font-size:16px;line-height:1.6;color:var(--text);margin:0}
 .soothe-section{margin-bottom:14px}
@@ -353,14 +351,6 @@ border-radius:8px;padding:10px;font-size:15px}
 .sbtn.stop{background:#4c1d24;border-color:#7a3340}
 .sbtn.cry{background:#5c2630;border-color:#9a4350;font-weight:850;width:100%}
 .sstatus{width:100%;min-height:20px;color:var(--primary);font-size:13px}
-.sgroup{width:100%;display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
-.shead{width:100%;color:var(--muted);font-weight:850;margin:8px 0 0}
-.sitem{width:min(100%,260px);border:1px solid var(--border);border-radius:8px;
-padding:10px;background:var(--surface2);cursor:pointer}
-.sitem.on{border-color:#58C7B0}
-.sitem .sbtn{width:100%;margin-bottom:8px}
-.smeta{color:var(--muted);font-size:12px;line-height:1.45}
-.smeta b{color:var(--text)}
 .audio-section{margin-bottom:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);
 padding:12px;display:grid;gap:10px}
 .audio-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
@@ -435,12 +425,7 @@ cb.textContent="Baby crying - comfort now";
 cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default),"Playing "+String(d.default).replace(/_/g," "))};
 box.appendChild(cb);}
 const as=d.autosoothe||{enabled:false,preset:""};
-addAutoSootheControl(box,presets,as,d.default||"");
-const hr=document.createElement("div");hr.style.cssText="width:100%;border-top:1px solid #333;margin:14px 0 4px";box.appendChild(hr);
-const lbl=document.createElement("div");lbl.style.cssText="width:100%;color:#bcd;font-size:13px;margin-bottom:2px";
-lbl.textContent="Manual sounds";box.appendChild(lbl);
-addPresetGroups(box,presets,soothePlaying,function(p){
-soothePost("action=play&preset="+encodeURIComponent(p.key),"Playing "+presetText(p))},"");}
+addAutoSootheControl(box,presets,as,d.default||"");}
 function presetText(p){return String(p.label||p.key).replace(/_/g," ");}
 function presetSelect(presets,selected,placeholder){
 const sel=document.createElement("select");sel.className="sselect";
@@ -467,29 +452,6 @@ sel.onchange=function(){if(sel.value)autoPost(1,sel.value);};wrap.appendChild(se
 const tg=document.createElement("button");tg.className="sbtn"+(as.enabled?" on":"");
 tg.textContent=as.enabled?"On":"Off";
 tg.onclick=function(){autoPost(as.enabled?0:1, selected)};row.appendChild(tg);box.appendChild(row);}
-function addPresetGroups(box,presets,activeKey,onClick,prefix){
-const grouped={sounds:[],music:[],other:[]};
-presets.forEach(function(p){const c=String(p.category||"sounds").toLowerCase();
-(grouped[c==="music"?"music":(c==="sounds"?"sounds":"other")]).push(p);});
-[["sounds","Sounds"],["music","Music"],["other","Other"]].forEach(function(pair){
-const items=grouped[pair[0]];if(!items.length)return;
-const group=document.createElement("div");group.className="sgroup";
-const head=document.createElement("div");head.className="shead";head.textContent=pair[1];group.appendChild(head);
-items.forEach(function(p){group.appendChild(presetCard(p,activeKey===p.key,onClick,prefix));});
-box.appendChild(group);});}
-function presetCard(p,isActive,onClick,prefix){
-const card=document.createElement("div");card.className="sitem"+(isActive?" on":"");
-card.tabIndex=0;card.onclick=function(){onClick(p)};
-card.onkeydown=function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();onClick(p);}};
-const b=document.createElement("button");b.className="sbtn"+(isActive?" on":"");
-b.textContent=(prefix||"")+String(p.label||p.key);b.onclick=function(ev){ev.stopPropagation();onClick(p)};
-const tip=["Feel: "+(p.feel||""),"Use: "+(p.use||""),"Avoid: "+(p.avoid||"")].join("\\n");
-b.title=tip;card.appendChild(b);
-const meta=document.createElement("div");meta.className="smeta";
-[["Feel",p.feel],["Use",p.use],["Avoid",p.avoid]].forEach(function(row){
-if(!row[1])return;const line=document.createElement("div");const strong=document.createElement("b");
-strong.textContent=row[0]+": ";line.appendChild(strong);line.appendChild(document.createTextNode(row[1]));
-meta.appendChild(line);});card.appendChild(meta);return card;}
 function setSootheStatus(text){const s=document.getElementById("soothe-status");if(s)s.textContent=text||"";}
 async function autoPost(enabled,preset){setSootheStatus(enabled?"Auto-soothe on":"Auto-soothe off");
 try{await fetch(SOOTHE.replace("/soothe?","/autosoothe?")
@@ -648,9 +610,9 @@ if(!r.ok)throw new Error("snapshot");const d=await r.json();
 if(d&&d.error==="snapshot_unavailable"){renderStateUnavailable();}else{renderSnapshot(d);}}
 catch(e){snapshotFailures++;if(force||snapshotFailures>=2||!STATE)renderStateUnavailable();}
 SNAPTIMER=setTimeout(loadSnapshot,3000);}
-function historyNeeded(){const tl=el("motion-timeline");let timeline=false;if(tl){const b=tl.getBoundingClientRect();
-timeline=b.bottom>0&&b.top<(window.innerHeight||document.documentElement.clientHeight);}
-const eng=el("engineering");return timeline||(eng&&eng.open);}
+function historyNeeded(){const eng=el("engineering");return !!(eng&&eng.open);}
+function fmtTime(t){const d=new Date(t*1000);
+return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);}
 async function loadHistory(force){if(!HISTORY)return;if(!force&&!historyNeeded())return;const now=Date.now();
 if(!force&&now-LASTHISTORY<5000)return;LASTHISTORY=now;try{const r=await fetch(HISTORY,{cache:"no-store"});
 if(r.ok)HIST=await r.json();}catch(e){}
@@ -658,19 +620,10 @@ SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
 const c=document.getElementById("cur-"+s.key);const n=h.points.length;
 if(c)c.textContent=n?(s.bool?(h.points[n-1][1]?"yes":"no")
 :(h.points[n-1][1]+(h.unit?" "+h.unit:""))):"no reading";});
-drawTimeline();draw();}
+draw();}
 function historyTick(){loadHistory(false);setTimeout(historyTick,5000);}
 function selectSensor(key){activeSensor=key;document.querySelectorAll(".sensor-chip").forEach(function(b){b.classList.toggle("active",b.dataset.sensor===key);});
 document.querySelectorAll(".chart-panel").forEach(function(p){p.hidden=p.id!=="p-"+key;});loadHistory(true);}
-function drawTimeline(){const cv=el("motion-timeline");if(!cv)return;const h=HIST.motion_detected;if(!h)return;
-const ctx=cv.getContext("2d"),W=cv.width=cv.clientWidth*2,H=cv.height=152,p=h.points||[];
-ctx.clearRect(0,0,W,H);ctx.fillStyle="#080a09";ctx.fillRect(0,0,W,H);
-if(p.length<2){ctx.fillStyle="#B8B0A6";ctx.font="24px sans-serif";ctx.fillText("Collecting readings...",24,48);return;}
-const x0=p[0][0],x1=p[p.length-1][0]||x0+1,pad=14;ctx.strokeStyle="#2B302E";ctx.lineWidth=2;
-ctx.beginPath();ctx.moveTo(pad,H-32);ctx.lineTo(W-pad,H-32);ctx.stroke();
-p.forEach(function(q,i){if(!q[1])return;const x=pad+(q[0]-x0)/((x1-x0)||1)*(W-2*pad);
-const next=p[i+1]?pad+(p[i+1][0]-x0)/((x1-x0)||1)*(W-2*pad):x+5;
-ctx.fillStyle="#58C7B0";ctx.fillRect(x,26,Math.max(3,next-x),H-58);});}
 function draw(){const eng=el("engineering");if(eng&&!eng.open)return;
 const s=SENSORS.find(function(x){return x.key===activeSensor});if(!s)return;
 const h=HIST[s.key];const cv=document.getElementById("cv-"+s.key);if(!cv||!h)return;
@@ -687,6 +640,11 @@ ctx.strokeStyle="#2B302E";ctx.lineWidth=2;ctx.beginPath();
 ctx.moveTo(pad,pad);ctx.lineTo(pad,H-pad);ctx.lineTo(W-10,H-pad);ctx.stroke();
 ctx.fillStyle="#B8B0A6";ctx.font="26px sans-serif";
 ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1),8,H-pad);
+[0,1/3,2/3,1].forEach(function(f,i,arr){const t=x0+f*(x1-x0),x=X(t);
+ctx.strokeStyle="#2B302E";ctx.beginPath();ctx.moveTo(x,H-pad);ctx.lineTo(x,H-pad+10);ctx.stroke();
+ctx.textAlign=i===0?"left":(i===arr.length-1?"right":"center");
+ctx.fillText(fmtTime(t),x,H-pad+44);});
+ctx.textAlign="start";
 ctx.strokeStyle="#58C7B0";ctx.lineWidth=4;ctx.beginPath();
 p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
 ctx.stroke();}
@@ -789,14 +747,6 @@ def _dashboard_page(
             '<span id="health-history" class="health-dot" aria-label="history missing"><span>history</span></span>'
             "</div>"
         )
-        timeline = (
-            '<div class="card timeline-card" id="motion-timeline-card">'
-            '<h2 class="section-title">Motion timeline</h2>'
-            '<canvas id="motion-timeline" aria-label="Motion over the history window"></canvas>'
-            "</div>"
-            if history_path
-            else ""
-        )
         state_sections = (
             '<section id="t2-alerts" class="t2-alerts" aria-live="polite" hidden></section>'
             '<section id="state-home" class="state-grid">'
@@ -827,7 +777,6 @@ def _dashboard_page(
             '<div id="card-motion" class="sensor-card"><div class="sensor-name">Motion</div><div id="val-motion" class="sensor-value">no reading</div><div id="age-motion" class="sensor-age"></div><div id="extra-motion" class="sensor-extra"></div></div>'
             '<div id="card-vitals" class="sensor-card" hidden><div class="sensor-name">Vitals</div><div id="val-vitals" class="sensor-value"></div><div id="age-vitals" class="sensor-age"></div><div id="extra-vitals" class="sensor-extra">rough radar estimate</div></div>'
             "</div>"
-            f"{timeline}"
             "</section>"
         )
     digest_section = (

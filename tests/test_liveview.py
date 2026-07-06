@@ -196,8 +196,10 @@ def test_build_viewer_html_state_first_dashboard() -> None:
     assert "BabyStateHero" in html
     assert 'id="action-panel"' in html
     assert 'id="sensor-cards"' in html
-    assert 'id="motion-timeline"' in html
+    assert 'id="motion-timeline"' not in html
+    assert "Motion timeline" not in html
     assert 'id="engineering" class="engineering"' in html
+    assert "fmtTime" in html  # engineering charts label the x axis
     assert "room_temperature_c" in html  # sensor spec embedded
     assert 'id="tabs"' not in html
 
@@ -862,11 +864,9 @@ def test_build_viewer_html_has_soothe_section() -> None:
     assert "setSootheStatus" in html
     assert "addCurrentSootheControl" in html
     assert "Cry trigger sound" in html
-    assert "addPresetGroups" in html
-    assert "card.onclick" in html
     assert "playing your voice" in html
-    assert "Sounds" in html
-    assert "Music" in html
+    assert "Manual sounds" not in html  # manual preset grid removed from dashboard
+    assert "addPresetGroups" not in html
     assert "/soothe?token=t" in html
 
 
