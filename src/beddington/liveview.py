@@ -259,73 +259,105 @@ _DASHBOARD_TEMPLATE = """<!doctype html><html><head>
 *{box-sizing:border-box}
 :root{color-scheme:dark;--bg:#050607;--surface:#101312;--surface2:#151917;
 --text:#F4EFE6;--muted:#B8B0A6;--border:#2B302E;--primary:#58C7B0;
---urgent:#FF6B6B;--attention:#E8B154;--line:#202522}
+--urgent:#FF6B6B;--attention:#E8B154;--line:#202522;--tabbar:60px}
+body.notabs{--tabbar:0px}
 html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);
 font:16px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-body{padding:0 0 22px}
-body.day{--bg:#07100f;--surface:#111815;--surface2:#17201d;--text:#F4EFE6;
---muted:#B8B0A6;--border:#2B302E;--primary:#58C7B0;--attention:#E8B154}
 button,select{font:inherit}
 button{min-height:44px}
 button:focus-visible,select:focus-visible,details summary:focus-visible,
 [role="button"]:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
-main{width:min(100%,960px);margin:0 auto;padding:0 14px 18px}
-#alertbanner{display:none;position:sticky;top:0;left:0;right:0;z-index:30;
-width:100%;background:#B4232C;color:#fff;font-weight:800;font-size:15px;
+.view[hidden]{display:none}
+.page{width:min(100%,760px);margin:0 auto;padding:16px 14px calc(var(--tabbar) + 28px)}
+#alertbanner{display:none;position:fixed;top:0;left:0;right:0;z-index:50;
+background:#B4232C;color:#fff;font-weight:800;font-size:15px;
 padding:12px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-.t2-alerts{display:grid;gap:8px;margin:0 0 12px}
-.t2-alert-card{border:1px solid rgba(232,177,84,.78);border-radius:8px;
-background:#1b160d;padding:12px;color:var(--text)}
-.t2-alert-title{font-size:16px;font-weight:850;line-height:1.25;margin:0 0 4px}
+.t2-alerts{display:grid;gap:8px;width:min(100%,430px)}
+.t2-alert-card{border:1px solid rgba(232,177,84,.78);border-radius:12px;
+background:rgba(27,22,13,.92);padding:12px;color:var(--text)}
+.t2-alert-title{font-size:15px;font-weight:800;line-height:1.25;margin:0 0 4px}
 .t2-alert-message,.t2-alert-action{color:var(--muted);font-size:13px;line-height:1.35}
 .t2-alert-action{margin-top:6px;color:var(--attention);font-weight:800}
-.topstrip{position:sticky;top:0;z-index:18;display:flex;gap:8px;align-items:center;
-justify-content:space-between;padding:10px 14px;background:rgba(5,6,7,.92);
-backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
-.state-chip{min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;
-white-space:nowrap;border:1px solid var(--border);border-radius:999px;padding:7px 10px;
-font-size:12px;font-weight:800;color:var(--text);background:var(--surface)}
-.privacy-badge{color:var(--muted);font-size:12px;line-height:1.3}
-.topstrip .privacy-badge{text-align:center;flex:1 1 auto}
-.health-dots{display:flex;gap:7px;align-items:center;justify-content:flex-end}
+.health-dots{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
 .health-dot{display:inline-flex;align-items:center;gap:5px;color:var(--muted);
 font-size:12px;line-height:1.2;min-height:24px}
 .health-dot::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--attention);
 box-shadow:0 0 0 2px rgba(232,177,84,.12)}
 .health-dot.fresh::before{background:var(--primary);box-shadow:0 0 0 2px rgba(88,199,176,.14)}
 .health-dot.error::before{background:var(--urgent);box-shadow:0 0 0 2px rgba(255,107,107,.14)}
-.camera-stage{margin:14px 0 18px}
 .camera-frame{position:relative;display:flex;align-items:center;justify-content:center;
-overflow:hidden;min-height:58vh;height:calc(100vh - 96px);height:calc(100dvh - 96px);
-max-height:720px;background:#000;border:1px solid var(--border);border-radius:8px}
+overflow:hidden;height:calc(100vh - 60px);height:calc(100dvh - var(--tabbar));
+min-height:420px;background:#000}
 .camera-frame img{max-width:100%;max-height:100%;object-fit:contain;display:block}
 .camera-frame img.rot90,.camera-frame img.rot270{position:absolute;top:50%;left:50%;
-width:calc(100dvh - 96px);height:100vw;max-width:none;max-height:none}
+width:calc(100dvh - var(--tabbar));height:100vw;max-width:none;max-height:none}
 .camera-frame img.rot90{transform:translate(-50%,-50%) rotate(90deg)}
 .camera-frame img.rot270{transform:translate(-50%,-50%) rotate(270deg)}
 .camera-frame img.rot180{transform:rotate(180deg)}
-.stream-error{display:none;position:absolute;inset:auto 12px 74px 12px;z-index:5;
-padding:12px;border-radius:8px;background:rgba(16,19,18,.92);color:var(--text);
+.stream-error{display:none;position:absolute;inset:auto 12px 150px 12px;z-index:5;
+padding:12px;border-radius:10px;background:rgba(16,19,18,.92);color:var(--text);
 text-align:center;border:1px solid var(--border)}
-.readings-overlay{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;
-flex-wrap:wrap;align-items:center;padding:10px;background:rgba(0,0,0,.58);z-index:3}
-.reading-pill,.mode-btn,.rot-btn{display:inline-flex;align-items:center;min-height:44px;
-border:1px solid var(--border);border-radius:999px;padding:9px 12px;background:rgba(16,19,18,.92);
-color:var(--text);font-size:13px;font-weight:700;white-space:nowrap}
-.mode-btn,.rot-btn{cursor:pointer}
-.nightnote{position:absolute;left:0;right:0;bottom:64px;text-align:center;padding:8px 14px;
-color:var(--muted);font-size:13px;background:rgba(16,19,18,.88);display:none;z-index:4}
-.camera-chips{position:absolute;left:10px;top:10px;z-index:6;display:flex;flex-direction:column;
-gap:6px;align-items:flex-start;max-width:min(40%,360px);pointer-events:none}
+.cam-top{position:absolute;top:0;left:0;right:0;z-index:6;padding:64px 14px 44px;
+display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;
+background:linear-gradient(180deg,rgba(0,0,0,.6) 0%,rgba(0,0,0,.22) 62%,transparent 100%)}
+.cam-top>*{pointer-events:auto}
+.live-chip{position:absolute;left:14px;top:16px;display:inline-flex;align-items:center;gap:6px;
+font-size:12px;font-weight:800;letter-spacing:.06em;color:#fff;
+background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);border-radius:999px;
+padding:6px 11px;backdrop-filter:blur(8px)}
+.live-chip i{width:7px;height:7px;border-radius:50%;background:#FF5F57}
+.cam-tools{position:absolute;right:14px;top:12px;display:flex;gap:8px}
+.mode-btn,.rot-btn{display:inline-flex;align-items:center;min-height:34px;cursor:pointer;
+border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 12px;
+background:rgba(0,0,0,.45);color:#fff;font-size:12px;font-weight:700;white-space:nowrap;
+backdrop-filter:blur(8px)}
+.state-chip{max-width:86%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:10px 20px;
+font-size:16px;font-weight:700;color:#fff;background:rgba(0,0,0,.45);backdrop-filter:blur(10px)}
+.readings-overlay{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;
+max-width:92%;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.reading-pill{display:inline-flex;align-items:center;color:rgba(244,239,230,.82);
+font-size:13px;font-weight:600;white-space:nowrap}
+.reading-pill:not(:last-child)::after{content:"·";margin:0 7px;color:rgba(244,239,230,.5)}
+.cam-actions{position:absolute;left:0;right:0;bottom:0;z-index:6;padding:76px 14px 18px;
+display:flex;justify-content:center;align-items:center;gap:14px;
+background:linear-gradient(0deg,rgba(0,0,0,.72) 26%,transparent 100%)}
+.audio-section,.audio-controls{display:contents}
+.audio-btn{border-radius:999px;background:rgba(255,255,255,.12);
+border:1px solid rgba(255,255,255,.22);color:#fff;font-size:14px;font-weight:750;
+padding:13px 20px;backdrop-filter:blur(10px);min-width:96px}
+#talk-btn{background:#fff;border-color:#fff;color:#0B0D0C;padding:15px 24px}
+.audio-btn.on{background:#0e4d43;border-color:var(--primary);color:#fff}
+.audio-btn.talking,#talk-btn.talking{background:#5c2630;border-color:#9a4350;color:#fff}
+.audio-btn:disabled{opacity:.5}
+.audio-status{position:absolute;left:0;right:0;bottom:82px;text-align:center;
+color:rgba(244,239,230,.85);font-size:12.5px;min-height:17px;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.monitor-note{position:absolute;left:0;right:0;bottom:2px;z-index:6;text-align:center;
+color:rgba(184,176,166,.55);font-size:10.5px;pointer-events:none}
+#tabs{position:fixed;left:0;right:0;bottom:0;height:var(--tabbar);z-index:30;display:flex;
+background:rgba(8,10,9,.94);backdrop-filter:blur(14px);border-top:1px solid var(--border)}
+.tab-btn{flex:1;background:none;border:none;color:var(--muted);font-size:12.5px;
+font-weight:750;letter-spacing:.02em;min-height:0;cursor:pointer}
+.tab-btn.active{color:var(--primary)}
+#sound-sheet{position:fixed;inset:0;z-index:40;display:none}
+#sound-sheet.open{display:block}
+.sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.sheet-panel{position:absolute;left:0;right:0;bottom:0;max-height:80dvh;overflow:auto;
+background:var(--surface);border-top:1px solid var(--border);
+border-radius:18px 18px 0 0;padding:6px 16px 30px}
+.sheet-handle{width:44px;height:5px;border-radius:999px;background:var(--border);margin:8px auto 10px}
+.nightnote{position:absolute;left:0;right:0;bottom:122px;text-align:center;padding:6px 14px;
+color:rgba(244,239,230,.7);font-size:12px;display:none;z-index:4;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.camera-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;
+align-items:center;max-width:92%;pointer-events:none}
 .camera-chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 border:1px solid rgba(244,239,230,.16);border-radius:999px;padding:4px 10px;
 background:rgba(8,10,9,.72);color:var(--text);font-size:12px;line-height:1.35;
 backdrop-filter:blur(6px)}
 .state-grid{display:grid;gap:12px;margin-bottom:14px}
-.state-hero,.action-card,.room-action-card,.card,.soothe-section,.engineering{
-border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:14px}
-.state-label{font-size:28px;line-height:1.15;font-weight:850;letter-spacing:0;margin:0 0 8px}
-body.night .state-label{font-size:30px}
+.state-hero,.action-card,.room-action-card,.card,.engineering{
+border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:14px}
+.state-label{font-size:24px;line-height:1.2;font-weight:800;letter-spacing:0;margin:0 0 8px}
 .meta-line{color:var(--muted);font-size:13px;line-height:1.35}
 .activity-slider{margin-top:14px;padding-top:12px;border-top:1px solid rgba(43,48,46,.78)}
 .activity-labels{display:flex;justify-content:space-between;color:var(--muted);
@@ -342,7 +374,7 @@ box-shadow:0 0 0 2px rgba(88,199,176,.36);transition:left .45s ease,opacity .2s 
 .action-panel{display:grid;gap:10px}
 .action-card{display:block;width:100%;text-align:left;color:var(--text);text-decoration:none}
 .action-card.actionable{cursor:pointer;border-color:rgba(88,199,176,.65)}
-.action-label{font-size:20px;line-height:1.25;font-weight:850;margin:0 0 6px}
+.action-label{font-size:17px;line-height:1.3;font-weight:750;margin:0 0 6px}
 .action-detail{margin:0;color:var(--muted)}
 .room-action-card{border-color:rgba(232,177,84,.75);background:#1b160d}
 .sensor-area{display:grid;gap:12px;margin-bottom:14px}
@@ -350,13 +382,13 @@ box-shadow:0 0 0 2px rgba(88,199,176,.36);transition:left .45s ease,opacity .2s 
 .sensor-card{min-width:0;border:1px solid var(--border);border-radius:8px;background:var(--surface);
 padding:11px;display:grid;gap:4px}
 .sensor-name{color:var(--muted);font-size:12px;font-weight:800}
-.sensor-value{font-size:17px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
+.sensor-value{font-size:16px;font-weight:750;line-height:1.25;overflow-wrap:anywhere}
 .sensor-age,.sensor-extra{color:var(--muted);font-size:12px;line-height:1.3}
-.section-title{font-size:20px;line-height:1.25;margin:0 0 10px;font-weight:850}
-.digest{white-space:pre-wrap;font-size:16px;line-height:1.6;color:var(--text);margin:0}
+.section-title{font-size:22px;line-height:1.25;margin:6px 0 14px;font-weight:800}
+.digest{white-space:pre-wrap;font-size:15.5px;line-height:1.6;color:var(--text);margin:0}
 .summary-row{display:grid;gap:12px;margin-bottom:14px}
 .summary-card summary{min-height:44px;display:flex;align-items:center;cursor:pointer;
-font-size:20px;font-weight:850}
+font-size:17px;font-weight:750}
 .summary-card[open] summary{margin-bottom:10px}
 .motion-donut-card{min-width:0}
 .motion-donut-body{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;align-items:center}
@@ -364,6 +396,7 @@ font-size:20px;font-weight:850}
 #motion-donut{width:92px;height:92px;display:block}
 .motion-donut-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
 padding:4px;text-align:center;color:var(--muted);font-size:12px;line-height:1.25}
+.motion-donut-empty[hidden]{display:none}
 .motion-legend{display:grid;gap:5px}
 .motion-legend-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px;
 align-items:center;color:var(--muted);font-size:12px;line-height:1.25}
@@ -375,9 +408,10 @@ align-items:center;color:var(--muted);font-size:12px;line-height:1.25}
 .cry-when{color:var(--muted);font-variant-numeric:tabular-nums}
 .cry-dur{color:var(--muted)}
 .cry-more{color:var(--muted);font-size:12px}
-.soothe-section{margin-bottom:14px}
-.cur{font-size:20px;line-height:1.25;font-weight:850;margin:0 0 10px}
-.sbtns{display:flex;flex-wrap:wrap;gap:10px}
+.soothe-section{margin:0;padding:4px 2px 0}
+.cur{font-size:15px;line-height:1.3;font-weight:650;color:var(--muted);margin:0 0 10px}
+.soothe-section .section-title{font-size:19px;margin:0 0 4px}
+.sbtns{display:grid;gap:10px}
 .sbtn{background:#17201d;color:var(--text);border:1px solid var(--border);border-radius:8px;
 padding:11px 14px;font-size:15px;font-weight:800}
 .squick{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;
@@ -390,18 +424,9 @@ border-radius:8px;padding:10px;font-size:15px}
 .sbtn.stop{background:#4c1d24;border-color:#7a3340}
 .sbtn.cry{background:#5c2630;border-color:#9a4350;font-weight:850;width:100%}
 .sstatus{width:100%;min-height:20px;color:var(--primary);font-size:13px}
-.audio-section{margin-bottom:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);
-padding:12px;display:grid;gap:10px}
-.audio-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.audio-btn{background:#17201d;color:var(--text);border:1px solid var(--border);border-radius:8px;
-padding:11px 14px;font-size:15px;font-weight:850;min-width:108px}
-.audio-btn.on{background:#0e4d43;border-color:#58C7B0}
-.audio-btn.talking{background:#5c2630;border-color:#9a4350}
-.audio-btn:disabled{opacity:.5}
-.audio-status{color:var(--muted);font-size:13px;line-height:1.35;min-height:18px}
 .engineering{margin-bottom:14px}
 .engineering summary{min-height:44px;display:flex;align-items:center;cursor:pointer;
-font-size:20px;font-weight:850}
+font-size:17px;font-weight:750}
 .sensor-picks{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:touch}
 .sensor-chip{flex:0 0 auto;min-height:44px;background:#111815;color:var(--muted);
 border:1px solid var(--border);border-radius:999px;padding:8px 13px;font-size:13px;font-weight:800}
@@ -410,48 +435,49 @@ border:1px solid var(--border);border-radius:999px;padding:8px 13px;font-size:13
 .chartwrap{padding:0}
 .chart-panel canvas{width:100%;height:300px;background:#080a09;border:1px solid var(--border);
 border-radius:8px;display:block}
-.note{color:var(--muted);padding:10px 0;font-size:12px;text-align:center}
+.note{color:var(--muted);padding:14px 0 0;font-size:12px;text-align:center}
 @media (min-width:720px){
-main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-items:stretch}
+.state-grid{grid-template-columns:1.1fr .9fr;align-items:stretch}
 .sensor-area{grid-template-columns:1fr 1fr}.sensor-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
-.summary-row{grid-template-columns:minmax(0,1fr) 270px;align-items:stretch}
-.camera-frame{min-height:520px}.topstrip{padding-inline:20px}
 }
 @media (max-width:420px){
 .health-dot span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.state-chip{max-width:38%}.camera-frame{height:64vh;height:64dvh}.sensor-cards{grid-template-columns:1fr 1fr}
+.sensor-cards{grid-template-columns:1fr 1fr}
+.cam-actions{gap:10px}.audio-btn{min-width:0;padding:12px 16px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
-</style></head><body>
+</style></head><body__BODY_CLASS__>
 <div id="alertbanner" role="alert" aria-live="assertive"></div>
-<header class="topstrip">
-  __STATE_TOP__
-  <div class="privacy-badge">__PRIVACY_BADGE__</div>
-</header>
 <main>
-<section id="camera-stage" class="camera-stage" aria-label="Live camera">
+<section id="view-monitor" class="view" aria-label="Live camera">
   <div id="cam" class="camera-frame">
     <img id="live-img" src="__STREAM__" alt="Live camera view">
     <div id="stream-error" class="stream-error" role="status">Camera stream is full. Try another viewer in a moment.</div>
     <div id="nightnote" class="nightnote">Night eye - low-light camera view. Radar and motion readings remain available.</div>
-    __CAMERA_CHIPS__
-    <div id="readings" class="readings-overlay"></div>
+    <div class="cam-top">
+      <div class="live-chip"><i></i>LIVE</div>
+      <div id="cam-tools" class="cam-tools" aria-label="Camera controls"></div>
+      __STATE_CHIP__
+      <div id="readings" class="readings-overlay"></div>
+      __CAMERA_CHIPS__
+      __T2_ALERTS__
+    </div>
+    __ACTION_BAR__
+    <div class="monitor-note">__PRIVACY_BADGE__</div>
   </div>
 </section>
-__AUDIO_SECTION__
-__STATE_SECTIONS__
-__SOOTHE_SECTION__
-__DIGEST_SECTION__
-__ENGINEERING_SECTION__
-<div class="note privacy-badge">__PRIVACY_BADGE__</div>
+__TONIGHT_VIEW__
+__ENGINEERING_VIEW__
 </main>
+__SOUND_SHEET__
+__TABS__
 <script>
 const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",EVENTS="__EVENTS__",SNAPSHOT="__SNAPSHOT__",AUDIO="__AUDIO__",TALK="__TALK__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
 let HIST={},STATE=null,LASTDIGEST=0,LASTHISTORY=0,activeSensor=SENSORS.length?SENSORS[0].key:"";
 let snapshotFailures=0,LASTEVENTS=0;
 const SEENT2SEQ={};
 const HAS_STATE=!!SNAPSHOT,MODEURL=READINGS?READINGS.replace("/readings.json","/mode"):"";
-async function loadDigest(){const e=document.getElementById("digest-text");if(!e)return;
+async function loadDigest(){if(!DIGEST)return;const e=document.getElementById("digest-text");if(!e)return;
 const now=Date.now();if(now-LASTDIGEST<60000 && e.dataset.loaded==="1")return;LASTDIGEST=now;
 try{const r=await fetch(DIGEST,{cache:"no-store"});if(r.ok){const d=await r.json();
 e.textContent=d.text||"I don't have enough history yet for a night summary.";}else{e.textContent="I don't have enough history yet for a night summary.";}}
@@ -574,18 +600,16 @@ function applyMode(mode){document.body.classList.toggle("night",mode==="night");
 document.body.classList.toggle("day",mode!=="night");const nn=el("nightnote");
 if(nn)nn.style.display=(mode==="night")?"block":"none";const cam=el("cam");
 if(cam)cam.classList.toggle("night",mode==="night");}
-function renderOverlay(items,mode,modeAuto){const r=el("readings");if(!r)return;r.innerHTML="";
-if(mode && MODEURL){r.appendChild(makeOverlayButton((mode==="night"?"Night":"Day")+(modeAuto?" · auto":" · manual"),"mode-btn",cycleMode,"Camera mode"));
+function renderOverlay(items,mode,modeAuto){const r=el("readings"),tools=el("cam-tools");
+if(tools){tools.innerHTML="";
+if(mode && MODEURL){tools.appendChild(makeOverlayButton((mode==="night"?"Night":"Day")+(modeAuto?" · auto":" · manual"),"mode-btn",cycleMode,"Camera mode"));
 LASTMODE={mode:mode,mode_auto:!!modeAuto};}
-r.appendChild(makeOverlayButton("Rotate "+curRot+"°","rot-btn",cycleRot,"Rotate video"));
-items.forEach(function(item){if(item)r.appendChild(makePill(item));});applyMode(mode);}
+tools.appendChild(makeOverlayButton("Rotate "+curRot+"°","rot-btn",cycleRot,"Rotate video"));}
+if(r){r.innerHTML="";items.forEach(function(item){if(item)r.appendChild(makePill(item));});}
+applyMode(mode);}
 function renderReadings(d){const el=document.getElementById("readings");el.innerHTML="";
 const items=[];ORDER.forEach(function(k){if(d[k])items.push(d[k]);});renderOverlay(items,d.mode,d.mode_auto);}
-function overlayFromSnapshot(d){const items=[],room=d.room||{},presence=d.presence||{},vitals=d.vitals||{};
-if(room.temperature_c && room.temperature_c.value!==null)items.push(formatNum(room.temperature_c.value,1)+" °C");
-if(room.humidity_pct && room.humidity_pct.value!==null)items.push(formatNum(room.humidity_pct.value,0)+"% humidity");
-if(presence.value===null||presence.value===undefined)items.push("No presence reading");
-else items.push(presence.value?"Presence detected":"No one detected");
+function overlayFromSnapshot(d){const items=[],vitals=d.vitals||{};
 if(vitals.respiratory_rate!==null&&vitals.respiratory_rate!==undefined)items.push("breathing "+formatNum(vitals.respiratory_rate,0)+"/min");
 const vision=d.vision||{};renderOverlay(items,vision.mode,vision.mode_auto);}
 async function cycleMode(){const set=LASTMODE.mode_auto?"day":(LASTMODE.mode==="day"?"night":"");
@@ -633,7 +657,7 @@ setCard("vitals",vv,formatAge(vitals.age_s),"rough radar estimate",false);}}
 function renderAction(d){const a=d.recommended_action||{},card=el("action-card");
 text("action-label",a.label||"No suggested action");text("action-detail",a.detail||"Based on the current readings.");
 if(card){const canGo=a.key==="comfort_now"&&!!SOOTHE;card.classList.toggle("actionable",canGo);
-card.setAttribute("role",canGo?"button":"group");card.tabIndex=canGo?0:-1;card.onclick=canGo?function(){const s=el("soothe");if(s)s.scrollIntoView({behavior:"smooth",block:"start"});}:null;
+card.setAttribute("role",canGo?"button":"group");card.tabIndex=canGo?0:-1;card.onclick=canGo?function(){openSoundSheet();}:null;
 card.onkeydown=canGo?function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();card.click();}}:null;}
 const room=d.room_action,rc=el("room-action");if(!rc)return;if(room){setHidden("room-action",false);
 text("room-action-label",room.label||"Check the room");text("room-action-detail",room.detail||"The readings need a direct look.");}
@@ -698,7 +722,7 @@ function renderEvents(d){renderCaregiverChip(d);renderCryingCard(d);}
 async function loadEvents(force){if(!EVENTS)return;const now=Date.now();if(!force&&now-LASTEVENTS<15000)return;LASTEVENTS=now;
 try{const r=await fetch(EVENTS,{cache:"no-store"});if(r.ok)renderEvents(await r.json());else renderEvents(null);}
 catch(e){renderEvents(null);}}
-function visibleNow(n){if(!n)return false;const r=n.getBoundingClientRect(),vh=window.innerHeight||document.documentElement.clientHeight||0;
+function visibleNow(n){if(!n||n.offsetParent===null)return false;const r=n.getBoundingClientRect(),vh=window.innerHeight||document.documentElement.clientHeight||0;
 return r.bottom>=0&&r.top<=vh;}
 function historyNeeded(){const eng=el("engineering"),donut=el("motion-donut-card");
 return !!((eng&&eng.open)||(donut&&donut.open&&visibleNow(donut)));}
@@ -805,6 +829,20 @@ if(DIGEST){loadDigest();setInterval(loadDigest,60000);}
 if(SOOTHE)loadSoothe();
 if(SNAPSHOT)loadSnapshot(true);else pollReadings();
 if(HISTORY){drawMotionDonut();historyTick();}
+// --- tab bar + sound sheet ---
+function openSoundSheet(){const s=el("sound-sheet");if(!s)return;s.classList.add("open");loadSoothe();}
+function closeSoundSheet(){const s=el("sound-sheet");if(s)s.classList.remove("open");}
+function switchView(name){document.querySelectorAll(".view").forEach(function(v){v.hidden=v.id!=="view-"+name;});
+document.querySelectorAll(".tab-btn").forEach(function(b){b.classList.toggle("active",b.dataset.view===name);});
+if(name==="eng"){const eng=el("engineering");
+if(eng&&!eng.open)eng.open=true;else selectSensor(activeSensor);loadHistory(true);}
+if(name==="tonight"){loadDigest();loadEvents(true);loadHistory(true);}
+window.scrollTo(0,0);}
+document.querySelectorAll(".tab-btn").forEach(function(b){b.onclick=function(){switchView(b.dataset.view);};});
+const soundBtn=el("sound-btn");if(soundBtn)soundBtn.onclick=openSoundSheet;
+const soundSheetEl=el("sound-sheet");if(soundSheetEl){const bd=soundSheetEl.querySelector(".sheet-backdrop");
+if(bd)bd.onclick=closeSoundSheet;}
+document.addEventListener("keydown",function(ev){if(ev.key==="Escape")closeSoundSheet();});
 </script></body></html>"""
 
 
@@ -849,8 +887,10 @@ def _dashboard_page(
             for s in sensors
         ]
     )
-    state_top = ""
-    state_sections = ""
+    state_chip = ""
+    t2_alerts = ""
+    health_dots = ""
+    eng_state = ""
     camera_chips = ""
     if snapshot_path or events_path:
         camera_chips = '<div id="camera-chips" class="camera-chips" aria-label="Camera context">'
@@ -866,9 +906,14 @@ def _dashboard_page(
             )
         camera_chips += "</div>"
     if snapshot_path:
-        state_top = (
+        state_chip = (
             '<div id="state-chip" class="state-chip" aria-live="polite">'
             "Reading the room...</div>"
+        )
+        t2_alerts = (
+            '<section id="t2-alerts" class="t2-alerts" aria-live="polite" hidden></section>'
+        )
+        health_dots = (
             '<div id="health-dots" class="health-dots" aria-label="Device health">'
             '<span id="health-camera" class="health-dot" aria-label="camera missing"><span>camera</span></span>'
             '<span id="health-readings" class="health-dot" aria-label="readings missing"><span>readings</span></span>'
@@ -876,8 +921,7 @@ def _dashboard_page(
             '<span id="health-history" class="health-dot" aria-label="history missing"><span>history</span></span>'
             "</div>"
         )
-        state_sections = (
-            '<section id="t2-alerts" class="t2-alerts" aria-live="polite" hidden></section>'
+        eng_state = (
             '<section id="state-home" class="state-grid">'
             '<section id="state-hero" class="BabyStateHero state-hero" aria-live="polite" aria-label="Baby state">'
             '<div id="state-label" class="state-label">Reading the room...</div>'
@@ -916,16 +960,16 @@ def _dashboard_page(
             "</section>"
         )
     tonight_card = (
-        '<details id="tonight" class="card tonight-card summary-card">'
-        "<summary>Tonight</summary>"
+        '<details id="tonight" class="card tonight-card summary-card" open>'
+        "<summary>Night summary</summary>"
         '<div id="digest-text" class="digest">I don\'t have enough history yet for a night summary.</div>'
         "</details>"
         if digest_path
         else ""
     )
     motion_card = (
-        '<details id="motion-donut-card" class="card motion-donut-card summary-card" aria-label="Motion summary">'
-        '<summary id="motion-donut-title">Motion · last <span id="motion-window">--</span>h</summary>'
+        '<details id="motion-donut-card" class="card motion-donut-card summary-card" aria-label="Motion summary" open>'
+        '<summary id="motion-donut-title"><span>Motion · last <span id="motion-window">--</span>h</span></summary>'
         '<div class="motion-donut-body">'
         '<div class="motion-donut-canvas">'
         '<canvas id="motion-donut" role="img" aria-label="Motion chart"></canvas>'
@@ -942,8 +986,8 @@ def _dashboard_page(
         else ""
     )
     crying_card = (
-        '<details id="crying-card" class="card crying-card summary-card" aria-label="Crying summary">'
-        '<summary id="crying-title">Crying · <span id="crying-count">no data yet</span></summary>'
+        '<details id="crying-card" class="card crying-card summary-card" aria-label="Crying summary" open>'
+        '<summary id="crying-title"><span>Crying · <span id="crying-count">no data yet</span></span></summary>'
         '<div id="crying-list" class="crying-list">Collecting observations...</div>'
         "</details>"
         if events_path
@@ -1013,16 +1057,68 @@ def _dashboard_page(
         if history_path
         else ""
     )
+    sound_button = (
+        '<button id="sound-btn" type="button" class="audio-btn">Sound</button>'
+        if soothe_path
+        else ""
+    )
+    action_bar = (
+        f'<div id="cam-actions" class="cam-actions">{audio_section}{sound_button}</div>'
+        if audio_section or sound_button
+        else ""
+    )
+    sound_sheet = (
+        '<div id="sound-sheet" role="dialog" aria-modal="true" aria-label="Soothing sounds">'
+        '<div class="sheet-backdrop"></div>'
+        '<div class="sheet-panel"><div class="sheet-handle"></div>'
+        f"{soothe_section}</div></div>"
+        if soothe_section
+        else ""
+    )
+    tonight_view = (
+        '<section id="view-tonight" class="view" hidden aria-label="Tonight">'
+        '<div class="page"><h1 class="section-title">Tonight</h1>'
+        f'{digest_section}<div class="note">{privacy_badge}</div></div></section>'
+        if digest_section
+        else ""
+    )
+    eng_inner = health_dots + eng_state + engineering_section
+    engineering_view = (
+        '<section id="view-eng" class="view" hidden aria-label="Engineering">'
+        '<div class="page"><h1 class="section-title">Engineering</h1>'
+        f'{eng_inner}<div class="note">{privacy_badge}</div></div></section>'
+        if eng_inner
+        else ""
+    )
+    tab_buttons = (
+        '<button type="button" class="tab-btn active" data-view="monitor">Monitor</button>'
+    )
+    if tonight_view:
+        tab_buttons += (
+            '<button type="button" class="tab-btn" data-view="tonight">Tonight</button>'
+        )
+    if engineering_view:
+        tab_buttons += (
+            '<button type="button" class="tab-btn" data-view="eng">Engineering</button>'
+        )
+    tabs = (
+        f'<nav id="tabs" aria-label="Dashboard views">{tab_buttons}</nav>'
+        if tonight_view or engineering_view
+        else ""
+    )
+    body_class = "" if tabs else ' class="notabs"'
     return (
         _DASHBOARD_TEMPLATE.replace("__TITLE__", _html_attr(title))
+        .replace("__BODY_CLASS__", body_class)
         .replace("__STREAM__", _html_attr(stream_path))
         .replace("__CAMERA_CHIPS__", camera_chips)
-        .replace("__STATE_TOP__", state_top)
-        .replace("__STATE_SECTIONS__", state_sections)
-        .replace("__AUDIO_SECTION__", audio_section)
-        .replace("__DIGEST_SECTION__", digest_section)
-        .replace("__SOOTHE_SECTION__", soothe_section)
-        .replace("__ENGINEERING_SECTION__", engineering_section)
+        .replace("__STATE_CHIP__", state_chip)
+        .replace("__T2_ALERTS__", t2_alerts)
+        .replace("__ACTION_BAR__", action_bar)
+        .replace("__TONIGHT_VIEW__", tonight_view)
+        .replace("__ENGINEERING_VIEW__", engineering_view)
+        .replace("__SOUND_SHEET__", sound_sheet)
+        .replace("__TABS__", tabs)
         .replace("__PRIVACY_BADGE__", privacy_badge)
         .replace("__READINGS__", _js_string_content(readings_path))
         .replace("__HISTORY__", _js_string_content(history_path))
