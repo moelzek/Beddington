@@ -958,9 +958,13 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 )
                 # Keep the bar above room/speaker bleed, but low enough for short
                 # "Hi Beddington" phrases from the Pi mic to open quickly.
+                # Cap 0.035: with the fan the room floor sits ~0.02, and the old
+                # 0.055 cap let the bar climb into normal speech (~0.04), making
+                # the assistant deaf at a distance. Speech that sneaks through as
+                # noise is discarded by the (now strict) wake matcher instead.
                 threshold = max(
                     0.024,
-                    min(0.055, round(max(noise_floor * 2.0, high_noise * 1.25), 4)),
+                    min(0.035, round(max(noise_floor * 1.6, high_noise * 1.25), 4)),
                 )
                 adapt = True
             print(
@@ -1009,7 +1013,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Track the noise floor from quiet frames and keep the bar
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
-                    threshold = max(0.024, min(0.055, round(noise_floor * 2.0, 4)))
+                    threshold = max(0.024, min(0.035, round(noise_floor * 1.6, 4)))
                 # Lift the bar above our own soothe sound so the music we're
                 # playing doesn't read as someone talking (see _speech_bar).
                 self_audio_floor = _update_self_audio_floor(
