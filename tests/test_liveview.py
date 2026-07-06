@@ -196,8 +196,10 @@ def test_build_viewer_html_state_first_dashboard() -> None:
     assert "BabyStateHero" in html
     assert 'id="action-panel"' in html
     assert 'id="sensor-cards"' in html
-    assert 'id="motion-timeline"' in html
+    assert 'id="motion-timeline"' not in html
+    assert "Motion timeline" not in html
     assert 'id="engineering" class="engineering"' in html
+    assert "fmtTime" in html  # engineering charts label the x axis
     assert "room_temperature_c" in html  # sensor spec embedded
     assert 'id="tabs"' not in html
 
@@ -367,6 +369,82 @@ def test_build_viewer_html_without_snapshot_omits_state_sections() -> None:
     assert 'id="health-dots"' not in html
     assert 'alt="Live camera view"' in html
     assert "/alerts.json?token=t" in html
+
+
+def test_build_viewer_html_activity_slider_gated_by_snapshot() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+    assert 'id="activity-slider"' in html
+    assert '<span>Still</span><span>Moving</span>' in html
+    assert "arousal_score" in html
+
+    without_snapshot = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+    )
+    assert 'id="activity-slider"' not in without_snapshot
+
+
+def test_build_viewer_html_camera_chips_are_path_gated() -> None:
+    snapshot_html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+    assert 'id="camera-chip-room"' in snapshot_html
+    assert 'id="camera-chip-caregiver"' not in snapshot_html
+
+    events_html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        events_path="/events.json?token=t",
+    )
+    assert "/events.json?token=t" in events_html
+    assert 'id="camera-chip-caregiver"' in events_html
+    assert "Caregiver seen " in events_html
+    assert 'id="camera-chip-room"' not in events_html
+
+    plain_html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        history_path="/history.json?token=t",
+    )
+    assert 'id="camera-chips"' not in plain_html
+
+
+def test_build_viewer_html_motion_donut_gated_by_history() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        history_path="/history.json?token=t",
+    )
+    assert 'id="motion-donut-card"' in html
+    assert 'id="motion-donut"' in html
+    assert "Motion · last" in html
+    assert "Collecting readings..." in html
+    assert 'id="motion-timeline"' not in html
+
+    without_history = build_viewer_html(
+        "/stream.mjpg?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+    assert 'id="motion-donut-card"' not in without_history
+
+
+def test_build_viewer_html_new_dashboard_copy_avoids_banned_state_words() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        history_path="/history.json?token=t",
+        digest_path="/digest.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+        events_path="/events.json?token=t",
+    )
+    lower = html.lower()
+    assert "peaceful" not in lower
+    assert "asleep" not in lower
+    assert "calm" not in lower
 
 
 def test_build_viewer_html_debug_section_collapsed_with_sensor_charts() -> None:
@@ -865,11 +943,9 @@ def test_build_viewer_html_has_soothe_section() -> None:
     assert "setSootheStatus" in html
     assert "addCurrentSootheControl" in html
     assert "Cry trigger sound" in html
-    assert "addPresetGroups" in html
-    assert "card.onclick" in html
     assert "playing your voice" in html
-    assert "Sounds" in html
-    assert "Music" in html
+    assert "Manual sounds" not in html  # manual preset grid removed from dashboard
+    assert "addPresetGroups" not in html
     assert "/soothe?token=t" in html
 
 

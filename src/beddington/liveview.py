@@ -315,12 +315,30 @@ color:var(--text);font-size:13px;font-weight:700;white-space:nowrap}
 .mode-btn,.rot-btn{cursor:pointer}
 .nightnote{position:absolute;left:0;right:0;bottom:64px;text-align:center;padding:8px 14px;
 color:var(--muted);font-size:13px;background:rgba(16,19,18,.88);display:none;z-index:4}
+.camera-chips{position:absolute;left:10px;top:10px;z-index:6;display:flex;flex-direction:column;
+gap:6px;align-items:flex-start;max-width:min(40%,360px);pointer-events:none}
+.camera-chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+border:1px solid rgba(244,239,230,.16);border-radius:999px;padding:4px 10px;
+background:rgba(8,10,9,.72);color:var(--text);font-size:12px;line-height:1.35;
+backdrop-filter:blur(6px)}
 .state-grid{display:grid;gap:12px;margin-bottom:14px}
 .state-hero,.action-card,.room-action-card,.card,.soothe-section,.engineering{
 border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:14px}
 .state-label{font-size:28px;line-height:1.15;font-weight:850;letter-spacing:0;margin:0 0 8px}
 body.night .state-label{font-size:30px}
 .meta-line{color:var(--muted);font-size:13px;line-height:1.35}
+.activity-slider{margin-top:14px;padding-top:12px;border-top:1px solid rgba(43,48,46,.78)}
+.activity-labels{display:flex;justify-content:space-between;color:var(--muted);
+font-size:12px;font-weight:800;margin-bottom:7px}
+.activity-track{position:relative;height:10px;border-radius:999px;
+background:linear-gradient(90deg,#345B8A 0%,#58C7B0 45%,#E8B154 78%,#FF6B6B 100%);
+box-shadow:inset 0 0 0 1px rgba(244,239,230,.1);opacity:.96}
+.activity-track.dim{opacity:.34;filter:saturate(.7)}
+.activity-thumb{position:absolute;top:50%;left:0;width:18px;height:18px;border-radius:50%;
+transform:translate(-50%,-50%);background:#58C7B0;border:2px solid #080a09;
+box-shadow:0 0 0 2px rgba(88,199,176,.36);transition:left .45s ease,opacity .2s ease}
+.activity-track.dim .activity-thumb{opacity:0}
+.activity-caption{min-height:17px;color:var(--muted);font-size:12px;margin-top:6px}
 .action-panel{display:grid;gap:10px}
 .action-card{display:block;width:100%;text-align:left;color:var(--text);text-decoration:none}
 .action-card.actionable{cursor:pointer;border-color:rgba(88,199,176,.65)}
@@ -334,10 +352,24 @@ padding:11px;display:grid;gap:4px}
 .sensor-name{color:var(--muted);font-size:12px;font-weight:800}
 .sensor-value{font-size:17px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
 .sensor-age,.sensor-extra{color:var(--muted);font-size:12px;line-height:1.3}
-.timeline-card canvas{width:100%;height:76px;background:#080a09;border:1px solid var(--border);
-border-radius:8px;display:block}
 .section-title{font-size:20px;line-height:1.25;margin:0 0 10px;font-weight:850}
 .digest{white-space:pre-wrap;font-size:16px;line-height:1.6;color:var(--text);margin:0}
+.summary-row{display:grid;gap:12px;margin-bottom:14px}
+.summary-card summary{min-height:44px;display:flex;align-items:center;cursor:pointer;
+font-size:20px;font-weight:850}
+.summary-card[open] summary{margin-bottom:10px}
+.motion-donut-card{min-width:0}
+.motion-donut-body{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;align-items:center}
+.motion-donut-canvas{position:relative;width:92px;height:92px}
+#motion-donut{width:92px;height:92px;display:block}
+.motion-donut-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+padding:4px;text-align:center;color:var(--muted);font-size:12px;line-height:1.25}
+.motion-legend{display:grid;gap:5px}
+.motion-legend-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px;
+align-items:center;color:var(--muted);font-size:12px;line-height:1.25}
+.motion-dot{width:8px;height:8px;border-radius:50%;background:var(--border)}
+.motion-dot.moving{background:#58C7B0}.motion-dot.still{background:#6D7672}
+.motion-dot.missing{background:#2B302E;border:1px solid #454C48}
 .soothe-section{margin-bottom:14px}
 .cur{font-size:20px;line-height:1.25;font-weight:850;margin:0 0 10px}
 .sbtns{display:flex;flex-wrap:wrap;gap:10px}
@@ -353,14 +385,6 @@ border-radius:8px;padding:10px;font-size:15px}
 .sbtn.stop{background:#4c1d24;border-color:#7a3340}
 .sbtn.cry{background:#5c2630;border-color:#9a4350;font-weight:850;width:100%}
 .sstatus{width:100%;min-height:20px;color:var(--primary);font-size:13px}
-.sgroup{width:100%;display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
-.shead{width:100%;color:var(--muted);font-weight:850;margin:8px 0 0}
-.sitem{width:min(100%,260px);border:1px solid var(--border);border-radius:8px;
-padding:10px;background:var(--surface2);cursor:pointer}
-.sitem.on{border-color:#58C7B0}
-.sitem .sbtn{width:100%;margin-bottom:8px}
-.smeta{color:var(--muted);font-size:12px;line-height:1.45}
-.smeta b{color:var(--text)}
 .audio-section{margin-bottom:14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);
 padding:12px;display:grid;gap:10px}
 .audio-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
@@ -385,6 +409,7 @@ border-radius:8px;display:block}
 @media (min-width:720px){
 main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-items:stretch}
 .sensor-area{grid-template-columns:1fr 1fr}.sensor-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+.summary-row{grid-template-columns:minmax(0,1fr) 270px;align-items:stretch}
 .camera-frame{min-height:520px}.topstrip{padding-inline:20px}
 }
 @media (max-width:420px){
@@ -404,20 +429,21 @@ main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-item
     <img id="live-img" src="__STREAM__" alt="Live camera view">
     <div id="stream-error" class="stream-error" role="status">Camera stream is full. Try another viewer in a moment.</div>
     <div id="nightnote" class="nightnote">Night eye - low-light camera view. Radar and motion readings remain available.</div>
+    __CAMERA_CHIPS__
     <div id="readings" class="readings-overlay"></div>
   </div>
 </section>
 __AUDIO_SECTION__
 __STATE_SECTIONS__
-__DIGEST_SECTION__
 __SOOTHE_SECTION__
+__DIGEST_SECTION__
 __ENGINEERING_SECTION__
 <div class="note privacy-badge">__PRIVACY_BADGE__</div>
 </main>
 <script>
-const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",SNAPSHOT="__SNAPSHOT__",AUDIO="__AUDIO__",TALK="__TALK__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
+const READINGS="__READINGS__",HISTORY="__HISTORY__",DIGEST="__DIGEST__",SOOTHE="__SOOTHE__",ALERTS="__ALERTS__",EVENTS="__EVENTS__",SNAPSHOT="__SNAPSHOT__",AUDIO="__AUDIO__",TALK="__TALK__",ROTATE=__ROTATE__,SENSORS=__SENSORS__;
 let HIST={},STATE=null,LASTDIGEST=0,LASTHISTORY=0,activeSensor=SENSORS.length?SENSORS[0].key:"";
-let snapshotFailures=0;
+let snapshotFailures=0,LASTEVENTS=0;
 const SEENT2SEQ={};
 const HAS_STATE=!!SNAPSHOT,MODEURL=READINGS?READINGS.replace("/readings.json","/mode"):"";
 async function loadDigest(){const e=document.getElementById("digest-text");if(!e)return;
@@ -435,12 +461,7 @@ cb.textContent="Baby crying - comfort now";
 cb.onclick=function(){soothePost("action=play&preset="+encodeURIComponent(d.default),"Playing "+String(d.default).replace(/_/g," "))};
 box.appendChild(cb);}
 const as=d.autosoothe||{enabled:false,preset:""};
-addAutoSootheControl(box,presets,as,d.default||"");
-const hr=document.createElement("div");hr.style.cssText="width:100%;border-top:1px solid #333;margin:14px 0 4px";box.appendChild(hr);
-const lbl=document.createElement("div");lbl.style.cssText="width:100%;color:#bcd;font-size:13px;margin-bottom:2px";
-lbl.textContent="Manual sounds";box.appendChild(lbl);
-addPresetGroups(box,presets,soothePlaying,function(p){
-soothePost("action=play&preset="+encodeURIComponent(p.key),"Playing "+presetText(p))},"");}
+addAutoSootheControl(box,presets,as,d.default||"");}
 function presetText(p){return String(p.label||p.key).replace(/_/g," ");}
 function presetSelect(presets,selected,placeholder){
 const sel=document.createElement("select");sel.className="sselect";
@@ -467,29 +488,6 @@ sel.onchange=function(){if(sel.value)autoPost(1,sel.value);};wrap.appendChild(se
 const tg=document.createElement("button");tg.className="sbtn"+(as.enabled?" on":"");
 tg.textContent=as.enabled?"On":"Off";
 tg.onclick=function(){autoPost(as.enabled?0:1, selected)};row.appendChild(tg);box.appendChild(row);}
-function addPresetGroups(box,presets,activeKey,onClick,prefix){
-const grouped={sounds:[],music:[],other:[]};
-presets.forEach(function(p){const c=String(p.category||"sounds").toLowerCase();
-(grouped[c==="music"?"music":(c==="sounds"?"sounds":"other")]).push(p);});
-[["sounds","Sounds"],["music","Music"],["other","Other"]].forEach(function(pair){
-const items=grouped[pair[0]];if(!items.length)return;
-const group=document.createElement("div");group.className="sgroup";
-const head=document.createElement("div");head.className="shead";head.textContent=pair[1];group.appendChild(head);
-items.forEach(function(p){group.appendChild(presetCard(p,activeKey===p.key,onClick,prefix));});
-box.appendChild(group);});}
-function presetCard(p,isActive,onClick,prefix){
-const card=document.createElement("div");card.className="sitem"+(isActive?" on":"");
-card.tabIndex=0;card.onclick=function(){onClick(p)};
-card.onkeydown=function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();onClick(p);}};
-const b=document.createElement("button");b.className="sbtn"+(isActive?" on":"");
-b.textContent=(prefix||"")+String(p.label||p.key);b.onclick=function(ev){ev.stopPropagation();onClick(p)};
-const tip=["Feel: "+(p.feel||""),"Use: "+(p.use||""),"Avoid: "+(p.avoid||"")].join("\\n");
-b.title=tip;card.appendChild(b);
-const meta=document.createElement("div");meta.className="smeta";
-[["Feel",p.feel],["Use",p.use],["Avoid",p.avoid]].forEach(function(row){
-if(!row[1])return;const line=document.createElement("div");const strong=document.createElement("b");
-strong.textContent=row[0]+": ";line.appendChild(strong);line.appendChild(document.createTextNode(row[1]));
-meta.appendChild(line);});card.appendChild(meta);return card;}
 function setSootheStatus(text){const s=document.getElementById("soothe-status");if(s)s.textContent=text||"";}
 async function autoPost(enabled,preset){setSootheStatus(enabled?"Auto-soothe on":"Auto-soothe off");
 try{await fetch(SOOTHE.replace("/soothe?","/autosoothe?")
@@ -593,13 +591,23 @@ async function pollReadings(){if(!READINGS||SNAPSHOT)return;try{const r=await fe
 if(r.ok)renderReadings(await r.json());}catch(e){}setTimeout(pollReadings,3000);}
 function renderStateUnavailable(){text("state-chip","State unavailable");text("state-label","Monitor unreachable — it may be offline. Live camera may still work.");
 text("confidence-line","");text("since-line","");text("action-label","Check the camera");text("action-detail","Use the live view for a direct look.");
-setHidden("room-action",true);renderT2Alerts([]);
+setHidden("room-action",true);renderActivity(null);renderRoomChip({});renderT2Alerts([]);
 const r=el("readings");if(r&&!r.childElementCount)renderOverlay([],LASTMODE.mode,LASTMODE.mode_auto);}
 function renderHealth(h){["camera","readings","radar","history"].forEach(function(k){const item=h&&h[k]?h[k]:{status:"missing"};
 const n=el("health-"+k);if(!n)return;const status=String(item.status||"missing");
 n.className="health-dot "+status;n.setAttribute("aria-label",k+" "+status);const s=n.querySelector("span");if(s)s.textContent=k;});}
 function setCard(id,value,age,extra,hide){const card=el("card-"+id);if(!card)return;card.hidden=!!hide;
 text("val-"+id,value);text("age-"+id,age||"");text("extra-"+id,extra||"");}
+function setChip(id,value){const n=el(id);if(!n)return;n.textContent=value||"";n.hidden=!value;}
+function roomChipPart(room,key,dec,unit,label){const o=room&&room[key]?room[key]:{},v=o.value;
+if(!(typeof v==="number"&&isFinite(v)))return "";const n=formatNum(v,dec);return n===null?"":n+(unit?(" "+unit):"")+(label?(" "+label):"");}
+function renderRoomChip(room){const parts=[],t=roomChipPart(room,"temperature_c",1,"°C",""),h=roomChipPart(room,"humidity_pct",0,"%","humidity");
+if(t)parts.push(t);if(h)parts.push(h);setChip("camera-chip-room",parts.join(" · "));}
+function renderActivity(d){const box=el("activity-slider"),track=el("activity-track"),thumb=el("activity-thumb"),cap=el("activity-caption");
+if(!box||!track||!thumb||!cap)return;const v=d&&typeof d.arousal_score==="number"&&isFinite(d.arousal_score)?d.arousal_score:null;
+if(v===null){track.classList.add("dim");cap.textContent="no reading";box.setAttribute("aria-label","Activity: no reading");return;}
+const pct=Math.max(0,Math.min(1,v))*100;thumb.style.left=pct+"%";track.classList.remove("dim");cap.textContent="";
+box.setAttribute("aria-label","Activity: "+Math.round(pct)+" percent between Still and Moving");}
 function renderSensorCards(d){const room=d.room||{},presence=d.presence||{},motion=d.motion||{},vitals=d.vitals||{};
 function rv(key,unit,dec){const o=room[key]||{};return o.value===null||o.value===undefined?["no reading",formatAge(o.age_s)]:
 [formatNum(o.value,dec)+(unit?(" "+unit):""),formatAge(o.age_s)];}
@@ -636,7 +644,7 @@ const title=document.createElement("div");title.className="t2-alert-title";title
 const msg=document.createElement("div");msg.className="t2-alert-message";msg.textContent=a.message||"";card.appendChild(msg);
 const action=a.action||{};if(action.label){const act=document.createElement("div");act.className="t2-alert-action";act.textContent=action.label;card.appendChild(act);}
 box.appendChild(card);});box.hidden=!box.childElementCount;}
-function renderSnapshot(d){STATE=d;snapshotFailures=0;renderHealth(d.health||{});overlayFromSnapshot(d);
+function renderSnapshot(d){STATE=d;snapshotFailures=0;renderHealth(d.health||{});overlayFromSnapshot(d);renderActivity(d);renderRoomChip(d.room||{});
 text("state-chip",d.label||"Reading the room...");text("state-label",d.label||"Reading the room...");
 const c=d.confidence||{};text("confidence-line",c.band?("confidence: "+c.band+(c.basis?" · "+c.basis:"")):"");
 const since=tsTime(d.since_ts);text("since-line",since?"since "+since:"");renderAction(d);renderT2Alerts(d.alerts||[]);renderSensorCards(d);}
@@ -648,9 +656,46 @@ if(!r.ok)throw new Error("snapshot");const d=await r.json();
 if(d&&d.error==="snapshot_unavailable"){renderStateUnavailable();}else{renderSnapshot(d);}}
 catch(e){snapshotFailures++;if(force||snapshotFailures>=2||!STATE)renderStateUnavailable();}
 SNAPTIMER=setTimeout(loadSnapshot,3000);}
-function historyNeeded(){const tl=el("motion-timeline");let timeline=false;if(tl){const b=tl.getBoundingClientRect();
-timeline=b.bottom>0&&b.top<(window.innerHeight||document.documentElement.clientHeight);}
-const eng=el("engineering");return timeline||(eng&&eng.open);}
+function eventSeenTs(e){if(!e)return null;
+if(typeof e.end==="number")return e.end;if(typeof e.ended_ts==="number")return e.ended_ts;
+if(e.end===null||e.ended_ts===null)return Date.now()/1000;
+if(typeof e.start==="number")return e.start;if(typeof e.started_ts==="number")return e.started_ts;return null;}
+function caregiverAge(ts){const age=Math.max(0,Date.now()/1000-ts);
+if(age<90)return "just now";if(age<3600)return Math.min(59,Math.max(1,Math.round(age/60)))+"m ago";
+return Math.max(1,Math.round(age/3600))+"h ago";}
+function renderCaregiverChip(d){const events=d&&Array.isArray(d.events)?d.events:[];let latest=null;
+events.forEach(function(e){if(!e||e.kind!=="caregiver_present")return;const ts=eventSeenTs(e);
+if(ts!==null&&(latest===null||ts>latest))latest=ts;});
+setChip("camera-chip-caregiver",latest===null?"":"Caregiver seen "+caregiverAge(latest));}
+async function loadEvents(force){if(!EVENTS)return;const now=Date.now();if(!force&&now-LASTEVENTS<15000)return;LASTEVENTS=now;
+try{const r=await fetch(EVENTS,{cache:"no-store"});if(r.ok)renderCaregiverChip(await r.json());else renderCaregiverChip(null);}
+catch(e){renderCaregiverChip(null);}}
+function visibleNow(n){if(!n)return false;const r=n.getBoundingClientRect(),vh=window.innerHeight||document.documentElement.clientHeight||0;
+return r.bottom>=0&&r.top<=vh;}
+function historyNeeded(){const eng=el("engineering"),donut=el("motion-donut-card");
+return !!((eng&&eng.open)||(donut&&donut.open&&visibleNow(donut)));}
+function fmtTime(t){const d=new Date(t*1000);
+return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);}
+function fmtWindowHours(h){if(!(typeof h==="number"&&isFinite(h)&&h>0))return "--";
+const v=h>=10?Math.round(h):(Math.round(h*10)/10);return String(Math.max(.1,v)).replace(/\\.0$/,"");}
+function motionPoints(h){const pts=h&&Array.isArray(h.points)?h.points:[];return pts.map(function(q){return [Number(q[0]),Number(q[1])];})
+.filter(function(q){return isFinite(q[0])&&(q[1]===0||q[1]===1);}).sort(function(a,b){return a[0]-b[0];});}
+function medianGap(g){if(!g.length)return 0;const a=g.slice().sort(function(x,y){return x-y;}),m=Math.floor(a.length/2);
+return a.length%2?a[m]:(a[m-1]+a[m])/2;}
+function setMotionLegend(m,s,n){const total=m+s+n,mp=total?Math.round(m/total*100):0,sp=total?Math.round(s/total*100):0,np=total?Math.round(n/total*100):0;
+text("motion-pct-moving",mp+"%");text("motion-pct-still",sp+"%");text("motion-pct-missing",np+"%");}
+function donutArc(ctx,cx,cy,r,w,a0,a1,color){if(a1<=a0)return;ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=w;ctx.arc(cx,cy,r,a0,a1);ctx.stroke();}
+function drawMotionDonut(){const card=el("motion-donut-card");if(!card)return;const h=HIST.motion_detected||{},p=motionPoints(h);
+let wh=typeof HIST.window_hours==="number"?HIST.window_hours:null;if((wh===null||!isFinite(wh)||wh<=0)&&p.length>1)wh=(p[p.length-1][0]-p[0][0])/3600;
+text("motion-window",fmtWindowHours(wh));const cv=el("motion-donut"),empty=el("motion-donut-empty");if(!cv)return;
+const ctx=cv.getContext("2d");if(!ctx)return;const size=cv.clientWidth||92,scale=window.devicePixelRatio||1;cv.width=size*scale;cv.height=size*scale;ctx.setTransform(scale,0,0,scale,0,0);ctx.clearRect(0,0,size,size);
+if(p.length<2){if(empty)empty.hidden=false;setMotionLegend(0,0,0);return;}
+const gaps=[];for(let i=0;i<p.length-1;i++){const dt=p[i+1][0]-p[i][0];if(dt>0)gaps.push(dt);}
+const med=medianGap(gaps);let moving=0,still=0,missing=0;for(let i=0;i<p.length-1;i++){const dt=p[i+1][0]-p[i][0];if(dt<=0)continue;
+if(med&&dt>2*med)missing+=dt;else if(p[i][1]===1)moving+=dt;else still+=dt;}
+const total=moving+still+missing;if(total<=0){if(empty)empty.hidden=false;setMotionLegend(0,0,0);return;}
+if(empty)empty.hidden=true;setMotionLegend(moving,still,missing);const cx=size/2,cy=size/2,r=size/2-9,w=14;let a=-Math.PI/2;
+[[moving,"#58C7B0"],[still,"#6D7672"],[missing,"#2B302E"]].forEach(function(seg){const next=a+seg[0]/total*Math.PI*2;donutArc(ctx,cx,cy,r,w,a,next,seg[1]);a=next;});}
 async function loadHistory(force){if(!HISTORY)return;if(!force&&!historyNeeded())return;const now=Date.now();
 if(!force&&now-LASTHISTORY<5000)return;LASTHISTORY=now;try{const r=await fetch(HISTORY,{cache:"no-store"});
 if(r.ok)HIST=await r.json();}catch(e){}
@@ -658,19 +703,10 @@ SENSORS.forEach(function(s){const h=HIST[s.key];if(!h)return;
 const c=document.getElementById("cur-"+s.key);const n=h.points.length;
 if(c)c.textContent=n?(s.bool?(h.points[n-1][1]?"yes":"no")
 :(h.points[n-1][1]+(h.unit?" "+h.unit:""))):"no reading";});
-drawTimeline();draw();}
+drawMotionDonut();draw();}
 function historyTick(){loadHistory(false);setTimeout(historyTick,5000);}
 function selectSensor(key){activeSensor=key;document.querySelectorAll(".sensor-chip").forEach(function(b){b.classList.toggle("active",b.dataset.sensor===key);});
 document.querySelectorAll(".chart-panel").forEach(function(p){p.hidden=p.id!=="p-"+key;});loadHistory(true);}
-function drawTimeline(){const cv=el("motion-timeline");if(!cv)return;const h=HIST.motion_detected;if(!h)return;
-const ctx=cv.getContext("2d"),W=cv.width=cv.clientWidth*2,H=cv.height=152,p=h.points||[];
-ctx.clearRect(0,0,W,H);ctx.fillStyle="#080a09";ctx.fillRect(0,0,W,H);
-if(p.length<2){ctx.fillStyle="#B8B0A6";ctx.font="24px sans-serif";ctx.fillText("Collecting readings...",24,48);return;}
-const x0=p[0][0],x1=p[p.length-1][0]||x0+1,pad=14;ctx.strokeStyle="#2B302E";ctx.lineWidth=2;
-ctx.beginPath();ctx.moveTo(pad,H-32);ctx.lineTo(W-pad,H-32);ctx.stroke();
-p.forEach(function(q,i){if(!q[1])return;const x=pad+(q[0]-x0)/((x1-x0)||1)*(W-2*pad);
-const next=p[i+1]?pad+(p[i+1][0]-x0)/((x1-x0)||1)*(W-2*pad):x+5;
-ctx.fillStyle="#58C7B0";ctx.fillRect(x,26,Math.max(3,next-x),H-58);});}
 function draw(){const eng=el("engineering");if(eng&&!eng.open)return;
 const s=SENSORS.find(function(x){return x.key===activeSensor});if(!s)return;
 const h=HIST[s.key];const cv=document.getElementById("cv-"+s.key);if(!cv||!h)return;
@@ -687,6 +723,11 @@ ctx.strokeStyle="#2B302E";ctx.lineWidth=2;ctx.beginPath();
 ctx.moveTo(pad,pad);ctx.lineTo(pad,H-pad);ctx.lineTo(W-10,H-pad);ctx.stroke();
 ctx.fillStyle="#B8B0A6";ctx.font="26px sans-serif";
 ctx.fillText(mx.toFixed(h.bool?0:1),8,pad+18);ctx.fillText(mn.toFixed(h.bool?0:1),8,H-pad);
+[0,1/3,2/3,1].forEach(function(f,i,arr){const t=x0+f*(x1-x0),x=X(t);
+ctx.strokeStyle="#2B302E";ctx.beginPath();ctx.moveTo(x,H-pad);ctx.lineTo(x,H-pad+10);ctx.stroke();
+ctx.textAlign=i===0?"left":(i===arr.length-1?"right":"center");
+ctx.fillText(fmtTime(t),x,H-pad+44);});
+ctx.textAlign="start";
 ctx.strokeStyle="#58C7B0";ctx.lineWidth=4;ctx.beginPath();
 p.forEach(function(q,i){const x=X(q[0]),y=Y(q[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
 ctx.stroke();}
@@ -698,7 +739,9 @@ applyRot();
 const liveImg=document.getElementById("live-img");if(liveImg)liveImg.onerror=function(){const e=el("stream-error");if(e)e.style.display="block";};
 document.querySelectorAll(".sensor-chip").forEach(function(b){b.onclick=function(){selectSensor(b.dataset.sensor);};});
 const engineering=el("engineering");if(engineering)engineering.addEventListener("toggle",function(){if(engineering.open)selectSensor(activeSensor);});
+const donutCard=el("motion-donut-card");if(donutCard)donutCard.addEventListener("toggle",function(){if(donutCard.open)loadHistory(true);});
 window.addEventListener("scroll",function(){loadHistory(false);},{passive:true});
+window.addEventListener("resize",function(){drawMotionDonut();draw();},{passive:true});
 // --- LAN cry-alert: poll /alerts.json, show banner, beep + notify on new alert ---
 let ALERTCTX=null,ALERTGESTURE=false,LASTALERTSEQ=-1;
 function alertUnlock(){if(ALERTGESTURE)return;ALERTGESTURE=true;
@@ -728,11 +771,12 @@ else{hideAlert();}}catch(e){}}
 document.addEventListener("click",alertUnlock,{once:false});
 document.addEventListener("touchstart",alertUnlock,{once:false});
 if(ALERTS){pollAlerts();setInterval(pollAlerts,2500);}
+if(EVENTS){loadEvents(true);setInterval(function(){loadEvents(false);},15000);}
 if(AUDIO&&TALK){setupAudioControls();window.addEventListener("pagehide",function(){stopListen();});}
 if(DIGEST){loadDigest();setInterval(loadDigest,60000);}
 if(SOOTHE)loadSoothe();
 if(SNAPSHOT)loadSnapshot(true);else pollReadings();
-if(HISTORY){selectSensor(activeSensor);historyTick();}
+if(HISTORY){drawMotionDonut();historyTick();}
 </script></body></html>"""
 
 
@@ -764,6 +808,7 @@ def _dashboard_page(
     rotate: int = 0,
     alerts_path: str = "",
     snapshot_path: str = "",
+    events_path: str = "",
 ) -> str:
     spec = json.dumps(
         [
@@ -778,6 +823,20 @@ def _dashboard_page(
     )
     state_top = ""
     state_sections = ""
+    camera_chips = ""
+    if snapshot_path or events_path:
+        camera_chips = '<div id="camera-chips" class="camera-chips" aria-label="Camera context">'
+        if snapshot_path:
+            camera_chips += (
+                '<div id="camera-chip-room" class="camera-chip" '
+                'aria-label="Room readings" hidden></div>'
+            )
+        if events_path:
+            camera_chips += (
+                '<div id="camera-chip-caregiver" class="camera-chip" '
+                'aria-label="Caregiver observation" hidden></div>'
+            )
+        camera_chips += "</div>"
     if snapshot_path:
         state_top = (
             '<div id="state-chip" class="state-chip" aria-live="polite">'
@@ -789,14 +848,6 @@ def _dashboard_page(
             '<span id="health-history" class="health-dot" aria-label="history missing"><span>history</span></span>'
             "</div>"
         )
-        timeline = (
-            '<div class="card timeline-card" id="motion-timeline-card">'
-            '<h2 class="section-title">Motion timeline</h2>'
-            '<canvas id="motion-timeline" aria-label="Motion over the history window"></canvas>'
-            "</div>"
-            if history_path
-            else ""
-        )
         state_sections = (
             '<section id="t2-alerts" class="t2-alerts" aria-live="polite" hidden></section>'
             '<section id="state-home" class="state-grid">'
@@ -804,6 +855,13 @@ def _dashboard_page(
             '<div id="state-label" class="state-label">Reading the room...</div>'
             '<div id="confidence-line" class="meta-line"></div>'
             '<div id="since-line" class="meta-line"></div>'
+            '<div id="activity-slider" class="activity-slider" role="img" aria-label="Activity: no reading">'
+            '<div class="activity-labels"><span>Still</span><span>Moving</span></div>'
+            '<div id="activity-track" class="activity-track dim">'
+            '<span id="activity-thumb" class="activity-thumb"></span>'
+            "</div>"
+            '<div id="activity-caption" class="activity-caption">no reading</div>'
+            "</div>"
             "</section>"
             '<section id="action-panel" class="action-panel" aria-label="Suggested action">'
             '<div id="action-card" class="action-card" role="group">'
@@ -827,15 +885,37 @@ def _dashboard_page(
             '<div id="card-motion" class="sensor-card"><div class="sensor-name">Motion</div><div id="val-motion" class="sensor-value">no reading</div><div id="age-motion" class="sensor-age"></div><div id="extra-motion" class="sensor-extra"></div></div>'
             '<div id="card-vitals" class="sensor-card" hidden><div class="sensor-name">Vitals</div><div id="val-vitals" class="sensor-value"></div><div id="age-vitals" class="sensor-age"></div><div id="extra-vitals" class="sensor-extra">rough radar estimate</div></div>'
             "</div>"
-            f"{timeline}"
             "</section>"
         )
-    digest_section = (
-        '<section id="tonight" class="card tonight-card">'
-        '<h2 class="section-title">Tonight</h2>'
+    tonight_card = (
+        '<details id="tonight" class="card tonight-card summary-card">'
+        "<summary>Tonight</summary>"
         '<div id="digest-text" class="digest">I don\'t have enough history yet for a night summary.</div>'
-        "</section>"
+        "</details>"
         if digest_path
+        else ""
+    )
+    motion_card = (
+        '<details id="motion-donut-card" class="card motion-donut-card summary-card" aria-label="Motion summary">'
+        '<summary id="motion-donut-title">Motion · last <span id="motion-window">--</span>h</summary>'
+        '<div class="motion-donut-body">'
+        '<div class="motion-donut-canvas">'
+        '<canvas id="motion-donut" role="img" aria-label="Motion chart"></canvas>'
+        '<div id="motion-donut-empty" class="motion-donut-empty">Collecting readings...</div>'
+        "</div>"
+        '<div id="motion-legend" class="motion-legend" aria-label="Motion legend">'
+        '<div class="motion-legend-row"><span class="motion-dot moving"></span><span>Moving</span><span id="motion-pct-moving">0%</span></div>'
+        '<div class="motion-legend-row"><span class="motion-dot still"></span><span>Still</span><span id="motion-pct-still">0%</span></div>'
+        '<div class="motion-legend-row"><span class="motion-dot missing"></span><span>No reading</span><span id="motion-pct-missing">0%</span></div>'
+        "</div>"
+        "</div>"
+        "</details>"
+        if history_path
+        else ""
+    )
+    digest_section = (
+        f'<section id="summary-row" class="summary-row">{tonight_card}{motion_card}</section>'
+        if tonight_card or motion_card
         else ""
     )
     soothe_section = (
@@ -900,6 +980,7 @@ def _dashboard_page(
     return (
         _DASHBOARD_TEMPLATE.replace("__TITLE__", _html_attr(title))
         .replace("__STREAM__", _html_attr(stream_path))
+        .replace("__CAMERA_CHIPS__", camera_chips)
         .replace("__STATE_TOP__", state_top)
         .replace("__STATE_SECTIONS__", state_sections)
         .replace("__AUDIO_SECTION__", audio_section)
@@ -912,6 +993,7 @@ def _dashboard_page(
         .replace("__DIGEST__", _js_string_content(digest_path))
         .replace("__SOOTHE__", _js_string_content(soothe_path))
         .replace("__ALERTS__", _js_string_content(alerts_path))
+        .replace("__EVENTS__", _js_string_content(events_path))
         .replace("__SNAPSHOT__", _js_string_content(snapshot_path))
         .replace("__AUDIO__", _js_string_content(audio_path))
         .replace("__TALK__", _js_string_content(talk_path))
@@ -933,6 +1015,7 @@ def build_viewer_html(
     rotate: int = 0,
     alerts_path: str | None = None,
     snapshot_path: str | None = None,
+    events_path: str | None = None,
 ) -> str:
     """A full-screen viewer page for the MJPEG stream.
 
@@ -949,6 +1032,7 @@ def build_viewer_html(
         or alerts_path
         or snapshot_path
         or audio_path
+        or events_path
     ):
         return _dashboard_page(
             stream_path,
@@ -963,6 +1047,7 @@ def build_viewer_html(
             rotate,
             alerts_path or "",
             snapshot_path or "",
+            events_path or "",
         )
     overlay = ""
     script = ""
@@ -1220,6 +1305,9 @@ def _make_handler(
                 alerts_path = (
                     f"/alerts.json?token={link_token}" if alert_state is not None else None
                 )
+                events_path = (
+                    f"/events.json?token={link_token}" if events_provider is not None else None
+                )
                 snapshot_path = (
                     f"/snapshot.json?token={link_token}"
                     if snapshot_provider is not None
@@ -1235,6 +1323,7 @@ def _make_handler(
                     rotate=rotate,
                     alerts_path=alerts_path,
                     snapshot_path=snapshot_path,
+                    events_path=events_path,
                     audio_path=(
                         f"/audio.pcm?token={link_token}"
                         if audio_enabled and full
