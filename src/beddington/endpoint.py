@@ -68,7 +68,9 @@ def _reachable(host: str, timeout: float, cache_seconds: float) -> bool:
     if cached is not None and now < cached[0]:
         return cached[1]
 
-    ok = _probe(host, timeout)
+    # A sleeping Wi-Fi NIC on the desktop often eats the first packet after
+    # idle; one retry distinguishes "napping" from "off".
+    ok = _probe(host, timeout) or _probe(host, timeout)
     ttl = cache_seconds if ok else min(cache_seconds, _NEGATIVE_CACHE_SECONDS)
     _PROBE_CACHE[host] = (now + ttl, ok)
     return ok
