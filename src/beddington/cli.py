@@ -846,7 +846,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     target_rate = 16_000
     frame_ms = 30
     frame_samples = max(1, round(native_rate * frame_ms / 1000))
-    start_speech_frames = 3
+    # ~180 ms of sustained speech to open the gate: 1-2 frame fan/noise spikes
+    # otherwise open junk blobs that cost seconds of transcription each.
+    start_speech_frames = 6
     end_silence_frames = max(1, round(350 / frame_ms))  # ~0.35 s closes it
     max_frames = max(1, round(8000 / frame_ms))  # 8 s hard cap
 
@@ -963,7 +965,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 # the assistant deaf at a distance. Speech that sneaks through as
                 # noise is discarded by the (now strict) wake matcher instead.
                 threshold = max(
-                    0.024,
+                    0.032,
                     min(0.035, round(max(noise_floor * 1.6, high_noise * 1.25), 4)),
                 )
                 adapt = True
@@ -1013,7 +1015,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Track the noise floor from quiet frames and keep the bar
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
-                    threshold = max(0.024, min(0.035, round(noise_floor * 1.6, 4)))
+                    # Floor 0.032 sits above fan-noise peaks (~0.026); cap 0.035
+                    # keeps distance speech (~0.038+) above the bar. The narrow
+                    # band is deliberate: the 30 Jun field tuning showed both
+                    # noise-blob storms below 0.032 and deafness above ~0.04.
+                    threshold = max(0.032, min(0.035, round(noise_floor * 1.6, 4)))
                 # Lift the bar above our own soothe sound so the music we're
                 # playing doesn't read as someone talking (see _speech_bar).
                 self_audio_floor = _update_self_audio_floor(
