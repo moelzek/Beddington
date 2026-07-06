@@ -201,7 +201,8 @@ def test_build_viewer_html_state_first_dashboard() -> None:
     assert 'id="engineering" class="engineering"' in html
     assert "fmtTime" in html  # engineering charts label the x axis
     assert "room_temperature_c" in html  # sensor spec embedded
-    assert 'id="tabs"' not in html
+    assert 'id="tabs"' in html  # video-first layout: telemetry behind tabs
+    assert 'data-view="eng"' in html
 
 
 def test_build_viewer_html_has_monitor_unreachable_copy() -> None:
@@ -474,13 +475,13 @@ def test_build_viewer_html_debug_section_collapsed_with_sensor_charts() -> None:
     )
 
     assert '<details id="engineering" class="engineering">' in html
-    assert "<summary>Engineering</summary>" in html
+    assert "<summary>Charts</summary>" in html
     assert '<canvas id="cv-room_temperature_c"></canvas>' in html
     assert '<button type="button" class="sensor-chip active"' in html
     assert '<details id="engineering" class="engineering" open>' not in html
 
 
-def test_build_viewer_html_old_top_level_tabs_are_gone() -> None:
+def test_build_viewer_html_video_first_tab_bar() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
         readings_path="/readings.json?token=t",
@@ -490,9 +491,24 @@ def test_build_viewer_html_old_top_level_tabs_are_gone() -> None:
         snapshot_path="/snapshot.json?token=t",
     )
 
-    assert 'id="tabs"' not in html
-    assert "dataset.tab" not in html
+    assert 'id="view-monitor"' in html
+    assert 'id="view-tonight"' in html
+    assert 'id="view-eng"' in html
+    assert 'data-view="monitor">Monitor</button>' in html
+    assert 'data-view="tonight">Tonight</button>' in html
+    assert 'data-view="eng">More data</button>' in html
+    assert 'id="sound-btn"' in html  # soothe lives behind the Sound sheet
+    assert 'id="sound-sheet"' in html
     assert 'data-sensor="room_temperature_c"' in html
+
+    # camera-only config keeps a bare monitor: no tab bar at all
+    bare = build_viewer_html(
+        "/stream.mjpg?token=t",
+        readings_path="/readings.json?token=t",
+        alerts_path="/alerts.json?token=t",
+    )
+    assert 'id="tabs"' not in bare
+    assert 'class="notabs"' in bare
 
 
 def test_history_series_converts_bool_and_scale() -> None:
