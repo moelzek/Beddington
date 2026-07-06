@@ -190,6 +190,38 @@ def test_translate_soothe_command_maps_music_context() -> None:
     ) == {"action": "play_best", "category": "music", "context": "sleep"}
 
 
+def test_translate_soothe_command_skips_llm_for_non_soothe_questions() -> None:
+    # The lexical gate keeps the (cold-loading, seconds-long) Ollama call out
+    # of ordinary sensor questions — they must fall through to the
+    # deterministic answer path immediately.
+    def fake(prompt: str, config: object) -> str:
+        raise AssertionError("LLM must not be called for non-soothe questions")
+
+    presets = {"lofi_rain": SootheStepConfig(name="Lofi rain")}
+    for question in [
+        "what is the temperature",
+        "light in the room",
+        "how was the night",
+        "is anyone there",
+    ]:
+        assert translate_soothe_command(question, _cfg(), presets, ask_llm=fake) is None
+
+
+def test_translate_soothe_command_gate_passes_soothe_phrasings() -> None:
+    # Soothe-ish phrasings (including preset-name words) still reach the LLM.
+    seen: list[str] = []
+
+    def fake(prompt: str, config: object) -> str:
+        del config
+        seen.append(prompt)
+        return '{"action":"stop"}'
+
+    presets = {"lofi_rain": SootheStepConfig(name="Lofi rain")}
+    for question in ["flame music", "make it quieter", "put on lofi", "turn it off"]:
+        translate_soothe_command(question, _cfg(), presets, ask_llm=fake)
+    assert len(seen) == 4
+
+
 def test_translate_soothe_command_rejects_unknown_preset() -> None:
     presets = {"piano": SootheStepConfig(name="Piano")}
 

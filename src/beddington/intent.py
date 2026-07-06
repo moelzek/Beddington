@@ -110,6 +110,34 @@ def lead_response(
     return answer if answer is not None else LLAMA_DECLINED
 
 
+# Cheap lexical gate in front of the soothe LLM: soothe requests name a sound
+# or a playback action. Without this, EVERY non-soothe question ("what is the
+# temperature") paid a cold Ollama model load (keep_alive=0 on the 4GB Pi)
+# before the deterministic answer path even ran.
+_SOOTHE_HINT_WORDS = frozenset(
+    {
+        "play", "playing", "start", "stop", "stopping", "pause", "resume",
+        "skip", "next", "switch", "turn", "music", "sound", "sounds", "song",
+        "songs", "tune", "track", "noise", "rain", "lullaby", "lullabies",
+        "shush", "shushing", "white", "quiet", "quieter", "louder", "softer",
+        "volume",
+    }
+)
+
+
+def _sounds_like_soothe_request(
+    question: str,
+    presets: Mapping[str, object] | None,
+) -> bool:
+    words = set(re.sub(r"[^a-z0-9\s]", " ", question.lower()).split())
+    if words & _SOOTHE_HINT_WORDS:
+        return True
+    for key in presets or {}:
+        if any(token in words for token in str(key).lower().replace("_", " ").split()):
+            return True
+    return False
+
+
 def translate_soothe_command(
     question: str,
     config: Any,
@@ -124,6 +152,8 @@ def translate_soothe_command(
     if not str(getattr(config, "model", "")).strip():
         return None
     if not str(getattr(config, "host", "")).strip():
+        return None
+    if not _sounds_like_soothe_request(question, presets):
         return None
 
     prompt = _build_soothe_prompt(question, presets)

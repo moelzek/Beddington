@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -155,7 +156,9 @@ def speak(text: str, config: NarratorConfig) -> dict[str, Any]:
 
     with tempfile.TemporaryDirectory(prefix="beddington-voice-") as directory:
         wav_path = Path(directory) / "narration.wav"
+        synth_started = time.monotonic()
         synthesis = _synthesise(text, config, wav_path)
+        synth_secs = time.monotonic() - synth_started
         if not synthesis["created"]:
             return {"spoken": False, "reason": synthesis["reason"]}
 
@@ -163,6 +166,7 @@ def speak(text: str, config: NarratorConfig) -> dict[str, Any]:
         if command is None:
             return {"spoken": False, "reason": "no_supported_player"}
 
+        play_started = time.monotonic()
         try:
             subprocess.run(
                 command,
@@ -178,6 +182,8 @@ def speak(text: str, config: NarratorConfig) -> dict[str, Any]:
             "spoken": True,
             "engine": synthesis["engine"],
             "player": _player_name(command),
+            "synth_secs": round(synth_secs, 1),
+            "play_secs": round(time.monotonic() - play_started, 1),
         }
 
 

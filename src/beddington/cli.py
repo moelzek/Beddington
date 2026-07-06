@@ -1169,6 +1169,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             if args.debug:
                                 print("  [debug] wake heard; waiting for follow-up")
                             continue
+                        answer_started = time.monotonic()
                         llm_config = _assistant_llm_translator_config(config)
                         soothe_cmd = match_soothe_command(question, soothe_presets)
                         if soothe_cmd is None:
@@ -1218,6 +1219,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         # conversational replies still pass through the same speech path.
                         if soothe_cmd is None:
                             answer = paddingtonise(answer, speak_config)
+                        if args.debug:
+                            print(
+                                f"  [debug] answer ready in "
+                                f"{time.monotonic() - answer_started:.1f}s"
+                            )
                         print(f'  heard: "{question}"  ->  {answer}')
                         if not args.no_speak:
                             echo_guard_from = time.monotonic()

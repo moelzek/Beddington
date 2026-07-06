@@ -375,7 +375,10 @@ def test_speak_uses_piper_and_supported_player(
         ),
     )
 
-    assert result == {"spoken": True, "engine": "piper", "player": "aplay"}
+    assert result["spoken"] is True
+    assert result["engine"] == "piper"
+    assert result["player"] == "aplay"
+    assert result["synth_secs"] >= 0.0 and result["play_secs"] >= 0.0
     assert commands[0][0] == str(piper)
     assert commands[1][0] == "aplay"
 
