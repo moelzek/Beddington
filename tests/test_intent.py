@@ -217,9 +217,18 @@ def test_translate_soothe_command_gate_passes_soothe_phrasings() -> None:
         return '{"action":"stop"}'
 
     presets = {"lofi_rain": SootheStepConfig(name="Lofi rain")}
-    for question in ["flame music", "make it quieter", "put on lofi", "turn it off"]:
+    for question in [
+        "flame music",
+        "make it quieter",
+        "put on lofi",
+        "turn it off",
+        "relaxing for feeding",
+        "something calming please",
+        "that worked",
+        "that didn't help",
+    ]:
         translate_soothe_command(question, _cfg(), presets, ask_llm=fake)
-    assert len(seen) == 4
+    assert len(seen) == 8
 
 
 def test_translate_soothe_command_rejects_unknown_preset() -> None:
