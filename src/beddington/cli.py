@@ -807,10 +807,13 @@ def _transcribe(model: object, audio: object) -> str:
         temperature=0.0,
         # Bias decoding toward the wake word + topics so marginal audio mangles
         # them less ("Beddington"/"Paddington", "temperature" not "up virtual").
+        # No wake-word+command sentences and no "Switch sound.": Whisper replays
+        # prompt shapes on marginal audio, and those hallucinated "Beddington
+        # sound." transcripts pass the wake gate and trigger the fallback reply.
         initial_prompt=(
             "Hey Beddington. Hi Paddington. What is the temperature, humidity, "
             "air pressure, brightness, or air quality? How was the night? "
-            "Hi Beddington stop. Stop the music. Play rain. Switch sound."
+            "Stop the music. Play rain."
         ),
     )
     text = " ".join(segment.text for segment in segments).strip()
@@ -843,7 +846,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     target_rate = 16_000
     frame_ms = 30
     frame_samples = max(1, round(native_rate * frame_ms / 1000))
-    start_speech_frames = 3
+    # ~180 ms of sustained speech to open the gate: 1-2 frame fan/noise spikes
+    # otherwise open junk blobs that cost seconds of transcription each.
+    start_speech_frames = 6
     end_silence_frames = max(1, round(350 / frame_ms))  # ~0.35 s closes it
     max_frames = max(1, round(8000 / frame_ms))  # 8 s hard cap
 
@@ -899,7 +904,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     frames_q: queue.Queue = queue.Queue(maxsize=max(20, round(3000 / frame_ms)))
 
     def on_audio(indata, frames, time_info, status) -> None:  # pragma: no cover
-        _put_drop_oldest(frames_q, indata[:, 0].copy())
+        # Stamp capture time so the echo guard can drop frames by when the
+        # sound HAPPENED, not when the (possibly backlogged) loop gets to them.
+        _put_drop_oldest(frames_q, (time.monotonic(), indata[:, 0].copy()))
 
     def drain_captured_frames() -> None:
         try:
@@ -911,6 +918,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     pre_roll: deque = deque(maxlen=start_speech_frames + 2)
     buffer: list = []
     in_utterance = False
+    utterance_started = 0.0
     speech_run = 0
     silence_run = 0
     ducked_soothe: dict[str, str] | None = None
@@ -919,6 +927,13 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     last_soothe_poll = 0.0
     pending_wake_until = 0.0
     pending_wake_soothe: dict[str, str] | None = None
+    # After our own chime/speech, the Bluetooth sink keeps sounding briefly
+    # after the player exits; block gate-OPENING for frames captured during
+    # playback + tail, or Whisper hallucinates our own chime as a new wake
+    # ("Hey Baddington." feedback loop). Bounded window: frames captured
+    # BEFORE playback (often the parent's question, queued during STT) pass.
+    echo_guard_from = 0.0
+    echo_guard_until = 0.0
     deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
     try:
         with sd.InputStream(
@@ -941,7 +956,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 calib_until = time.monotonic() + 1.5
                 while time.monotonic() < calib_until:
                     try:
-                        f = frames_q.get(timeout=0.5)
+                        _, f = frames_q.get(timeout=0.5)
                     except queue.Empty:
                         continue
                     levels.append(float(np.sqrt(np.mean(f**2))))
@@ -954,9 +969,13 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 )
                 # Keep the bar above room/speaker bleed, but low enough for short
                 # "Hi Beddington" phrases from the Pi mic to open quickly.
+                # Cap 0.035: with the fan the room floor sits ~0.02, and the old
+                # 0.055 cap let the bar climb into normal speech (~0.04), making
+                # the assistant deaf at a distance. Speech that sneaks through as
+                # noise is discarded by the (now strict) wake matcher instead.
                 threshold = max(
-                    0.024,
-                    min(0.055, round(max(noise_floor * 2.0, high_noise * 1.25), 4)),
+                    0.032,
+                    min(0.035, round(max(noise_floor * 1.6, high_noise * 1.25), 4)),
                 )
                 adapt = True
             print(
@@ -968,7 +987,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
             last_beat = time.monotonic()
             while deadline is None or time.monotonic() < deadline:
                 try:
-                    frame = frames_q.get(timeout=0.5)
+                    captured_ts, frame = frames_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
                 now = time.monotonic()
@@ -1005,7 +1024,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     # Track the noise floor from quiet frames and keep the bar
                     # just above it (capped, so a close voice always clears it).
                     noise_floor = 0.97 * noise_floor + 0.03 * rms
-                    threshold = max(0.024, min(0.055, round(noise_floor * 2.0, 4)))
+                    # Floor 0.032 sits above fan-noise peaks (~0.026); cap 0.035
+                    # keeps distance speech (~0.038+) above the bar. The narrow
+                    # band is deliberate: the 30 Jun field tuning showed both
+                    # noise-blob storms below 0.032 and deafness above ~0.04.
+                    threshold = max(0.032, min(0.035, round(noise_floor * 1.6, 4)))
                 # Lift the bar above our own soothe sound so the music we're
                 # playing doesn't read as someone talking (see _speech_bar).
                 self_audio_floor = _update_self_audio_floor(
@@ -1023,7 +1046,8 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                     max_rms = max(max_rms, rms)
                     if time.monotonic() - last_beat >= 5.0:
                         print(
-                            f"  [debug] frames={frames_seen} max_rms={max_rms:.4f} "
+                            f"  [debug] {time.strftime('%H:%M:%S')} "
+                            f"frames={frames_seen} max_rms={max_rms:.4f} "
                             f"(bar {speech_bar:.4f}, self-audio {self_audio_floor:.4f}, "
                             f"soothe={'on' if soothe_playing else 'off'})"
                         )
@@ -1031,6 +1055,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         max_rms = 0.0
                         last_beat = time.monotonic()
                 if not in_utterance:
+                    if is_speech and echo_guard_from <= captured_ts < echo_guard_until:
+                        is_speech = False
+                        speech_run = 0
                     if is_speech:
                         speech_run += 1
                         if speech_run >= start_speech_frames:
@@ -1042,6 +1069,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                     f"{ducked_soothe['preset']}"
                                 )
                             in_utterance = True
+                            utterance_started = time.monotonic()
                             buffer = list(pre_roll)
                             silence_run = 0
                     else:
@@ -1069,7 +1097,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 np.arange(len(audio)),
                                 audio,
                             ).astype(np.float32)
+                        transcribe_started = time.monotonic()
                         text = _transcribe(model, audio)
+                        transcribe_secs = time.monotonic() - transcribe_started
                         wake = match_wake(text, wake_words)
                         question = None if wake is None else wake.question
                         if question == "" and not wake.confident:
@@ -1083,12 +1113,15 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 )
                             question = None
                         resume_after_answer = resume_soothe
-                        now = time.monotonic()
                         from_pending_wake = False
+                        # Anchor the follow-up window on when the utterance
+                        # STARTED: transcription can take seconds on the Pi, so
+                        # checking the clock here (after it) silently dropped
+                        # follow-ups the parent spoke well inside the window.
                         if (
                             question is None
                             and pending_wake_until
-                            and now < pending_wake_until
+                            and utterance_started < pending_wake_until
                         ):
                             pending_text = normalize_transcript(text)
                             if pending_text:
@@ -1103,7 +1136,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                         f"{question!r}"
                                     )
                         if args.debug:
-                            print(f'  [debug] transcript="{text}" -> question={question!r}')
+                            print(
+                                f"  [debug] {time.strftime('%H:%M:%S')} "
+                                f'transcript="{text}" -> question={question!r} '
+                                f"(stt {transcribe_secs:.1f}s)"
+                            )
                         if question is None:
                             resumed = _resume_dashboard_soothe(
                                 resume_soothe,
@@ -1114,6 +1151,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             if args.debug and resume_soothe is not None:
                                 print(f"  [debug] resumed soothe: {resumed}")
                             continue  # no wake word — ignore silently
+                        echo_guard_from = time.monotonic()
                         chime = _maybe_play_wake_chime(
                             question,
                             config,
@@ -1121,13 +1159,17 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         )
                         if args.debug:
                             print(f"  [debug] chime: {chime}")
-                        drain_captured_frames()
+                        # No drain here: frames captured while we transcribed the
+                        # wake often ARE the parent's question — keep them. The
+                        # echo guard stops the chime tail opening the gate.
+                        echo_guard_until = time.monotonic() + 1.2
                         if question == "":
-                            pending_wake_until = time.monotonic() + 6.0
+                            pending_wake_until = time.monotonic() + 8.0
                             pending_wake_soothe = resume_after_answer or pending_wake_soothe
                             if args.debug:
                                 print("  [debug] wake heard; waiting for follow-up")
                             continue
+                        answer_started = time.monotonic()
                         llm_config = _assistant_llm_translator_config(config)
                         soothe_cmd = match_soothe_command(question, soothe_presets)
                         if soothe_cmd is None:
@@ -1177,14 +1219,22 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         # conversational replies still pass through the same speech path.
                         if soothe_cmd is None:
                             answer = paddingtonise(answer, speak_config)
+                        if args.debug:
+                            print(
+                                f"  [debug] answer ready in "
+                                f"{time.monotonic() - answer_started:.1f}s"
+                            )
                         print(f'  heard: "{question}"  ->  {answer}')
                         if not args.no_speak:
+                            echo_guard_from = time.monotonic()
                             spoken = speak(answer, speak_config)
                             if args.debug:
                                 print(f"  [debug] speak: {spoken}")
                             # Drop frames captured while we were speaking, so Beddington
-                            # never transcribes its own voice as a new command.
+                            # never transcribes its own voice as a new command; the
+                            # echo guard covers the Bluetooth tail past the drain.
                             drain_captured_frames()
+                            echo_guard_until = time.monotonic() + 1.2
                         if not _soothe_command_replaces_playback(soothe_cmd):
                             # If the user clearly tried to control playback but we
                             # couldn't parse it into a command, leave the sound
