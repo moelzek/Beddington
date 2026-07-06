@@ -121,6 +121,11 @@ _SOOTHE_HINT_WORDS = frozenset(
         "songs", "tune", "track", "noise", "rain", "lullaby", "lullabies",
         "shush", "shushing", "white", "quiet", "quieter", "louder", "softer",
         "volume",
+        # Mood/context requests ("relaxing for feeding", "something calming")
+        # and worked/didn't-work feedback also route through the soothe LLM.
+        "relax", "relaxing", "calm", "calming", "soothe", "soothing",
+        "settle", "settling", "work", "worked", "working", "help", "helped",
+        "helping", "didn", "didnt",
     }
 )
 
