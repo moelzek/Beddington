@@ -444,6 +444,14 @@ border-radius:8px;display:block}
 .health-dot span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .cam-actions{gap:10px}.audio-btn{min-width:0;padding:12px 16px}
 }
+@media (min-width:1100px){
+main{display:grid;grid-template-columns:minmax(0,1fr) 440px}
+#view-monitor{grid-column:1;grid-row:1}
+#view-monitor[hidden]{display:block}
+#view-tonight,#view-eng{grid-column:2;grid-row:1;border-left:1px solid var(--border);
+height:calc(100dvh - var(--tabbar));overflow-y:auto;background:var(--bg)}
+#view-tonight .page,#view-eng .page{padding-bottom:24px}
+}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
 </style></head><body__BODY_CLASS__>
 <div id="alertbanner" role="alert" aria-live="assertive"></div>
@@ -842,6 +850,11 @@ const soundBtn=el("sound-btn");if(soundBtn)soundBtn.onclick=openSoundSheet;
 const soundSheetEl=el("sound-sheet");if(soundSheetEl){const bd=soundSheetEl.querySelector(".sheet-backdrop");
 if(bd)bd.onclick=closeSoundSheet;}
 document.addEventListener("keydown",function(ev){if(ev.key==="Escape")closeSoundSheet();});
+// Wide screens: CSS keeps the camera visible while Tonight / More data dock as
+// a right side panel — open one by default so the space is used.
+if(window.matchMedia&&window.matchMedia("(min-width:1100px)").matches){
+const wt=document.querySelector('.tab-btn[data-view="tonight"]')||document.querySelector('.tab-btn[data-view="eng"]');
+if(wt)switchView(wt.dataset.view);}
 </script></body></html>"""
 
 
