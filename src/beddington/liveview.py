@@ -370,6 +370,11 @@ align-items:center;color:var(--muted);font-size:12px;line-height:1.25}
 .motion-dot{width:8px;height:8px;border-radius:50%;background:var(--border)}
 .motion-dot.moving{background:#58C7B0}.motion-dot.still{background:#6D7672}
 .motion-dot.missing{background:#2B302E;border:1px solid #454C48}
+.crying-list{display:grid;gap:7px;color:var(--text);font-size:14px;line-height:1.35}
+.crying-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:baseline}
+.cry-when{color:var(--muted);font-variant-numeric:tabular-nums}
+.cry-dur{color:var(--muted)}
+.cry-more{color:var(--muted);font-size:12px}
 .soothe-section{margin-bottom:14px}
 .cur{font-size:20px;line-height:1.25;font-weight:850;margin:0 0 10px}
 .sbtns{display:flex;flex-wrap:wrap;gap:10px}
@@ -667,9 +672,32 @@ function renderCaregiverChip(d){const events=d&&Array.isArray(d.events)?d.events
 events.forEach(function(e){if(!e||e.kind!=="caregiver_present")return;const ts=eventSeenTs(e);
 if(ts!==null&&(latest===null||ts>latest))latest=ts;});
 setChip("camera-chip-caregiver",latest===null?"":"Caregiver seen "+caregiverAge(latest));}
+function fmtDuration(s){if(!(typeof s==="number"&&isFinite(s))||s<0)return "";
+if(s<60)return "under a minute";const m=Math.round(s/60);if(m<60)return m+" min";
+const h=Math.floor(m/60),r=m%60;return h+"h"+(r?" "+r+"m":"");}
+function renderCryingCard(d){const list=el("crying-list"),count=el("crying-count");if(!list||!count)return;
+if(!d){count.textContent="no data";list.textContent="Crying history is unavailable right now.";return;}
+const wh=fmtWindowHours(d.window_hours);
+const rows=(Array.isArray(d.events)?d.events:[]).filter(function(e){
+return e&&e.kind==="crying"&&typeof e.started_ts==="number";})
+.sort(function(a,b){return b.started_ts-a.started_ts;});
+if(!rows.length){count.textContent="none heard · last "+wh+"h";
+list.textContent="No crying heard in this window.";return;}
+count.textContent=rows.length+(rows.length===1?" episode":" episodes")+" · last "+wh+"h";
+list.innerHTML="";rows.slice(0,8).forEach(function(e){
+const row=document.createElement("div");row.className="crying-row";
+const when=document.createElement("span");when.className="cry-when";when.textContent=tsTime(e.started_ts)||"--:--";
+const label=document.createElement("span");label.textContent="Crying heard";
+const dur=document.createElement("span");dur.className="cry-dur";
+if(e.ended_ts===null||e.ended_ts===undefined)dur.textContent="ongoing";
+else dur.textContent=fmtDuration(e.ended_ts-e.started_ts)||"brief";
+row.appendChild(when);row.appendChild(label);row.appendChild(dur);list.appendChild(row);});
+if(rows.length>8){const more=document.createElement("div");more.className="cry-more";
+more.textContent="+"+(rows.length-8)+" earlier in this window";list.appendChild(more);}}
+function renderEvents(d){renderCaregiverChip(d);renderCryingCard(d);}
 async function loadEvents(force){if(!EVENTS)return;const now=Date.now();if(!force&&now-LASTEVENTS<15000)return;LASTEVENTS=now;
-try{const r=await fetch(EVENTS,{cache:"no-store"});if(r.ok)renderCaregiverChip(await r.json());else renderCaregiverChip(null);}
-catch(e){renderCaregiverChip(null);}}
+try{const r=await fetch(EVENTS,{cache:"no-store"});if(r.ok)renderEvents(await r.json());else renderEvents(null);}
+catch(e){renderEvents(null);}}
 function visibleNow(n){if(!n)return false;const r=n.getBoundingClientRect(),vh=window.innerHeight||document.documentElement.clientHeight||0;
 return r.bottom>=0&&r.top<=vh;}
 function historyNeeded(){const eng=el("engineering"),donut=el("motion-donut-card");
@@ -913,9 +941,17 @@ def _dashboard_page(
         if history_path
         else ""
     )
+    crying_card = (
+        '<details id="crying-card" class="card crying-card summary-card" aria-label="Crying summary">'
+        '<summary id="crying-title">Crying · <span id="crying-count">no data yet</span></summary>'
+        '<div id="crying-list" class="crying-list">Collecting observations...</div>'
+        "</details>"
+        if events_path
+        else ""
+    )
     digest_section = (
-        f'<section id="summary-row" class="summary-row">{tonight_card}{motion_card}</section>'
-        if tonight_card or motion_card
+        f'<section id="summary-row" class="summary-row">{tonight_card}{motion_card}{crying_card}</section>'
+        if tonight_card or motion_card or crying_card
         else ""
     )
     soothe_section = (

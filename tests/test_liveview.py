@@ -432,6 +432,25 @@ def test_build_viewer_html_motion_donut_gated_by_history() -> None:
     assert 'id="motion-donut-card"' not in without_history
 
 
+def test_build_viewer_html_crying_card_gated_by_events() -> None:
+    html = build_viewer_html(
+        "/stream.mjpg?token=t",
+        events_path="/events.json?token=t",
+    )
+    assert 'id="crying-card"' in html
+    assert 'id="crying-count"' in html
+    assert 'id="crying-list"' in html
+    assert "Crying heard" in html
+    assert "No crying heard in this window." in html
+
+    without_events = build_viewer_html(
+        "/stream.mjpg?token=t",
+        history_path="/history.json?token=t",
+        snapshot_path="/snapshot.json?token=t",
+    )
+    assert 'id="crying-card"' not in without_events
+
+
 def test_build_viewer_html_new_dashboard_copy_avoids_banned_state_words() -> None:
     html = build_viewer_html(
         "/stream.mjpg?token=t",
