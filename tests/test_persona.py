@@ -203,3 +203,22 @@ def test_soothe_confirmation_rejects_made_up_story(
     )
 
     assert paddingtonise(plain, _cfg()) == plain
+
+
+def test_every_prompt_example_passes_the_validator() -> None:
+    """The few-shot examples teach the model what a passing restyle looks like,
+    so each "You say" must itself survive _validate against its own Fact."""
+    from beddington.persona import _SYSTEM_PROMPT, _validate
+
+    examples: list[tuple[str, str]] = []
+    fact: str | None = None
+    for line in _SYSTEM_PROMPT.splitlines():
+        if line.startswith("Fact: "):
+            fact = line.removeprefix("Fact: ")
+        elif line.startswith("You say: ") and fact is not None:
+            examples.append((fact, line.removeprefix("You say: ")))
+            fact = None
+
+    assert len(examples) >= 6
+    for plain, candidate in examples:
+        assert _validate(candidate, plain), f"example fails validator: {candidate!r}"

@@ -235,6 +235,15 @@ backend = "ollama"
 # LLM from adding any fact, so 1b wording is plenty.
 model = "llama3.2:1b"
 host = "http://127.0.0.1:11434"
+# Optional desktop upgrade endpoint. Empty = Pi-only (default). Point it at a
+# LAN box running Ollama to get a bigger, warmer voice (e.g. gemma3:12b) while
+# the desktop is awake; it falls back to the Pi model above when the desktop is
+# off. Set the host here or via BEDDINGTON_NARRATOR_UPGRADE_HOST.
+upgrade_host = ""
+upgrade_model = "gemma3:12b"
+upgrade_keep_alive = "10m"
+upgrade_probe_timeout = 1.0
+upgrade_probe_cache_seconds = 60.0
 num_predict = 140
 temperature = 0.3
 # Speak the recap aloud through the speaker. Needs Piper installed + a voice

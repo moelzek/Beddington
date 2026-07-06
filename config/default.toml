@@ -269,6 +269,20 @@ enabled = true
 backend = "ollama"
 model = "llama3.2:1b"
 host = "http://127.0.0.1:11434"
+# Optional more-capable desktop endpoint. Leave upgrade_host empty for Pi-only.
+# When set and reachable on the LAN, the narrator, persona and voice-intent
+# translator prefer it (e.g. gemma3:12b); when the desktop is off they fall back
+# to the Pi model above with no change in behaviour. The desktop's model is kept
+# warm (upgrade_keep_alive) while the Pi's is unloaded after each call.
+# Reachability is health-probed (upgrade_probe_timeout) and cached
+# (upgrade_probe_cache_seconds) so a sleeping desktop never slows an utterance.
+# The host can also be set via BEDDINGTON_NARRATOR_UPGRADE_HOST (handy for DHCP).
+upgrade_host = ""
+# upgrade_host = "http://desktop.local:11434"
+upgrade_model = "gemma3:12b"
+upgrade_keep_alive = "10m"
+upgrade_probe_timeout = 1.0
+upgrade_probe_cache_seconds = 60.0
 num_predict = 140
 temperature = 0.3
 voice_enabled = false

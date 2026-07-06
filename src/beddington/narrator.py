@@ -11,6 +11,7 @@ from typing import Any
 
 from .config import NarratorConfig
 from .context import describe_presence_scene
+from .endpoint import resolve_ollama_target
 from .grounding import has_unsupported_additions
 from .models import Event, NightReport
 from .soothe import _playback_command, _player_name
@@ -64,19 +65,20 @@ def narrate(report: NightReport, config: NarratorConfig, digest_fallback: str) -
     if not config.enabled or config.backend != "ollama":
         return digest_fallback
 
+    target = resolve_ollama_target(config)
     payload = {
-        "model": config.model,
+        "model": target.model,
         "prompt": build_narration_prompt(report),
         "stream": False,
         # Unload after the once-a-night narration so the model doesn't hold RAM
-        # 24/7 on the 4GB Pi.
-        "keep_alive": 0,
+        # 24/7 on the 4GB Pi (the desktop upgrade endpoint keeps its model warm).
+        "keep_alive": target.keep_alive,
         "options": {
             "num_predict": config.num_predict,
             "temperature": config.temperature,
         },
     }
-    endpoint = config.host.rstrip("/") + "/api/generate"
+    endpoint = target.host.rstrip("/") + "/api/generate"
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
