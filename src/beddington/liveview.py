@@ -355,7 +355,10 @@ padding:11px;display:grid;gap:4px}
 .section-title{font-size:20px;line-height:1.25;margin:0 0 10px;font-weight:850}
 .digest{white-space:pre-wrap;font-size:16px;line-height:1.6;color:var(--text);margin:0}
 .summary-row{display:grid;gap:12px;margin-bottom:14px}
-.motion-donut-card{display:grid;gap:10px;min-width:0}
+.summary-card summary{min-height:44px;display:flex;align-items:center;cursor:pointer;
+font-size:20px;font-weight:850}
+.summary-card[open] summary{margin-bottom:10px}
+.motion-donut-card{min-width:0}
 .motion-donut-body{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;align-items:center}
 .motion-donut-canvas{position:relative;width:92px;height:92px}
 #motion-donut{width:92px;height:92px;display:block}
@@ -432,8 +435,8 @@ main{padding:0 20px 24px}.state-grid{grid-template-columns:1.1fr .9fr;align-item
 </section>
 __AUDIO_SECTION__
 __STATE_SECTIONS__
-__DIGEST_SECTION__
 __SOOTHE_SECTION__
+__DIGEST_SECTION__
 __ENGINEERING_SECTION__
 <div class="note privacy-badge">__PRIVACY_BADGE__</div>
 </main>
@@ -669,7 +672,8 @@ try{const r=await fetch(EVENTS,{cache:"no-store"});if(r.ok)renderCaregiverChip(a
 catch(e){renderCaregiverChip(null);}}
 function visibleNow(n){if(!n)return false;const r=n.getBoundingClientRect(),vh=window.innerHeight||document.documentElement.clientHeight||0;
 return r.bottom>=0&&r.top<=vh;}
-function historyNeeded(){const eng=el("engineering"),donut=el("motion-donut-card");return !!((eng&&eng.open)||visibleNow(donut));}
+function historyNeeded(){const eng=el("engineering"),donut=el("motion-donut-card");
+return !!((eng&&eng.open)||(donut&&donut.open&&visibleNow(donut)));}
 function fmtTime(t){const d=new Date(t*1000);
 return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);}
 function fmtWindowHours(h){if(!(typeof h==="number"&&isFinite(h)&&h>0))return "--";
@@ -735,6 +739,7 @@ applyRot();
 const liveImg=document.getElementById("live-img");if(liveImg)liveImg.onerror=function(){const e=el("stream-error");if(e)e.style.display="block";};
 document.querySelectorAll(".sensor-chip").forEach(function(b){b.onclick=function(){selectSensor(b.dataset.sensor);};});
 const engineering=el("engineering");if(engineering)engineering.addEventListener("toggle",function(){if(engineering.open)selectSensor(activeSensor);});
+const donutCard=el("motion-donut-card");if(donutCard)donutCard.addEventListener("toggle",function(){if(donutCard.open)loadHistory(true);});
 window.addEventListener("scroll",function(){loadHistory(false);},{passive:true});
 window.addEventListener("resize",function(){drawMotionDonut();draw();},{passive:true});
 // --- LAN cry-alert: poll /alerts.json, show banner, beep + notify on new alert ---
@@ -883,16 +888,16 @@ def _dashboard_page(
             "</section>"
         )
     tonight_card = (
-        '<section id="tonight" class="card tonight-card">'
-        '<h2 class="section-title">Tonight</h2>'
+        '<details id="tonight" class="card tonight-card summary-card">'
+        "<summary>Tonight</summary>"
         '<div id="digest-text" class="digest">I don\'t have enough history yet for a night summary.</div>'
-        "</section>"
+        "</details>"
         if digest_path
         else ""
     )
     motion_card = (
-        '<section id="motion-donut-card" class="card motion-donut-card" aria-label="Motion summary">'
-        '<h2 id="motion-donut-title" class="section-title">Motion · last <span id="motion-window">--</span>h</h2>'
+        '<details id="motion-donut-card" class="card motion-donut-card summary-card" aria-label="Motion summary">'
+        '<summary id="motion-donut-title">Motion · last <span id="motion-window">--</span>h</summary>'
         '<div class="motion-donut-body">'
         '<div class="motion-donut-canvas">'
         '<canvas id="motion-donut" role="img" aria-label="Motion chart"></canvas>'
@@ -904,7 +909,7 @@ def _dashboard_page(
         '<div class="motion-legend-row"><span class="motion-dot missing"></span><span>No reading</span><span id="motion-pct-missing">0%</span></div>'
         "</div>"
         "</div>"
-        "</section>"
+        "</details>"
         if history_path
         else ""
     )
