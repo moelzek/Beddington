@@ -904,7 +904,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     frames_q: queue.Queue = queue.Queue(maxsize=max(20, round(3000 / frame_ms)))
 
     def on_audio(indata, frames, time_info, status) -> None:  # pragma: no cover
-        _put_drop_oldest(frames_q, indata[:, 0].copy())
+        # Stamp capture time so the echo guard can drop frames by when the
+        # sound HAPPENED, not when the (possibly backlogged) loop gets to them.
+        _put_drop_oldest(frames_q, (time.monotonic(), indata[:, 0].copy()))
 
     def drain_captured_frames() -> None:
         try:
@@ -925,6 +927,13 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     last_soothe_poll = 0.0
     pending_wake_until = 0.0
     pending_wake_soothe: dict[str, str] | None = None
+    # After our own chime/speech, the Bluetooth sink keeps sounding briefly
+    # after the player exits; block gate-OPENING for frames captured during
+    # playback + tail, or Whisper hallucinates our own chime as a new wake
+    # ("Hey Baddington." feedback loop). Bounded window: frames captured
+    # BEFORE playback (often the parent's question, queued during STT) pass.
+    echo_guard_from = 0.0
+    echo_guard_until = 0.0
     deadline = None if args.seconds <= 0 else time.monotonic() + args.seconds
     try:
         with sd.InputStream(
@@ -947,7 +956,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                 calib_until = time.monotonic() + 1.5
                 while time.monotonic() < calib_until:
                     try:
-                        f = frames_q.get(timeout=0.5)
+                        _, f = frames_q.get(timeout=0.5)
                     except queue.Empty:
                         continue
                     levels.append(float(np.sqrt(np.mean(f**2))))
@@ -978,7 +987,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
             last_beat = time.monotonic()
             while deadline is None or time.monotonic() < deadline:
                 try:
-                    frame = frames_q.get(timeout=0.5)
+                    captured_ts, frame = frames_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
                 now = time.monotonic()
@@ -1046,6 +1055,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         max_rms = 0.0
                         last_beat = time.monotonic()
                 if not in_utterance:
+                    if is_speech and echo_guard_from <= captured_ts < echo_guard_until:
+                        is_speech = False
+                        speech_run = 0
                     if is_speech:
                         speech_run += 1
                         if speech_run >= start_speech_frames:
@@ -1139,6 +1151,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             if args.debug and resume_soothe is not None:
                                 print(f"  [debug] resumed soothe: {resumed}")
                             continue  # no wake word — ignore silently
+                        echo_guard_from = time.monotonic()
                         chime = _maybe_play_wake_chime(
                             question,
                             config,
@@ -1146,7 +1159,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         )
                         if args.debug:
                             print(f"  [debug] chime: {chime}")
-                        drain_captured_frames()
+                        # No drain here: frames captured while we transcribed the
+                        # wake often ARE the parent's question — keep them. The
+                        # echo guard stops the chime tail opening the gate.
+                        echo_guard_until = time.monotonic() + 1.2
                         if question == "":
                             pending_wake_until = time.monotonic() + 8.0
                             pending_wake_soothe = resume_after_answer or pending_wake_soothe
@@ -1204,12 +1220,15 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             answer = paddingtonise(answer, speak_config)
                         print(f'  heard: "{question}"  ->  {answer}')
                         if not args.no_speak:
+                            echo_guard_from = time.monotonic()
                             spoken = speak(answer, speak_config)
                             if args.debug:
                                 print(f"  [debug] speak: {spoken}")
                             # Drop frames captured while we were speaking, so Beddington
-                            # never transcribes its own voice as a new command.
+                            # never transcribes its own voice as a new command; the
+                            # echo guard covers the Bluetooth tail past the drain.
                             drain_captured_frames()
+                            echo_guard_until = time.monotonic() + 1.2
                         if not _soothe_command_replaces_playback(soothe_cmd):
                             # If the user clearly tried to control playback but we
                             # couldn't parse it into a command, leave the sound
