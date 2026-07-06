@@ -28,6 +28,7 @@ import urllib.request
 
 from .child_profile import CHILD_NAME
 from .config import NarratorConfig
+from .endpoint import resolve_ollama_target
 from .grounding import has_unsupported_additions
 from .narrator import _BANNED_NARRATION_WORDS
 
@@ -41,7 +42,8 @@ _SYSTEM_PROMPT = (
     '- include every number and unit exactly as given (for example "20 degrees Celsius" '
     'or "49 percent");\n'
     "- keep it to one short sentence;\n"
-    '- add at most one small Paddington touch (marmalade, Aunt Lucy, or "if I may").\n'
+    '- add at most one small Paddington touch (marmalade, Aunt Lucy, "if I may", or a '
+    'kindly "dear").\n'
     "You MUST NOT:\n"
     "- give any advice, suggestion or instruction;\n"
     "- add any new fact, cause, place or detail that is not in the sentence;\n"
@@ -49,9 +51,20 @@ _SYSTEM_PROMPT = (
     "snug, peaceful or content;\n"
     "- make any medical comment.\n"
     "\n"
-    "Example\n"
+    "Examples\n"
     f"Fact: The room is about 21 degrees Celsius, a touch warm for {CHILD_NAME}.\n"
-    f"You say: The room is about 21 degrees Celsius, a touch warm for {CHILD_NAME}, if I may."
+    f"You say: The room is about 21 degrees Celsius, a touch warm for {CHILD_NAME}, if I may.\n"
+    "Fact: The humidity is about 49 percent, comfortable.\n"
+    "You say: The humidity is about 49 percent, dear, and quite comfortable.\n"
+    "Fact: The room is dimly lit.\n"
+    "You say: The room is dimly lit just now, if I may say so.\n"
+    f"Fact: I found 2 crying episodes for {CHILD_NAME} tonight.\n"
+    f"You say: I found 2 crying episodes for {CHILD_NAME} tonight, counted as carefully "
+    "as Aunt Lucy taught me.\n"
+    "Fact: The air pressure is normal.\n"
+    "You say: The air pressure is normal — steady as a jar of marmalade.\n"
+    "Fact: Playing heartbeat.\n"
+    "You say: Playing heartbeat now, dear."
 )
 
 # Markers of a medically-sensitive answer (radar vitals readout / no-lock / the
@@ -200,19 +213,20 @@ def _validate(candidate: str, plain: str) -> bool:
 
 def _call_ollama(plain: str, config: NarratorConfig) -> str | None:
     """Ask the local model to re-voice ``plain``. Returns None on any failure."""
+    target = resolve_ollama_target(config)
     payload = {
-        "model": config.model,
+        "model": target.model,
         "prompt": _SYSTEM_PROMPT + "\n\nFact: " + plain + "\nYou say:",
         "stream": False,
         # Unload the model between the rare persona calls so it doesn't squat on
-        # RAM 24/7 on the 4GB Pi (keeps the box out of swap).
-        "keep_alive": 0,
+        # RAM 24/7 on the 4GB Pi (the desktop upgrade endpoint keeps its warm).
+        "keep_alive": target.keep_alive,
         "options": {
             "num_predict": config.persona_num_predict,
             "temperature": config.persona_temperature,
         },
     }
-    endpoint = config.host.rstrip("/") + "/api/generate"
+    endpoint = target.host.rstrip("/") + "/api/generate"
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
@@ -245,6 +259,12 @@ def paddingtonise(plain_answer: str, config: NarratorConfig) -> str:
         return plain_answer
     if is_medically_sensitive(plain):
         return plain_answer
+    if getattr(config, "persona_upgrade_only", False):
+        # Persona is desktop-brain-only: skip (fast, deterministic answer) when
+        # the resolved target is still the Pi baseline.
+        target = resolve_ollama_target(config)
+        if target.host.rstrip("/") == str(config.host).rstrip("/"):
+            return plain_answer
     candidate = _call_ollama(plain, config)
     if candidate is None:
         return plain_answer

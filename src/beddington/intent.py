@@ -6,6 +6,8 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from .endpoint import resolve_ollama_target
+
 INTENT_KEYWORDS = (
     "temperature",
     "humidity",
@@ -282,19 +284,20 @@ def _ask_ollama_with_options(
     temperature: float,
     timeout: float,
 ) -> str | None:
+    target = resolve_ollama_target(config)
     payload = {
-        "model": str(getattr(config, "model")),
+        "model": target.model,
         "prompt": prompt,
         "stream": False,
         # Unload between the rare voice-intent calls so the model doesn't hold
-        # RAM 24/7 on the 4GB Pi.
-        "keep_alive": 0,
+        # RAM 24/7 on the 4GB Pi (the desktop upgrade endpoint keeps its warm).
+        "keep_alive": target.keep_alive,
         "options": {
             "num_predict": num_predict,
             "temperature": temperature,
         },
     }
-    endpoint = str(getattr(config, "host")).rstrip("/") + "/api/generate"
+    endpoint = target.host.rstrip("/") + "/api/generate"
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),

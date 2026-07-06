@@ -43,6 +43,14 @@ class NarratorConfig:
     backend: str = "ollama"
     model: str = "llama3.2:1b"
     host: str = "http://127.0.0.1:11434"
+    # Optional, more capable desktop endpoint (e.g. gemma3:12b on a LAN box).
+    # When set and reachable, voice calls prefer it; otherwise they fall back to
+    # the Pi baseline above. Empty upgrade_host disables it (Pi-only default).
+    upgrade_host: str = ""
+    upgrade_model: str = ""
+    upgrade_keep_alive: str = "10m"
+    upgrade_probe_timeout: float = 1.0
+    upgrade_probe_cache_seconds: float = 60.0
     num_predict: int = 140
     temperature: float = 0.3
     voice_enabled: bool = False
@@ -58,6 +66,10 @@ class NarratorConfig:
     # in character, grounded + validated so it can never change a fact (see
     # persona.py). Reuses model/host above. Fails closed to the plain answer.
     persona_enabled: bool = True
+    # Only restyle via the desktop upgrade endpoint: when the upgrade host is
+    # absent/unreachable the persona step is skipped entirely, so Pi-only
+    # answers keep their snappy deterministic latency.
+    persona_upgrade_only: bool = False
     persona_temperature: float = 0.4
     persona_num_predict: int = 80
     persona_timeout: float = 8.0
@@ -410,6 +422,15 @@ def load_config(path: Path | None = None) -> AppConfig:
             enabled=_env_bool("BEDDINGTON_SOOTHE_ENABLED", config.soothe.enabled),
             player=os.getenv("BEDDINGTON_SOOTHE_PLAYER", config.soothe.player),
         ),
+        narrator=replace(
+            config.narrator,
+            upgrade_host=os.getenv(
+                "BEDDINGTON_NARRATOR_UPGRADE_HOST", config.narrator.upgrade_host
+            ),
+            upgrade_model=os.getenv(
+                "BEDDINGTON_NARRATOR_UPGRADE_MODEL", config.narrator.upgrade_model
+            ),
+        ),
     )
     _validate(config)
     return config
@@ -538,6 +559,20 @@ def _load_narrator(
         backend=str(raw_narrator.get("backend", default.backend)),
         model=str(raw_narrator.get("model", default.model)),
         host=str(raw_narrator.get("host", default.host)),
+        upgrade_host=str(raw_narrator.get("upgrade_host", default.upgrade_host)),
+        upgrade_model=str(raw_narrator.get("upgrade_model", default.upgrade_model)),
+        upgrade_keep_alive=str(
+            raw_narrator.get("upgrade_keep_alive", default.upgrade_keep_alive)
+        ),
+        upgrade_probe_timeout=float(
+            raw_narrator.get("upgrade_probe_timeout", default.upgrade_probe_timeout)
+        ),
+        upgrade_probe_cache_seconds=float(
+            raw_narrator.get(
+                "upgrade_probe_cache_seconds",
+                default.upgrade_probe_cache_seconds,
+            )
+        ),
         num_predict=int(raw_narrator.get("num_predict", default.num_predict)),
         temperature=float(raw_narrator.get("temperature", default.temperature)),
         voice_enabled=_coerce_bool(
@@ -552,6 +587,10 @@ def _load_narrator(
         persona_enabled=_coerce_bool(
             raw_narrator.get("persona_enabled"),
             default.persona_enabled,
+        ),
+        persona_upgrade_only=_coerce_bool(
+            raw_narrator.get("persona_upgrade_only"),
+            default.persona_upgrade_only,
         ),
         persona_temperature=float(
             raw_narrator.get("persona_temperature", default.persona_temperature)
