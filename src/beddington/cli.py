@@ -31,7 +31,7 @@ from .intent import translate_soothe_command
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
-from .ears import WAKE_WORDS, extract_wake_question, normalize_transcript
+from .ears import WAKE_WORDS, match_wake, normalize_transcript
 from .digest import build_digest
 from .llm import polish_digest
 from .models import Event, NightReport
@@ -1070,7 +1070,18 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 audio,
                             ).astype(np.float32)
                         text = _transcribe(model, audio)
-                        question = extract_wake_question(text, wake_words)
+                        wake = match_wake(text, wake_words)
+                        question = None if wake is None else wake.question
+                        if question == "" and not wake.confident:
+                            # A fuzzy span match with nothing after it is far more
+                            # likely room conversation than a bare wake — ignore
+                            # rather than chime and open the follow-up window.
+                            if args.debug:
+                                print(
+                                    "  [debug] low-confidence bare wake ignored: "
+                                    f'"{text}"'
+                                )
+                            question = None
                         resume_after_answer = resume_soothe
                         now = time.monotonic()
                         from_pending_wake = False
