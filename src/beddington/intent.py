@@ -392,7 +392,9 @@ def _clean_lead_response(text: str, relaxed: bool = False) -> str | None:
     if relaxed:
         # Conversation demo mode: the system prompt carries the behaviour;
         # only spoken-length sanity applies here (no banned-word gate, digits
-        # and childcare/weather vocabulary allowed).
+        # and childcare/weather vocabulary allowed). Strip markdown emphasis —
+        # the reply goes straight to TTS.
+        cleaned = cleaned.replace("*", "").replace("_", "")
         if len(cleaned) > 480:
             cleaned = cleaned[:480].rsplit(".", 1)[0].strip()
             if cleaned:
