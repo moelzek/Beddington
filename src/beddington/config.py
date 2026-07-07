@@ -99,9 +99,35 @@ class LlmTranslatorConfig:
 
 
 @dataclass(frozen=True)
+class ConversationConfig:
+    """Free-flowing chat mode (demo). Only active while the desktop upgrade
+    endpoint is reachable: after Beddington answers, the mic stays open for a
+    follow-up without a new wake word, replies may run 2-3 sentences, and the
+    last few exchanges are fed back into the lead prompt as context."""
+
+    enabled: bool = False
+    window_seconds: float = 20.0
+    num_predict: int = 120
+    history_turns: int = 6
+
+
+@dataclass(frozen=True)
+class WeatherConfig:
+    """Optional outside-weather answers via the free Open-Meteo API. The ONLY
+    internet-bound call in the product; off by default (local-only)."""
+
+    enabled: bool = False
+    latitude: float = 0.0
+    longitude: float = 0.0
+    cache_seconds: float = 600.0
+
+
+@dataclass(frozen=True)
 class AssistantConfig:
     chime_enabled: bool = True
     llm_translator: LlmTranslatorConfig = LlmTranslatorConfig()
+    conversation: ConversationConfig = ConversationConfig()
+    weather: WeatherConfig = WeatherConfig()
 
 
 @dataclass(frozen=True)
@@ -618,7 +644,43 @@ def _load_assistant(
         llm_translator=_load_llm_translator(
             raw_assistant.get("llm_translator", {}),
             default.llm_translator,
-        )
+        ),
+        conversation=_load_conversation(
+            raw_assistant.get("conversation", {}),
+            default.conversation,
+        ),
+        weather=_load_weather(
+            raw_assistant.get("weather", {}),
+            default.weather,
+        ),
+    )
+
+
+def _load_conversation(
+    raw: object,
+    default: ConversationConfig,
+) -> ConversationConfig:
+    if not isinstance(raw, dict):
+        return default
+    return ConversationConfig(
+        enabled=_coerce_bool(raw.get("enabled"), default.enabled),
+        window_seconds=float(raw.get("window_seconds", default.window_seconds)),
+        num_predict=int(raw.get("num_predict", default.num_predict)),
+        history_turns=int(raw.get("history_turns", default.history_turns)),
+    )
+
+
+def _load_weather(
+    raw: object,
+    default: WeatherConfig,
+) -> WeatherConfig:
+    if not isinstance(raw, dict):
+        return default
+    return WeatherConfig(
+        enabled=_coerce_bool(raw.get("enabled"), default.enabled),
+        latitude=float(raw.get("latitude", default.latitude)),
+        longitude=float(raw.get("longitude", default.longitude)),
+        cache_seconds=float(raw.get("cache_seconds", default.cache_seconds)),
     )
 
 

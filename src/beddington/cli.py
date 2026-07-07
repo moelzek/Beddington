@@ -27,7 +27,9 @@ from .assistant import (
     looks_like_soothe_control,
     match_soothe_command,
 )
-from .intent import translate_soothe_command
+from .endpoint import resolve_ollama_target
+from .intent import lead_response, translate_soothe_command
+from .weather import is_weather_question, weather_line
 from .config import AppConfig, SootheStepConfig, load_config
 from .context import describe_presence_scene
 from .detector import YamNetTFLiteDetector, ensure_model
@@ -791,6 +793,16 @@ _FOLLOW_UP_FILLERS = frozenset({
     "and", "erm so", "ok so",
 })
 
+# Polite closers that end conversation mode instead of being answered: the
+# post-answer listening window shuts and the next question needs a fresh wake.
+_CONVERSATION_STOP_PHRASES = frozenset({
+    "thank you", "thanks", "thank you paddington", "thanks paddington",
+    "thank you beddington", "thanks beddington", "that s all", "that is all",
+    "that s all for now", "no thank you", "stop", "stop listening",
+    "goodnight", "good night", "goodbye", "bye",
+})
+_CONVERSATION_CLOSE_LINE = "Not at all, dear. I'm here whenever you need me."
+
 
 def _is_degenerate(text: str) -> bool:
     """True for Whisper's repetition hallucination on noise (e.g. 'No. No. No.'
@@ -902,6 +914,9 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
     )
     soothe_presets = _build_soothe_presets(config)
     conversation_memory = ConversationMemory()
+    # Conversation-mode chat memory (demo): last few (parent, beddington)
+    # exchanges, RAM only, fed back into the lead prompt for continuity.
+    chat_history: deque = deque(maxlen=config.assistant.conversation.history_turns)
     # Warm the persona model so the first real reply isn't cold-start slow. Off the
     # critical path: a throwaway restyle whose result we discard. Harmless if the
     # model/Ollama is unavailable (paddingtonise just returns the input).
@@ -1200,8 +1215,35 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             continue
                         answer_started = time.monotonic()
                         llm_config = _assistant_llm_translator_config(config)
-                        soothe_cmd = match_soothe_command(question, soothe_presets)
-                        if soothe_cmd is None:
+                        # Conversation mode (demo): only while the desktop
+                        # upgrade brain is the resolved target.
+                        conv_cfg = config.assistant.conversation
+                        conv_active = (
+                            conv_cfg.enabled
+                            and resolve_ollama_target(speak_config).host.rstrip("/")
+                            != str(speak_config.host).rstrip("/")
+                        )
+                        if conv_active:
+                            llm_config = replace(
+                                llm_config,
+                                lead_num_predict=conv_cfg.num_predict,
+                            )
+                        conversation_closing = (
+                            from_pending_wake
+                            and normalize_transcript(question)
+                            in _CONVERSATION_STOP_PHRASES
+                        )
+                        conv_weather = (
+                            weather_line(config.assistant.weather)
+                            if conv_active and config.assistant.weather.enabled
+                            else None
+                        )
+                        soothe_cmd = (
+                            None
+                            if conversation_closing
+                            else match_soothe_command(question, soothe_presets)
+                        )
+                        if soothe_cmd is None and not conversation_closing:
                             llama_soothe_cmd = translate_soothe_command(
                                 question,
                                 llm_config,
@@ -1209,7 +1251,12 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             )
                             if llama_soothe_cmd is not None:
                                 soothe_cmd = llama_soothe_cmd
-                        if soothe_cmd is not None:
+                        if conversation_closing:
+                            answer = _CONVERSATION_CLOSE_LINE
+                            chat_history.clear()
+                            if args.debug:
+                                print("  [debug] conversation closed by parent")
+                        elif soothe_cmd is not None:
                             pending_wake_until, pending_wake_soothe = (
                                 _clear_pending_wake_for_soothe_command(
                                     soothe_cmd,
@@ -1235,6 +1282,17 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         elif is_night_question(question) and night_store is not None:
                             digest = _summarise_store_night(night_store, 12 * 3600)
                             answer = digest.replace("• ", "").replace("\n", " ")
+                        elif conv_weather is not None and is_weather_question(question):
+                            # Outdoor questions must not fall through to the
+                            # ROOM temperature path; the deterministic weather
+                            # line rides in via the lead prompt.
+                            answer = lead_response(
+                                question,
+                                llm_config,
+                                history=list(chat_history),
+                                weather=conv_weather,
+                                conversational=True,
+                            )
                         else:
                             snapshot = _read_sensor_snapshot(readers, warm_seconds=0.0)
                             answer = answer_question(
@@ -1242,12 +1300,17 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                 snapshot,
                                 llm_config,
                                 memory=conversation_memory,
+                                chat_history=list(chat_history) if conv_active else None,
+                                weather=conv_weather,
+                                conversational=conv_active,
                             )
                         # Re-voice grounded sensor/action answers as Beddington.
                         # Medically-sensitive vitals are spoken verbatim, and model-led
                         # conversational replies still pass through the same speech path.
-                        if soothe_cmd is None:
+                        if soothe_cmd is None and not conversation_closing:
                             answer = paddingtonise(answer, speak_config)
+                        if conv_active and not conversation_closing:
+                            chat_history.append((question, answer))
                         if args.debug:
                             print(
                                 f"  [debug] answer ready in "
@@ -1264,6 +1327,20 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             # echo guard covers the Bluetooth tail past the drain.
                             drain_captured_frames()
                             echo_guard_until = time.monotonic() + 1.2
+                        if conversation_closing:
+                            pending_wake_until = 0.0
+                            pending_wake_soothe = None
+                        elif conv_active:
+                            # Keep the mic open for the parent's next turn so
+                            # the conversation flows without a fresh wake word.
+                            pending_wake_until = (
+                                time.monotonic() + conv_cfg.window_seconds
+                            )
+                            if args.debug:
+                                print(
+                                    "  [debug] conversation window open "
+                                    f"({conv_cfg.window_seconds:.0f}s)"
+                                )
                         if not _soothe_command_replaces_playback(soothe_cmd):
                             # If the user clearly tried to control playback but we
                             # couldn't parse it into a command, leave the sound
