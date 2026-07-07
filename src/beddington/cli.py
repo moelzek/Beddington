@@ -782,6 +782,16 @@ def _read_sensor_snapshot(
     return snapshot
 
 
+# Bare acknowledgements/hesitations that must not spend the wake follow-up
+# window: a filler heard between the wake and the real question keeps the
+# window open instead of becoming the "question".
+_FOLLOW_UP_FILLERS = frozenset({
+    "oh", "ah", "eh", "mm", "hmm", "mhm", "mm hmm", "uh", "um", "erm",
+    "uh huh", "yeah", "yes", "ya", "yep", "right", "so", "well", "the", "a",
+    "and", "erm so", "ok so",
+})
+
+
 def _is_degenerate(text: str) -> bool:
     """True for Whisper's repetition hallucination on noise (e.g. 'No. No. No.'
     repeated), so it can be dropped instead of mistaken for a command."""
@@ -915,7 +925,11 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
         except queue.Empty:
             pass
 
-    pre_roll: deque = deque(maxlen=start_speech_frames + 2)
+    # ~1s of always-on lookback (was ~240ms): when the echo guard makes the gate
+    # open late — the parent starts talking over the chime tail — the recovered
+    # pre-roll keeps the start of the sentence instead of handing Whisper a
+    # chopped tail ("...ush is the temperature").
+    pre_roll: deque = deque(maxlen=max(start_speech_frames + 2, round(1000 / frame_ms)))
     buffer: list = []
     in_utterance = False
     utterance_started = 0.0
@@ -1124,7 +1138,7 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                             and utterance_started < pending_wake_until
                         ):
                             pending_text = normalize_transcript(text)
-                            if pending_text:
+                            if pending_text and pending_text not in _FOLLOW_UP_FILLERS:
                                 question = pending_text
                                 from_pending_wake = True
                                 resume_after_answer = resume_after_answer or pending_wake_soothe
@@ -1134,6 +1148,18 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                                     print(
                                         "  [debug] using wake follow-up as question: "
                                         f"{question!r}"
+                                    )
+                            else:
+                                # A blob inside the window that transcribed to
+                                # nothing (chopped onset, room noise) or to a
+                                # bare filler must not spend the parent's one
+                                # shot: renew the window so their repeat still
+                                # counts.
+                                pending_wake_until = time.monotonic() + 8.0
+                                if args.debug:
+                                    print(
+                                        "  [debug] follow-up window renewed "
+                                        f'(unusable blob: "{text}")'
                                     )
                         if args.debug:
                             print(
@@ -1164,7 +1190,10 @@ def _listen_assistant_command(args: argparse.Namespace, config: AppConfig) -> in
                         # echo guard stops the chime tail opening the gate.
                         echo_guard_until = time.monotonic() + 1.2
                         if question == "":
-                            pending_wake_until = time.monotonic() + 8.0
+                            # 12s (was 8): wake STT + chime + echo guard already
+                            # eat ~3s, and a failed first capture (renewed above)
+                            # needs the parent's retry to still land inside.
+                            pending_wake_until = time.monotonic() + 12.0
                             pending_wake_soothe = resume_after_answer or pending_wake_soothe
                             if args.debug:
                                 print("  [debug] wake heard; waiting for follow-up")
