@@ -171,6 +171,57 @@ def test_lead_response_rejects_sensor_or_safety_claim() -> None:
     )
 
 
+def test_lead_response_conversational_carries_history_weather_and_character() -> None:
+    seen: dict[str, str] = {}
+
+    def fake(prompt: str, config: object) -> str:
+        del config
+        seen["prompt"] = prompt
+        return (
+            "Most little ones start around six months, dear — soft steamed "
+            "veg sticks are a lovely first food. Let her set the pace."
+        )
+
+    answer = lead_response(
+        "when should we start baby led weaning?",
+        _cfg(),
+        ask_llm=fake,
+        history=[("hello there", "Hello, dear! Lovely to hear you.")],
+        weather="Outside it is clear and about 20 degrees Celsius.",
+        conversational=True,
+    )
+    prompt = seen["prompt"]
+    # Everything lives in the one Paddington system prompt.
+    assert "spirit of Paddington" in prompt
+    assert "baby-led weaning" in prompt
+    assert "do not add disclaimers" in prompt
+    assert "Parent: hello there" in prompt
+    assert "Beddington: Hello, dear! Lovely to hear you." in prompt
+    assert "Outside it is clear and about 20 degrees Celsius." in prompt
+    assert prompt.rstrip().endswith("Beddington:")
+    # Relaxed cleaner: multi-sentence childcare answer with counting words passes.
+    assert "six months" in answer
+
+
+def test_lead_response_conversational_allows_digits_and_childcare_words() -> None:
+    reply = "Around 6 months is normal, and sleeping through takes time."
+
+    answer = lead_response(
+        "when do babies sleep through the night?",
+        _cfg(),
+        ask_llm=lambda prompt, config: reply,
+        conversational=True,
+    )
+    assert answer == reply
+    # The same reply is still rejected by the strict (non-conversational) path.
+    strict = lead_response(
+        "when do babies sleep through the night?",
+        _cfg(),
+        ask_llm=lambda prompt, config: reply,
+    )
+    assert strict == "Sorry, I can't answer that from here."
+
+
 def test_translate_soothe_command_maps_music_context() -> None:
     presets = {
         "piano": SootheStepConfig(name="Piano"),

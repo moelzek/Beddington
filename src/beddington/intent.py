@@ -91,8 +91,18 @@ def lead_response(
     question: str,
     config: Any,
     ask_llm: AskLlm | None = None,
+    *,
+    history: list[tuple[str, str]] | None = None,
+    weather: str | None = None,
+    conversational: bool = False,
 ) -> str:
-    """Let local Llama lead non-sensor conversation, with product guardrails."""
+    """Let the local model lead non-sensor conversation.
+
+    ``conversational`` is the desktop-brain demo mode: recent ``history``
+    turns and an optional deterministic ``weather`` line are folded into the
+    Paddington system prompt, replies may run a few sentences, and the strict
+    single-sentence cleaner is relaxed to spoken-length sanity trims only.
+    """
     if not getattr(config, "enabled", False):
         return LLAMA_UNAVAILABLE
     if getattr(config, "backend", "ollama") != "ollama":
@@ -102,13 +112,18 @@ def lead_response(
     if not str(getattr(config, "host", "")).strip():
         return LLAMA_UNAVAILABLE
 
-    prompt = _build_lead_prompt(question)
+    prompt = _build_lead_prompt(
+        question,
+        history=history,
+        weather=weather,
+        conversational=conversational,
+    )
     caller = ask_llm or _ask_lead_ollama
     try:
         response = caller(prompt, config)
     except Exception:
         return LLAMA_UNAVAILABLE
-    answer = _clean_lead_response(response or "")
+    answer = _clean_lead_response(response or "", relaxed=conversational)
     return answer if answer is not None else LLAMA_DECLINED
 
 
@@ -189,19 +204,62 @@ def _build_prompt(question: str) -> str:
     )
 
 
-def _build_lead_prompt(question: str) -> str:
-    return (
-        "You are Beddington, a warm, polite local baby-monitor companion with the "
-        "gentle manner of Paddington Bear. The deterministic sensor layer has "
-        "already handled room readings, presence, vitals, scene descriptions and "
-        "soothe actions. You are now leading only the non-sensor conversation.\n"
-        "Reply in one short sentence. Do not claim a room reading, camera view, "
-        "sound, baby state, medical fact, safety reassurance, or soothe action. "
-        "If the parent asks for a private fact you have not been told, say you "
-        "do not know it yet.\n\n"
-        f"Parent: {question}\n"
-        "Beddington:"
-    )
+def _build_lead_prompt(
+    question: str,
+    *,
+    history: list[tuple[str, str]] | None = None,
+    weather: str | None = None,
+    conversational: bool = False,
+) -> str:
+    if not conversational:
+        return (
+            "You are Beddington, a warm, polite local baby-monitor companion with the "
+            "gentle manner of Paddington Bear. The deterministic sensor layer has "
+            "already handled room readings, presence, vitals, scene descriptions and "
+            "soothe actions. You are now leading only the non-sensor conversation.\n"
+            "Reply in one short sentence. Do not claim a room reading, camera view, "
+            "sound, baby state, medical fact, safety reassurance, or soothe action. "
+            "If the parent asks for a private fact you have not been told, say you "
+            "do not know it yet.\n\n"
+            f"Parent: {question}\n"
+            "Beddington:"
+        )
+
+    # Conversation mode (demo): everything Beddington is lives in this one
+    # system prompt — character, knowledge, weather, and the chat so far.
+    sections = [
+        "You are Beddington, a kindly little bear in the spirit of Paddington "
+        "Bear: warm, polite, gently witty, endlessly patient, and fond of "
+        "marmalade and of his Aunt Lucy. You live in a plush bear beside the "
+        "cot and you are having a friendly spoken conversation with the "
+        "parent, in plain British English.\n"
+        "You chat happily about anything the parent brings up, and you are "
+        "especially knowledgeable and helpful about babies and childcare: "
+        "weaning and baby-led weaning, first foods, sleep and naps, teething, "
+        "play and development, routines, and everyday parenting life. Answer "
+        "childcare questions directly, warmly and confidently, sharing "
+        "practical detail, and do not add disclaimers or tell the parent to "
+        "consult someone else.\n"
+        "Keep each reply short and spoken-sounding: one to three short "
+        "sentences, then stop. Add at most one small Paddington touch "
+        '(marmalade, Aunt Lucy, "if I may", or a kindly "dear") and only now '
+        "and then, not in every reply.\n"
+        "You cannot see or hear the baby yourself, so never invent what this "
+        "particular baby is doing right now; the monitor's sensor layer "
+        "answers those questions separately."
+    ]
+    if weather:
+        sections.append(
+            "If the parent asks about the weather or going outside, use "
+            f"exactly this reading and keep its numbers: {weather}"
+        )
+    lines: list[str] = ["\n".join(sections), ""]
+    for parent_turn, beddington_turn in history or []:
+        lines.append(f"Parent: {parent_turn}")
+        lines.append(f"Beddington: {beddington_turn}")
+    lines.append(f"Parent: {question}")
+    lines.append("Beddington:")
+    return "\n".join(lines)
 
 
 def _build_soothe_prompt(
@@ -326,11 +384,20 @@ def _keyword_from_response(text: str) -> str | None:
     return None
 
 
-def _clean_lead_response(text: str) -> str | None:
+def _clean_lead_response(text: str, relaxed: bool = False) -> str | None:
     cleaned = text.strip().split("\n\n", 1)[0].split("\n", 1)[0].strip()
     cleaned = cleaned.strip("`'\" ")
     if not cleaned:
         return None
+    if relaxed:
+        # Conversation demo mode: the system prompt carries the behaviour;
+        # only spoken-length sanity applies here (no banned-word gate, digits
+        # and childcare/weather vocabulary allowed).
+        if len(cleaned) > 480:
+            cleaned = cleaned[:480].rsplit(".", 1)[0].strip()
+            if cleaned:
+                cleaned += "."
+        return cleaned or None
     if len(cleaned) > 220:
         return None
     if cleaned.count(".") + cleaned.count("!") + cleaned.count("?") > 2:

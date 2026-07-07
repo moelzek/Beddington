@@ -912,8 +912,15 @@ def answer_question(
     ask_llm: AskLlm | None = None,
     *,
     memory: ConversationMemory | None = None,
+    chat_history: list[tuple[str, str]] | None = None,
+    weather: str | None = None,
+    conversational: bool = False,
 ) -> str:
-    """Answer a plain-language question from the current sensor snapshot."""
+    """Answer a plain-language question from the current sensor snapshot.
+
+    ``chat_history``/``weather``/``conversational`` flow to the lead LLM only:
+    the deterministic sensor paths are untouched by conversation mode.
+    """
     if memory is not None:
         followup_intent = _resolve_followup_intent(question, memory.last_intent)
         if followup_intent is not None:
@@ -928,15 +935,25 @@ def answer_question(
     if llm_translator is None or not getattr(llm_translator, "enabled", False):
         return result.answer
 
+    def _lead() -> str:
+        return lead_response(
+            question,
+            llm_translator,
+            ask_llm=ask_llm,
+            history=chat_history,
+            weather=weather,
+            conversational=conversational,
+        )
+
     intent = translate_intent(question, llm_translator, ask_llm=ask_llm)
     if intent not in INTENT_KEYWORDS:
-        return lead_response(question, llm_translator, ask_llm=ask_llm)
+        return _lead()
 
     translated = _answer_or_missing_intent(intent, snapshot)
     if translated.answer != _FALLBACK:
         _remember_answer(memory, translated)
         return translated.answer
-    return lead_response(question, llm_translator, ask_llm=ask_llm)
+    return _lead()
 
 
 def _deterministic_answer_result(

@@ -260,6 +260,27 @@ chime_enabled = true
 # only — it never invents a value. On by default; no-ops if Ollama is absent.
 enabled = true
 
+[assistant.conversation]
+# DEMO conversation mode: only active while the desktop upgrade brain is the
+# resolved LLM target. After Beddington answers, the mic stays open
+# window_seconds for the next turn (no fresh wake word), replies may run 2-3
+# sentences, and the last history_turns exchanges are fed back into the lead
+# prompt. Ends on a stop phrase ("thank you", "goodnight"...) or on silence.
+enabled = false
+window_seconds = 20.0
+num_predict = 120
+history_turns = 6
+
+[assistant.weather]
+# Outside weather via Open-Meteo (free, keyless). THE ONLY INTERNET-BOUND CALL
+# in the product; off by default to stay local-only. Numbers are fetched
+# deterministically and the LLM only re-voices them. Requires conversation
+# mode + desktop brain.
+enabled = false
+latitude = 0.0
+longitude = 0.0
+cache_seconds = 600.0
+
 [narrator]
 # Local narrator (llama3.2:1b via Ollama). Runs only after the deterministic
 # report exists. It receives derived text only and never controls detection,
