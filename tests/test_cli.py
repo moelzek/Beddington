@@ -1652,3 +1652,20 @@ def test_sampler_record_episodes_injects_cry_alert_probe_without_mutating_snapsh
     ]
     assert "cry_alert_active" not in snapshot
     store.close()
+
+
+def test_follow_up_fillers_are_normalized_and_exclude_questions() -> None:
+    """Fillers must be normalize_transcript-stable (or membership never fires)
+    and must never swallow a real follow-up question."""
+    from beddington.cli import _FOLLOW_UP_FILLERS
+    from beddington.ears import normalize_transcript
+
+    for filler in _FOLLOW_UP_FILLERS:
+        assert normalize_transcript(filler) == filler
+    for question in (
+        "what is the temperature",
+        "is there anybody there",
+        "play some music",
+        "yes please play the heartbeat",
+    ):
+        assert normalize_transcript(question) not in _FOLLOW_UP_FILLERS
